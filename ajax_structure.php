@@ -141,7 +141,7 @@ try {
                     // Using default values for others
                     $ins = $pdo->prepare("
                         INSERT INTO form_fields (form_id, type, label, variable_name, order_index, is_required) 
-                        VALUES (?, ?, ?, ?, ?, 0)
+                        VALUES (?, ?, ?, ?, ?, false)
                     ");
                     $ins->execute([$form_id, $type, $label, $variable_name, $order]);
                     // No need to track ID unless we return it, but page reloads anyway
@@ -193,7 +193,7 @@ try {
         }
 
         $type = $_POST['type'] ?? 'text';
-        $is_required = $_POST['is_required'] ?? 0;
+        $is_required = ($_POST['is_required'] ?? '0') === '1';
         $help_text = $_POST['help_text'] ?? '';
         $validation_rules = $_POST['validation_rules'] ?? '{}';
         $option_group_id = $_POST['option_group_id'] ?? null;

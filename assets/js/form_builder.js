@@ -226,14 +226,28 @@ function saveFieldStructure() {
     formData.append('fields', JSON.stringify(fields));
 
     fetch('ajax_structure.php', { method: 'POST', body: formData })
-        .then(res => res.json())
+        .then(res => {
+            if (!res.ok) throw new Error('Server error: ' + res.status);
+            return res.json();
+        })
         .then(data => {
-            if (fields.some(f => f.is_new)) {
-                showToast('Field added');
-                setTimeout(() => location.reload(), 500);
+            if (data.success) {
+                if (fields.some(f => f.is_new)) {
+                    showToast('Field added');
+                    setTimeout(() => location.reload(), 500);
+                } else {
+                    showToast('Order saved');
+                }
             } else {
-                showToast('Order saved');
+                showToast(data.message || 'Error saving field', 'error');
+                console.error("Save error:", data.message);
+                setTimeout(() => location.reload(), 1500);
             }
+        })
+        .catch(err => {
+            showToast('Network error or server failed', 'error');
+            console.error("Fetch error:", err);
+            setTimeout(() => location.reload(), 1500);
         });
 }
 
