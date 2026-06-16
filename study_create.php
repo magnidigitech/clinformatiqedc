@@ -70,7 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // 1b. Insert Initiating Site into 'sites' table
             // We set site_code to '01' as default for the main site
-            $stmt = $pdo->prepare("INSERT INTO sites (study_id, name, country, site_code, abbreviation, date_format, main_site) VALUES (:sid, :name, :country, '01', :abbr, 'YYYY-MM-DD (ISO)', 1)");
+            $stmt = $pdo->prepare("INSERT INTO sites (study_id, name, country, site_code, abbreviation, date_format, main_site) VALUES (:sid, :name, :country, '01', :abbr, 'YYYY-MM-DD (ISO)', true)");
             $stmt->execute([
                 'sid' => $new_study_id,
                 'name' => $site_name,

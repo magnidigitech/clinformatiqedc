@@ -139,8 +139,12 @@ try {
         // 3. Backfill is_complete based on status
         echo "<h3>Backfill Data</h3>";
         try {
-            $updated = $pdo->exec("UPDATE subject_form_status SET is_complete = 1 WHERE (status = 'complete' OR status = 'verified' OR progress_percent = 100) AND is_complete = 0");
-            echo "<p style='color:blue'>Backfilled <code>is_complete = 1</code> for $updated rows.</p>";
+            if ($driver === 'pgsql') {
+                $updated = $pdo->exec("UPDATE subject_form_status SET is_complete = true WHERE (status = 'complete' OR status = 'verified' OR progress_percent = 100) AND is_complete = false");
+            } else {
+                $updated = $pdo->exec("UPDATE subject_form_status SET is_complete = 1 WHERE (status = 'complete' OR status = 'verified' OR progress_percent = 100) AND is_complete = 0");
+            }
+            echo "<p style='color:blue'>Backfilled <code>is_complete = true</code> for $updated rows.</p>";
         } catch (Exception $e) {
              echo "<p style='color:red'>Backfill failed: " . $e->getMessage() . "</p>";
         }

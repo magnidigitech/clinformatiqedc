@@ -27,6 +27,10 @@ $site_filter = $_GET['site'] ?? '';
 $subject_filter = $_GET['subject'] ?? '';
 
 $params = [$study_id];
+$driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+$is_complete_val = ($driver === 'pgsql') ? 'true' : '1';
+$is_verified_val = ($driver === 'pgsql') ? 'false' : '0';
+
 $sql = "
     SELECT 
         sfs.*,
@@ -39,8 +43,8 @@ $sql = "
     JOIN study_forms f ON sfs.form_id = f.id
     JOIN study_visits v ON sfs.visit_id = v.id
     WHERE s.study_id = ?
-    AND sfs.is_complete = 1 
-    AND (sfs.is_verified = 0 OR sfs.is_verified IS NULL)
+    AND sfs.is_complete = $is_complete_val
+    AND (sfs.is_verified = $is_verified_val OR sfs.is_verified IS NULL)
 ";
 
 if ($site_filter) {

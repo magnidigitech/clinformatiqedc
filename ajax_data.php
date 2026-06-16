@@ -372,7 +372,9 @@ try {
              
              // Update status to 'verified'
              // Ensure it's complete first? Ideally yes.
-             $stmt = $pdo->prepare("UPDATE subject_form_status SET status = 'verified', is_verified = 1, updated_at = NOW() WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
+             $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+             $is_verified_val = ($driver === 'pgsql') ? 'true' : '1';
+             $stmt = $pdo->prepare("UPDATE subject_form_status SET status = 'verified', is_verified = $is_verified_val, updated_at = NOW() WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
              $stmt->execute([$subject_id, $form_id, $repeating_instance_id, $repeating_instance_id]);
              
              $affected = $stmt->rowCount();

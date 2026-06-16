@@ -75,7 +75,10 @@ $active_role = $_SESSION['active_role_name'];
                 <?php
                     // Count pending verifications
                     $pdo = getDB();
-                    $stmt = $pdo->prepare("SELECT COUNT(*) FROM subject_form_status sfs JOIN subjects s ON sfs.subject_id = s.id WHERE s.study_id = ? AND sfs.is_complete = 1 AND (sfs.is_verified = 0 OR sfs.is_verified IS NULL)");
+                    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+                    $is_complete_val = ($driver === 'pgsql') ? 'true' : '1';
+                    $is_verified_val = ($driver === 'pgsql') ? 'false' : '0';
+                    $stmt = $pdo->prepare("SELECT COUNT(*) FROM subject_form_status sfs JOIN subjects s ON sfs.subject_id = s.id WHERE s.study_id = ? AND sfs.is_complete = $is_complete_val AND (sfs.is_verified = $is_verified_val OR sfs.is_verified IS NULL)");
                     $stmt->execute([$_SESSION['active_study_id']]);
                     $pending_verification = $stmt->fetchColumn();
                 ?>
