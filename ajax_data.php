@@ -585,7 +585,7 @@ function calculateAndSaveProgress($pdo, $study_id, $subject_id, $visit_id, $form
         $status = 'verified';
     }
     
-    $is_complete = ($status === 'complete' || $status === 'verified') ? 1 : 0;
+    $is_complete = ($status === 'complete' || $status === 'verified');
 
     if ($stat_row) {
          $pdo->prepare("UPDATE subject_form_status SET status = ?, is_complete = ?, progress_percent = ?, repeating_instance_id = ?, updated_at = NOW() WHERE id = ?")
