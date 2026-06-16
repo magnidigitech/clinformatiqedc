@@ -155,14 +155,23 @@ try {
             $stmt = $pdo->prepare("SELECT id, username, email FROM users WHERE username = ? OR email = ?");
             $stmt->execute(['admin', 'admin@clinformatiq.com']);
             $admin_user = $stmt->fetch();
-            if ($admin_user) {
+            
+            $resetRequested = isset($_GET['reset_admin']) && $_GET['reset_admin'] == '1';
+            
+            if ($admin_user && !$resetRequested) {
                 echo "<p style='color:green'>Default Admin User exists: <code>" . htmlspecialchars($admin_user['username']) . "</code> (Email: <code>" . htmlspecialchars($admin_user['email']) . "</code>)</p>";
+                echo "<p>To reset the admin password to <code>Admin@123!</code>, visit: <a href='diagnose_errors_web.php?reset_admin=1'>diagnose_errors_web.php?reset_admin=1</a></p>";
             } else {
-                echo "<p style='color:orange'>Default Admin User is missing. Seeding now...</p>";
                 $hash = '$2y$12$tOmIbpAofxtIpuiuCjbaW.D2VaBh0tZzzTrSLt/4tB9dVI09WvpCa'; // Admin@123!
-                $ins = $pdo->prepare("INSERT INTO users (username, email, password_hash) VALUES ('admin', 'admin@clinformatiq.com', ?)");
-                $ins->execute([$hash]);
-                echo "<p style='color:green'>Default Admin User successfully seeded!</p>";
+                if ($admin_user) {
+                    $upd = $pdo->prepare("UPDATE users SET password_hash = ? WHERE id = ?");
+                    $upd->execute([$hash, $admin_user['id']]);
+                    echo "<p style='color:green'><strong>Success:</strong> Default Admin User password has been reset to <code>Admin@123!</code></p>";
+                } else {
+                    $ins = $pdo->prepare("INSERT INTO users (username, email, password_hash) VALUES ('admin', 'admin@clinformatiq.com', ?)");
+                    $ins->execute([$hash]);
+                    echo "<p style='color:green'><strong>Success:</strong> Default Admin User successfully seeded with password <code>Admin@123!</code></p>";
+                }
             }
         } catch (Exception $e) {
             echo "<p style='color:red'>Failed to check/seed admin user: " . $e->getMessage() . "</p>";

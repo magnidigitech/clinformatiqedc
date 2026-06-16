@@ -17,7 +17,7 @@ function loginUser($identity, $password) {
     // Determine if identity is email or username
     $field = filter_var($identity, FILTER_VALIDATE_EMAIL) ? 'email' : 'username';
     
-    $stmt = $pdo->prepare("SELECT * FROM users WHERE $field = :identity LIMIT 1");
+    $stmt = $pdo->prepare("SELECT * FROM users WHERE LOWER($field) = LOWER(:identity) LIMIT 1");
     $stmt->execute(['identity' => $identity]);
     $user = $stmt->fetch();
 
@@ -67,6 +67,7 @@ function initializeUserRoles($user_id) {
         $_SESSION['active_study_id'] = null;
         $_SESSION['active_role_name'] = 'None';
         $_SESSION['active_study_name'] = 'None';
+        $_SESSION['active_study_code'] = 'None';
         $_SESSION['active_permissions'] = [];
     }
 }
@@ -83,6 +84,7 @@ function setActiveContext($assignment_id) {
             $_SESSION['active_study_id'] = $assign['study_id'];
             $_SESSION['active_role_name'] = $assign['role_name'];
             $_SESSION['active_study_name'] = $assign['study_name'];
+            $_SESSION['active_study_code'] = $assign['study_code'] ?? 'None';
             
             // Decode permissions JSON or handle 'all'
             $raw_perms = $assign['permissions'];
