@@ -451,10 +451,10 @@ function ensureTablesExist($pdo) {
             
             // Lazy Update: Add is_verified & is_complete if missing
             try {
-                $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN is_verified INT DEFAULT 0");
+                $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN is_verified BOOLEAN DEFAULT FALSE");
             } catch (Exception $e) {}
             try {
-                $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN is_complete INT DEFAULT 0");
+                $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN is_complete BOOLEAN DEFAULT FALSE");
             } catch (Exception $e) {}
             
             // Create trigger/function if not exists

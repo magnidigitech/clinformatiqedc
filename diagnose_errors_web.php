@@ -107,7 +107,7 @@ try {
             echo "<p style='color:orange'>Column <code>is_verified</code> MISSING. Adding it...</p>";
             try {
                 if ($driver === 'pgsql') {
-                    $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN is_verified INT DEFAULT 0");
+                    $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN is_verified BOOLEAN DEFAULT FALSE");
                 } else {
                     $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN is_verified TINYINT(1) DEFAULT 0");
                 }
@@ -124,13 +124,13 @@ try {
              echo "<p style='color:orange'>Column <code>is_complete</code> MISSING.</p>";
              try {
                 if ($driver === 'pgsql') {
-                    $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN is_complete INT DEFAULT 0");
+                    $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN is_complete BOOLEAN DEFAULT FALSE");
                 } else {
                     $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN is_complete TINYINT(1) DEFAULT 0");
                 }
                 echo "<p style='color:blue'>Added missing <code>is_complete</code> column.</p>";
              } catch (Exception $e) {
-                 echo "<p style='color:red'>Failed to add is_complete: " . $e->getMessage() . "</p>";
+                  echo "<p style='color:red'>Failed to add is_complete: " . $e->getMessage() . "</p>";
              }
         } else {
             echo "<p style='color:green'>Column <code>is_complete</code> exists.</p>";
