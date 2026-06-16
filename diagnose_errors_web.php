@@ -149,6 +149,25 @@ try {
              echo "<p style='color:red'>Backfill failed: " . $e->getMessage() . "</p>";
         }
 
+        // 4. Default Admin User Check
+        echo "<h3>Default Admin User Check</h3>";
+        try {
+            $stmt = $pdo->prepare("SELECT id, username, email FROM users WHERE username = ? OR email = ?");
+            $stmt->execute(['admin', 'admin@clinformatiq.com']);
+            $admin_user = $stmt->fetch();
+            if ($admin_user) {
+                echo "<p style='color:green'>Default Admin User exists: <code>" . htmlspecialchars($admin_user['username']) . "</code> (Email: <code>" . htmlspecialchars($admin_user['email']) . "</code>)</p>";
+            } else {
+                echo "<p style='color:orange'>Default Admin User is missing. Seeding now...</p>";
+                $hash = '$2y$12$tOmIbpAofxtIpuiuCjbaW.D2VaBh0tZzzTrSLt/4tB9dVI09WvpCa'; // Admin@123!
+                $ins = $pdo->prepare("INSERT INTO users (username, email, password_hash) VALUES ('admin', 'admin@clinformatiq.com', ?)");
+                $ins->execute([$hash]);
+                echo "<p style='color:green'>Default Admin User successfully seeded!</p>";
+            }
+        } catch (Exception $e) {
+            echo "<p style='color:red'>Failed to check/seed admin user: " . $e->getMessage() . "</p>";
+        }
+
     } catch (Exception $e) {
         echo "<p style='color:red'>Error describing table: " . $e->getMessage() . "</p>";
     }
