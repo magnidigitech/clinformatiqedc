@@ -193,7 +193,7 @@ try {
         }
 
         $type = $_POST['type'] ?? 'text';
-        $is_required = ($_POST['is_required'] ?? '0') === '1';
+        $is_required = (($_POST['is_required'] ?? '0') === '1') ? 1 : 0;
         $help_text = $_POST['help_text'] ?? '';
         $validation_rules = $_POST['validation_rules'] ?? '{}';
         $option_group_id = $_POST['option_group_id'] ?? null;

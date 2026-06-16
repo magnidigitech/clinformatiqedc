@@ -120,7 +120,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         showToast('Field updated successfully');
                         setTimeout(() => location.reload(), 500);
                     } else {
-                        alert("Error saving: " + data.error);
+                        alert("Error saving: " + (data.message || data.error || 'Unknown error'));
                     }
                 })
                 .catch(err => alert("Network Error: " + err));

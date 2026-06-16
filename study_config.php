@@ -32,10 +32,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $approval_type = $_POST['approval_study_type'] ?? '';
     $therapeutic = $_POST['therapeutic_area'] ?? '';
 
-    $randomization = isset($_POST['randomization']);
-    $monitoring = isset($_POST['monitoring']);
-    $surveys = isset($_POST['surveys']);
-    $gcp_reason = isset($_POST['gcp_reason']);
+    $randomization = isset($_POST['randomization']) ? 1 : 0;
+    $monitoring = isset($_POST['monitoring']) ? 1 : 0;
+    $surveys = isset($_POST['surveys']) ? 1 : 0;
+    $gcp_reason = isset($_POST['gcp_reason']) ? 1 : 0;
     $status = $_POST['status'] ?? 'design';
     $id_method = $_POST['participant_id_method'] ?? 'incremental';
 
