@@ -12,6 +12,30 @@ try {
     $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
     echo "<p style='color:green'>Database Connected Successfully (Driver: " . htmlspecialchars($driver) . ")</p>";
     
+    // Auto-initialize PostgreSQL database if it is empty (studies table missing)
+    $initSchema = false;
+    try {
+        $pdo->query("SELECT 1 FROM studies LIMIT 1");
+    } catch (Exception $e) {
+        $initSchema = true;
+    }
+
+    if ($initSchema) {
+        echo "<p style='color:orange'>Database tables are missing. Auto-initializing database from schema.sql...</p>";
+        if (file_exists(__DIR__ . '/schema.sql')) {
+            try {
+                $sql = file_get_contents(__DIR__ . '/schema.sql');
+                $pdo->exec($sql);
+                echo "<p style='color:green'><strong>Success:</strong> Database tables, triggers, and default admin user initialized successfully!</p>";
+            } catch (Exception $ex) {
+                echo "<p style='color:red'><strong>Error:</strong> Failed to run schema.sql: " . htmlspecialchars($ex->getMessage()) . "</p>";
+            }
+        } else {
+            echo "<p style='color:red'><strong>Error:</strong> schema.sql file not found in root directory!</p>";
+        }
+    }
+
+    
     if ($driver === 'pgsql') {
         $tables = $pdo->query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")->fetchAll(PDO::FETCH_COLUMN);
     } else {
