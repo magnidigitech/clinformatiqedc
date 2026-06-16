@@ -1,0 +1,401 @@
+Action AE
+None: 0
+Dose modification: 1
+Medical intervention: 2
+Hospitalization: 3
+Intervention discontinued: 4
+Other: 5
+
+AE Outcome
+Resolved: 1
+Recovered with minor sequelae: 2
+Recovered with major sequelae: 3
+Ongoing / continuing treatment: 4
+Condition worsening: 5
+Death: 6
+Unknown: 7
+
+AE Relationship
+Not related: 0
+Unlikely related: 1
+Possibly related: 2
+Probably related: 3
+Definitely related: 4
+
+All of the Time-None of the Time
+All of the time: 1
+Most of the time: 2
+A good bit of the time: 3
+Some of the time: 4
+A little of the time: 5
+None of the time: 6
+
+All of the Time-None of the Time (2)
+All of the time: 1
+Most of the time: 2
+Some of the time: 3
+A little of the time: 4
+None of the time: 5
+
+Country
+Afghanistan: 1
+Albania: 2
+Algeria: 3
+Andorra: 4
+Angola: 5
+Antigua and Barbuda: 6
+Argentina: 7
+Armenia: 8
+Australia: 9
+Austria: 10
+Azerbaijan: 11
+Bahamas: 12
+Bahrain: 13
+Bangladesh: 14
+Barbados: 15
+Belarus: 16
+Belgium: 17
+Belize: 18
+Benin: 19
+Bhutan: 20
+Bolivia: 21
+Bosnia and Herzegovina: 22
+Botswana: 23
+Brazil: 24
+Brunei: 25
+Bulgaria: 26
+Burkina Faso: 27
+Burundi: 28
+Cabo Verde: 29
+Cambodia: 30
+Cameroon: 31
+Canada: 32
+Central African Republic: 33
+Chad: 34
+Chile: 35
+China: 36
+Colombia: 37
+Comoros: 38
+Democratic Republic of the Congo: 39
+Republic of the Congo: 40
+Costa Rica: 41
+Cote d Ivoire: 42
+Croatia: 43
+Cuba: 44
+Cyprus: 45
+Czech Republic: 46
+Denmark: 47
+Djibouti: 48
+Dominica: 49
+Dominican Republic: 50
+Ecuador: 51
+Egypt: 52
+El Salvador: 53
+Equatorial Guinea: 54
+Eritrea: 55
+Estonia: 56
+Ethiopia: 57
+Fiji: 58
+Finland: 59
+France: 60
+Gabon: 61
+Gambia: 62
+Georgia: 63
+Germany: 64
+Ghana: 65
+Greece: 66
+Grenada: 67
+Guatemala: 68
+Guinea: 69
+Guinea-Bissau: 70
+Guyana: 71
+Haiti: 72
+Honduras: 73
+Hungary: 74
+Iceland: 75
+India: 76
+Indonesia: 77
+Iran: 78
+Iraq: 79
+Ireland: 80
+Israel: 81
+Italy: 82
+Jamaica: 83
+Japan: 84
+Jordan: 85
+Kazakhstan: 86
+Kenya: 87
+Kiribati: 88
+Kosovo: 89
+Kuwait: 90
+Kyrgyzstan: 91
+Laos: 92
+Latvia: 93
+Lebanon: 94
+Lesotho: 95
+Liberia: 96
+Libya: 97
+Liechtenstein: 98
+Lithuania: 99
+Luxembourg: 100
+Macedonia: 101
+Madagascar: 102
+Malawi: 103
+Malaysia: 104
+Maldives: 105
+Mali: 106
+Malta: 107
+Marshall Islands: 108
+Mauritania: 109
+Mauritius: 110
+Mexico: 111
+Micronesia: 112
+Moldova: 113
+Monaco: 114
+Mongolia: 115
+Montenegro: 116
+Morocco: 117
+Mozambique: 118
+Myanmar (Burma): 119
+Namibia: 120
+Nauru: 121
+Nepal: 122
+Netherlands: 123
+New Zealand: 124
+Nicaragua: 125
+Niger: 126
+Nigeria: 127
+North Korea: 128
+Norway: 129
+Oman: 130
+Pakistan: 131
+Palau: 132
+Palestine: 133
+Panama: 134
+Papua New Guinea: 135
+Paraguay: 136
+Peru: 137
+Philippines: 138
+Poland: 139
+Portugal: 140
+Qatar: 141
+Romania: 142
+Russia: 143
+Rwanda: 144
+Saint Kitts and Nevis: 145
+Saint Lucia: 146
+Saint Vincent and the Grenadines: 147
+Samoa: 148
+San Marino: 149
+Sao Tome and Principe: 150
+Saudi Arabia: 151
+Senegal: 152
+Serbia: 153
+Seychelles: 154
+Sierra Leone: 155
+Singapore: 156
+Slovakia: 157
+Slovenia: 158
+Solomon Islands: 159
+Somalia: 160
+South Africa: 161
+South Korea: 162
+South Sudan: 163
+Spain: 164
+Sri Lanka: 165
+Sudan: 166
+Suriname: 167
+Swaziland: 168
+Sweden: 169
+Switzerland: 170
+Syria: 171
+Taiwan: 172
+Tajikistan: 173
+Tanzania: 174
+Thailand: 175
+Timor-Leste: 176
+Togo: 177
+Tonga: 178
+Trinidad and Tobago: 179
+Tunisia: 180
+Turkey: 181
+Turkmenistan: 182
+Tuvalu: 183
+Uganda: 184
+Ukraine: 185
+United Arab Emirates: 186
+United Kingdom: 187
+United States of America: 188
+Uruguay: 189
+Uzbekistan: 190
+Vanuatu: 191
+Vatican City: 192
+Venezuela: 193
+Vietnam: 194
+Yemen: 195
+Zambia: 196
+Zimbabwe: 197
+
+Definitely true-Definitely false
+Definitely true: 1
+Mostly true: 2
+Don't know: 3
+Mostly false: 4
+Definitely false: 5
+
+Excellent-Poor
+Excellent: 1
+Very good: 2
+Good: 3
+Fair: 4
+Poor: 5
+
+FamHistory
+Renal disease: 0
+Deafness: 1
+(Cardio)myopathy: 2
+Encephalopathy: 3
+Diabetes Mellitus: 4
+Hypertension/Cardiovascular disease: 5
+Thrombosis: 6
+Malignancy: 7
+
+fuvis_type_grp
+in-patient admission: 1
+out-patient visit: 2
+admission to day-care: 3
+
+GAD-7 scale
+Not at all: 0
+Several days: 1
+More than half the days: 2
+Nearly every day: 3
+
+Health a year ago
+Much better now than one year ago: 1
+Somewhat better now than one year ago: 2
+About the same: 3
+Somewhat worse now than one year ago: 4
+Much worse now than one year ago: 5
+
+Limits
+Yes, limited a lot: 1
+Yes, limited a little: 2
+No, not limited at all: 3
+
+med_class_dropdown
+ACE inhibitor (ACEi): 1
+Angiotensin receptor blocker (ARB): 2
+Loop diuretics: 3
+Anti-aldosterone diurectics: 4
+Thiazide diuretics: 5
+Other diurectics: 6
+Lipid lowering drugs: 7
+Anti-platelets: 8
+Anti-coagulants: 9
+Prednisolone (oral administration): 10
+Methylprednisolone (IV pulse therapy): 11
+Cyclophosphamide: 12
+Cyclosporin A: 13
+Tacrolimus: 14
+Mycofenolate Mofetil (MMF): 15
+Azathioprine: 16
+Chloorambucil: 17
+Rituximab: 18
+Oral anti-diabetics: 19
+Insulin s.c.: 20
+Anti-Blyss (belumimab): 21
+ACTH: 22
+Ofatumumab: 23
+NSAID: 24
+Eculizumab: 25
+Bortezomib: 26
+Daratumumab: 27
+IVIG: 29
+Electrolyte supplements: 30
+Other antihypertensives: 31
+Proton pump inhibitors (PPIs): 32
+Other medication: 33
+
+None-Very severe
+None: 1
+Very mild: 2
+Mild: 3
+Moderate: 4
+Severe: 5
+Very severe: 6
+
+Not at all-Extremely
+Not at all: 1
+Slightly: 2
+Moderately: 3
+Quite a bit: 4
+Extremely: 5
+
+Not at all-Extremely (pain)
+Not at all: 1
+A little bit: 2
+Moderately: 3
+Quite a bit: 4
+Extremely: 5
+
+og_medunits
+Unknown: 0
+ug/day: 1
+mg/day: 2
+g/day: 3
+ug/week: 4
+mg/week: 5
+g/week: 6
+
+og_smoker
+No: 0
+Yes, former: 1
+Yes, current: 2
+
+og_ynu
+No: 0
+Yes: 1
+Unknown: 9
+
+Position
+Lying down: 1
+Sitting: 2
+Standing: 3
+
+RenalDiagnosis
+Kidney stones: 0
+Nephrotic syndrome: 1
+Minimal change nephropathy: 2
+Focal glomerulosclerosis: 3
+Membranous nephropathy: 4
+IgA nephropathy: 5
+Henoch Schonlein Purpura/ IgA vasculitis: 6
+Glomerulonephritis: 7
+Glomerulopathy: 8
+Lupus nephritis: 9
+Diabetic nephropathy: 10
+Cast nephropathy: 11
+M. Alport: 12
+Fanconi: 13
+Other: 14
+
+Severity
+Mild: 1
+Moderate: 2
+Severe: 3
+Life-threatening: 4
+
+sex
+Female: 0
+Male: 1
+
+Status
+Under follow-up: 0
+Referred back to GP: 1
+Lost to follow-up: 2
+Death: 3
+
+Yes/No
+Yes: 1
+No: 0

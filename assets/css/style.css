@@ -1,0 +1,780 @@
+/* Main Stylesheet for Clinformatiq EDC */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+    --primary-color: #0f172a;
+    /* Slate 900 */
+    --primary-light: #1e293b;
+    /* Slate 800 */
+    --accent-color: #2563eb;
+    /* Blue 600 */
+    --accent-hover: #1d4ed8;
+    /* Blue 700 */
+    --text-main: #334155;
+    /* Slate 700 */
+    --text-light: #64748b;
+    /* Slate 500 */
+    --bg-body: #f8fafc;
+    /* Slate 50 */
+    --bg-card: #ffffff;
+    --border-color: #e2e8f0;
+    /* Slate 200 */
+
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+
+    --radius-md: 0.5rem;
+    --radius-lg: 0.75rem;
+
+    /* Mobile specific safe areas */
+    --safe-area-inset-bottom: env(safe-area-inset-bottom);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: var(--bg-body);
+    color: var(--text-main);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    font-size: 16px;
+    /* Base 16px for readability */
+}
+
+/* Typography & Links */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    color: var(--primary-color);
+    font-weight: 600;
+}
+
+a {
+    color: var(--accent-color);
+    text-decoration: none;
+    transition: color 0.15s ease;
+}
+
+/* Utilities */
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.625rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid transparent;
+    gap: 0.5rem;
+    user-select: none;
+}
+
+.btn-sm {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+}
+
+.btn-primary {
+    background-color: var(--accent-color);
+    color: white;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+.btn-primary:active {
+    background-color: var(--accent-hover);
+    transform: translateY(1px);
+}
+
+.btn-outline {
+    background-color: transparent;
+    border-color: var(--border-color);
+    color: var(--text-main);
+}
+
+.btn-outline:active {
+    background-color: #f1f5f9;
+}
+
+/* Forms */
+/* Modals */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(2px);
+    z-index: 9999;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.modal-overlay.active {
+    display: flex;
+    opacity: 1;
+}
+
+.modal-content {
+    background: white;
+    border-radius: var(--radius-lg);
+    width: 90%;
+    max-width: 500px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    transform: scale(0.95);
+    transition: transform 0.2s ease;
+    max-height: 90vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-overlay.active .modal-content {
+    transform: scale(1);
+}
+
+.modal-header {
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.modal-body {
+    padding: 1.5rem;
+}
+
+.modal-footer {
+    padding: 1.25rem 1.5rem;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+    background: #f8fafc;
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+.close-modal {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-light);
+    padding: 0.25rem;
+}
+
+.close-modal:hover {
+    color: var(--text-main);
+}
+
+.form-group {
+    margin-bottom: 1.5rem;
+    text-align: left;
+}
+
+.form-label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 600;
+    /* Slightly bolder for readability */
+    margin-bottom: 0.5rem;
+    color: var(--text-main);
+}
+
+.form-input {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    font-size: 1rem;
+    /* Prevent zoom on mobile */
+    transition: border-color 0.2s, box-shadow 0.2s;
+    background-color: #fff;
+}
+
+.form-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+/* Alerts */
+.alert {
+    padding: 1rem;
+    border-radius: var(--radius-md);
+    margin-bottom: 1.5rem;
+    font-size: 0.875rem;
+}
+
+.alert-danger {
+    background-color: #fef2f2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+}
+
+/* Tabs */
+.tabs {
+    display: flex;
+    gap: 2rem;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 2rem;
+    padding-bottom: 0;
+    overflow-x: auto;
+    /* Handle overflow on small screens */
+}
+
+.tab-link {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 0.75rem 0.5rem;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: var(--text-light);
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.tab-link:hover {
+    color: var(--primary-color);
+}
+
+.tab-link.active {
+    color: var(--accent-color);
+    border-bottom-color: var(--accent-color);
+}
+
+/* Form Builder Styles */
+.toolbox-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    margin-bottom: 0.5rem;
+    cursor: grab;
+    transition: all 0.2s;
+    font-size: 0.9rem;
+    color: var(--text-main);
+}
+
+.toolbox-item:hover {
+    border-color: var(--accent-color);
+    box-shadow: var(--shadow-sm);
+    transform: translateX(2px);
+}
+
+.toolbox-item .material-icons-round {
+    font-size: 1.25rem;
+    color: var(--text-light);
+}
+
+.field-card {
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 1rem;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    box-shadow: var(--shadow-sm);
+    transition: all 0.2s;
+}
+
+.field-card:hover {
+    box-shadow: var(--shadow-md);
+}
+
+.field-card-handle {
+    cursor: grab;
+    color: var(--text-light);
+    display: flex;
+    align-items: center;
+}
+
+.field-card-content {
+    flex: 1;
+}
+
+.field-label {
+    font-weight: 600;
+    font-size: 1rem;
+    margin-bottom: 0.25rem;
+}
+
+.field-meta {
+    font-size: 0.75rem;
+    color: var(--text-light);
+    font-family: monospace;
+}
+
+.field-card-actions {
+    display: flex;
+    gap: 0.5rem;
+    opacity: 0.5;
+    transition: opacity 0.2s;
+}
+
+.field-card:hover .field-card-actions {
+    opacity: 1;
+}
+
+.btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    cursor: pointer;
+    padding: 0.5rem;
+    color: #94a3b8;
+    /* Slate 400 */
+    border-radius: 999px;
+    /* Circle */
+    transition: all 0.2s ease;
+}
+
+.btn-icon .material-icons-round {
+    font-size: 1.25rem;
+}
+
+.btn-icon:hover {
+    background-color: #f1f5f9 !important;
+    color: var(--text-main);
+    transform: none;
+}
+
+.btn-icon.primary {
+    color: var(--accent-color);
+}
+
+.btn-icon.primary:hover {
+    background-color: #eff6ff !important;
+    color: var(--accent-hover);
+}
+
+.btn-icon.delete {
+    color: #ef4444;
+}
+
+.btn-icon.delete:hover {
+    background-color: #fef2f2 !important;
+    color: #dc2626;
+}
+
+.btn-icon.primary:hover {
+    background: #eff6ff;
+    color: var(--accent-color);
+}
+
+.btn-icon.delete:hover {
+    background: #fef2f2;
+    color: #ef4444;
+}
+
+.sortable-ghost {
+    opacity: 0.5;
+    background: #f8fafc;
+    border-style: dashed;
+}
+
+/* Layout */
+.app-layout {
+    display: flex;
+    min-height: 100vh;
+}
+
+/* Sidebar */
+.sidebar {
+    width: 68px;
+    /* Collapsed width */
+    background-color: var(--primary-color);
+    color: white;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    z-index: 50;
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow-x: hidden;
+    white-space: nowrap;
+}
+
+.sidebar:hover {
+    width: 260px;
+    /* Expanded width */
+}
+
+/* Sidebar Header */
+.sidebar-header {
+    height: 64px;
+    display: flex;
+    align-items: center;
+    padding: 0 1.25rem;
+    /* Center icon in collapsed state */
+    font-weight: 700;
+    font-size: 1.25rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    overflow: hidden;
+}
+
+.sidebar-header span {
+    opacity: 0;
+    transition: opacity 0.2s;
+    margin-left: 0.5rem;
+}
+
+.sidebar:hover .sidebar-header span {
+    opacity: 1;
+}
+
+/* Logo icon replacement (optional, or just hide text) */
+.sidebar-header::before {
+    content: 'C';
+    /* Simple logo fallback */
+    font-size: 1.5rem;
+    font-weight: 800;
+    min-width: 24px;
+    text-align: center;
+}
+
+/* Nav Links */
+.nav-link {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 1.25rem;
+    color: rgba(255, 255, 255, 0.7);
+    text-decoration: none;
+    transition: all 0.2s;
+    border-left: 3px solid transparent;
+    cursor: pointer;
+    margin-bottom: 0.25rem;
+}
+
+.nav-link:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+.nav-link.active {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    border-left-color: var(--accent-color);
+}
+
+.nav-link .material-icons-round {
+    margin-right: 1rem;
+    font-size: 1.5rem;
+    min-width: 24px;
+    /* Ensure fixed width for icon */
+    text-align: center;
+}
+
+.nav-link-text {
+    opacity: 0;
+    transform: translateX(-10px);
+    transition: all 0.2s;
+    font-weight: 500;
+}
+
+.sidebar:hover .nav-link-text {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.sidebar-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.1);
+    margin: 0.5rem 0;
+}
+
+.mobile-menu-btn {
+    display: none;
+    background: transparent;
+    border: none;
+    color: white;
+    cursor: pointer;
+    margin-right: 1rem;
+    padding: 0.25rem;
+}
+
+/* Main Content */
+.main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+}
+
+.top-nav {
+    height: 64px;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border-color);
+    padding: 0 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.page-content {
+    padding: 2rem;
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    /* Prevent horizontal scroll on body */
+}
+
+/* Cards & Components */
+.card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 1.5rem;
+    box-shadow: var(--shadow-sm);
+    margin-bottom: 1.5rem;
+}
+
+.role-badge {
+    display: inline-block;
+    padding: 0.25rem 0.6rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background-color: #eff6ff;
+    color: #2563eb;
+    white-space: nowrap;
+}
+
+/* Login Page Wrapper */
+.login-wrapper {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #f1f5f9 0%, #cbd5e1 100%);
+    padding: 1rem;
+}
+
+.login-card {
+    background: var(--bg-card);
+    width: 100%;
+    max-width: 400px;
+    padding: 2.5rem;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    text-align: center;
+}
+
+/* Responsive Tables */
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+/* Mobile Responsiveness (Max width 768px) */
+@media (max-width: 768px) {
+
+    /* Layout */
+    .app-layout {
+        flex-direction: column;
+        overflow-x: hidden;
+    }
+
+    .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 80%;
+        max-width: 300px;
+        transform: translateX(-100%);
+        /* Hide by default */
+        box-shadow: 2px 0 10px rgba(0, 0, 0, 0.2);
+        z-index: 100;
+        /* Higher than everything */
+    }
+
+    .sidebar.mobile-open {
+        transform: translateX(0);
+    }
+
+    /* Force the JS-injected button to be visible on mobile */
+    .mobile-menu-btn {
+        display: inline-flex !important;
+    }
+
+    .sidebar-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 90;
+        display: none;
+        opacity: 0;
+        transition: opacity 0.3s;
+    }
+
+    .sidebar-overlay.active {
+        display: block;
+        opacity: 1;
+    }
+
+    /* Top Nav mobile adjustments */
+    /* We move the sidebar header (with menu button) to be visible always? 
+       Actually, the common pattern is a fixed header 
+    */
+    .sidebar-header {
+        /* When sidebar is closed, this is hidden naturally. 
+           We need a visible trigger. 
+           Let's hack: The Top Nav will contain a duplicate menu button for mobile 
+           OR we style the sidebar-header to specific mobile constraints 
+        */
+        display: flex;
+    }
+
+    /* Better Mobile Navigation Pattern:
+       On mobile, the Sidebar header needs to be visible or replaced by Top Nav.
+       Simplest approach:
+       1. Top Nav becomes the main header.
+       2. Add Menu Button to Top Nav.
+       3. Sidebar is just a drawer.
+       
+       However, our HTML structure puts sidebar *before* main content.
+       Correct Fix:
+    */
+
+    /* Reveal the menu button in the sidebar header when open.
+       But when closed, we need a trigger.
+       Let's inject a trigger into the top-nav via JS or assume it will be there.
+       Wait, let's keep it simple: 
+       We will make the Sidebar Header FIXED at the top on mobile, 
+       and push content down.
+    */
+
+    .sidebar-header {
+        display: flex;
+        /* Note: In this specific DOM structure, sidebar is inside flex container.
+           Complex without rewrites. 
+           Let's just allow the sidebar to be a Drawer and add a button to Top Nav via JS?
+           
+           Actually, the JS I wrote adds the button to sidebar-header. 
+           If sidebar is hidden (translateX -100%), button is hidden.
+           
+           ADJUSTMENT: We need a visible header bar on mobile.
+        */
+        position: absolute;
+        top: 0;
+        right: 0;
+        left: 0;
+        z-index: 51;
+        width: 100%;
+        background: var(--primary-color);
+        transform: none;
+        /* Always visible header? No, sidebar is transformed */
+    }
+
+    /* NEW MOBILE STRATEGY */
+    .app-layout {
+        position: relative;
+    }
+
+    .sidebar {
+        position: fixed;
+        height: 100%;
+        width: 280px;
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+    }
+
+    .sidebar.mobile-open {
+        transform: translateX(0);
+    }
+
+    .main-content {
+        width: 100%;
+        margin-left: 0;
+    }
+
+    /* We need a visible "Mobile Header" */
+    .top-nav {
+        padding: 0 1rem;
+        height: 60px;
+        position: sticky;
+        top: 0;
+        z-index: 40;
+    }
+
+    /* We'll inject a "Menu" button into the .top-nav via JS or rely on the user to see it.
+       CSS-only fix:
+       Add a pseudo-element or rely on the JS to append the button to TOP NAV instead of sidebar header.
+    */
+
+    /* Content */
+    .page-content {
+        padding: 1rem;
+    }
+
+    /* Cards */
+    .card {
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    /* Grid Layouts - Force single column */
+    div[style*="grid-template-columns"] {
+        grid-template-columns: 1fr !important;
+    }
+
+    /* Tables */
+    .card:has(table) {
+        overflow-x: auto;
+    }
+
+    table {
+        min-width: 600px;
+        /* Force scroll */
+    }
+
+    th,
+    td {
+        white-space: nowrap;
+    }
+
+    /* Button stacking */
+    .page-content>div[style*="justify-content: space-between"] {
+        flex-direction: column;
+        align-items: stretch !important;
+        gap: 1rem;
+    }
+
+    .form-input[style*="width: 300px"] {
+        width: 100% !important;
+    }
+}

@@ -1,0 +1,203 @@
+<?php
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
+require_once 'includes/functions.php';
+require_once 'includes/auth.php';
+
+requireLogin();
+
+// Check study context
+$study_id = $_SESSION['active_study_id'] ?? null;
+if (!$study_id) redirect('dashboard.php');
+
+$pdo = getDB();
+
+// --- 1. Filter Parameters ---
+$status_filter = $_GET['status'] ?? ''; // e.g. 'open', 'closed', 'new'
+$site_filter   = $_GET['site'] ?? '';
+$subject_filter = $_GET['subject'] ?? '';
+
+// Map 'open' filter to multiple statuses if needed
+// "Open" usually means New, Open, Answered (everything not Closed/Resolved)
+$status_clause = "";
+$params = [$study_id];
+
+if ($status_filter === 'open') {
+    $status_clause = "AND q.status IN ('new', 'open', 'answered', 'unconfirmed')";
+} elseif ($status_filter) {
+    $status_clause = "AND q.status = ?";
+    $params[] = $status_filter;
+}
+
+if ($site_filter) {
+    $status_clause .= " AND s.site_name = ?"; // Or site_id if we have it
+    $params[] = $site_filter;
+}
+
+if ($subject_filter) {
+    $status_clause .= " AND (s.subject_code LIKE ? OR q.query_text LIKE ?)";
+    $params[] = "%$subject_filter%";
+    $params[] = "%$subject_filter%";
+}
+
+// --- 2. Fetch Queries ---
+// Join with subjects to get site/subject info
+// Join with form_fields to get label
+$sql = "
+    SELECT 
+        q.*,
+        s.subject_code,
+        s.site_name,
+        f.name as form_name,
+        ff.label as field_label,
+        u.username as created_by_name
+    FROM data_queries q
+    JOIN subjects s ON q.subject_id = s.id
+    LEFT JOIN study_forms f ON q.form_id = f.id
+    LEFT JOIN form_fields ff ON q.field_id = ff.id
+    LEFT JOIN users u ON q.created_by = u.id
+    WHERE q.study_id = ?
+    $status_clause
+    ORDER BY q.created_at DESC
+";
+
+$stmt = $pdo->prepare($sql);
+$stmt->execute($params);
+$queries = $stmt->fetchAll();
+
+// --- 3. Dynamic Title ---
+$page_title = "Queries";
+if ($status_filter === 'open') $page_title = "Open Queries";
+elseif ($status_filter) $page_title = ucfirst($status_filter) . " Queries";
+
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><?php echo htmlspecialchars($page_title); ?> - Clinformatiq EDC</title>
+    <link rel="stylesheet" href="assets/css/style.css?v=<?php echo time(); ?>">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+</head>
+<body>
+
+<div class="app-layout">
+    <?php include 'includes/sidebar.php'; ?>
+
+    <main class="main-content">
+        <header class="top-nav">
+            <div>
+                <h2 style="font-size: 1.125rem;"><?php echo htmlspecialchars($_SESSION['active_study_name']); ?></h2>
+                <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.25rem;">
+                    <span style="font-size: 0.75rem; color: var(--text-light); text-transform: uppercase;">Viewing as:</span>
+                    <?php renderRoleSwitcher($_SESSION['active_study_id']); ?>
+                </div>
+            </div>
+             <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <span style="font-weight: 500; font-size: 0.875rem;"><?php echo htmlspecialchars($_SESSION['username']); ?></span>
+                <a href="logout.php" style="font-size: 0.875rem; color: var(--text-light);">Logout</a>
+            </div>
+        </header>
+
+        <div class="page-content">
+            
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+                <h2 style="font-size: 1.5rem;"><?php echo htmlspecialchars($page_title); ?></h2>
+                
+                <div style="display: flex; gap: 0.5rem;">
+                    <a href="queries.php?status=open" class="btn <?php echo $status_filter === 'open' ? 'btn-primary' : 'btn-outline'; ?>">Open Queries</a>
+                    <a href="queries.php" class="btn <?php echo $status_filter === '' ? 'btn-primary' : 'btn-outline'; ?>">All Queries</a>
+                </div>
+            </div>
+
+            <!-- Filters Bar -->
+            <form method="GET" style="display: flex; gap: 1rem; align-items: center; background: white; padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); margin-bottom: 2rem;">
+                <input type="hidden" name="status" value="<?php echo htmlspecialchars($status_filter); ?>">
+                
+                <div style="flex: 1;">
+                   <input type="text" name="subject" value="<?php echo htmlspecialchars($subject_filter); ?>" placeholder="Search subject or query text..." class="form-input">
+                </div>
+                
+                <button type="submit" class="btn btn-outline">Filter</button>
+            </form>
+
+            <!-- Queries Table -->
+            <div class="card" style="padding: 0; overflow: hidden;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.875rem;">
+                    <thead style="background: #f8fafc; border-bottom: 1px solid var(--border-color);">
+                        <tr>
+                            <th style="padding: 1rem; text-align: left; font-weight: 600; color: var(--text-light);">ID</th>
+                            <th style="padding: 1rem; text-align: left; font-weight: 600; color: var(--text-light);">Subject</th>
+                            <th style="padding: 1rem; text-align: left; font-weight: 600; color: var(--text-light);">Site</th>
+                            <th style="padding: 1rem; text-align: left; font-weight: 600; color: var(--text-light);">Field / Form</th>
+                            <th style="padding: 1rem; text-align: left; font-weight: 600; color: var(--text-light);">Status</th>
+                            <th style="padding: 1rem; text-align: left; font-weight: 600; color: var(--text-light);">Remark</th>
+                            <th style="padding: 1rem; text-align: left; font-weight: 600; color: var(--text-light);">Raised By</th>
+                            <th style="padding: 1rem; text-align: left; font-weight: 600; color: var(--text-light);">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (empty($queries)): ?>
+                        <tr>
+                            <td colspan="8" style="padding: 3rem; text-align: center; color: var(--text-light);">
+                                No queries found matching your filters.
+                            </td>
+                        </tr>
+                        <?php else: ?>
+                            <?php foreach ($queries as $q): ?>
+                            <tr style="border-bottom: 1px solid var(--border-color);">
+                                <td style="padding: 1rem;">
+                                    <span style="font-family: monospace; color: var(--text-light);">#<?php echo $q['id']; ?></span>
+                                </td>
+                                <td style="padding: 1rem; font-weight: 500;">
+                                    <?php echo htmlspecialchars($q['subject_code']); ?>
+                                </td>
+                                <td style="padding: 1rem;">
+                                    <?php echo htmlspecialchars($q['site_name']); ?>
+                                </td>
+                                <td style="padding: 1rem;">
+                                    <div style="font-weight: 500; font-size: 0.8rem;"><?php echo htmlspecialchars($q['field_label']); ?></div>
+                                    <div style="font-size: 0.75rem; color: var(--text-light);"><?php echo htmlspecialchars($q['form_name']); ?></div>
+                                </td>
+                                <td style="padding: 1rem;">
+                                    <?php 
+                                        $sColor = '#64748b'; $sBg = '#f1f5f9';
+                                        switch($q['status']) {
+                                            case 'new': $sColor = '#ef4444'; $sBg = '#fee2e2'; break;
+                                            case 'open': $sColor = '#ef4444'; $sBg = '#fee2e2'; break; // Treat open like new visually
+                                            case 'answered': $sColor = '#f59e0b'; $sBg = '#fef3c7'; break;
+                                            case 'closed': $sColor = '#10b981'; $sBg = '#dcfce7'; break;
+                                        }
+                                    ?>
+                                    <span style="color: <?php echo $sColor; ?>; background: <?php echo $sBg; ?>; padding: 0.1rem 0.5rem; border-radius: 99px; font-size: 0.75rem; font-weight: 500; text-transform: uppercase;">
+                                        <?php echo htmlspecialchars($q['status']); ?>
+                                    </span>
+                                </td>
+                                <td style="padding: 1rem; max-width: 250px;">
+                                    <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="<?php echo htmlspecialchars($q['query_text']); ?>">
+                                        <?php echo htmlspecialchars($q['query_text']); ?>
+                                    </div>
+                                </td>
+                                <td style="padding: 1rem; font-size: 0.8rem;">
+                                    <div><?php echo htmlspecialchars($q['created_by_name']); ?></div>
+                                    <div style="color: var(--text-light);"><?php echo formatDate($q['created_at']); ?></div>
+                                </td>
+                                <td style="padding: 1rem;">
+                                    <a href="subject_data_entry.php?subject_id=<?php echo $q['subject_id']; ?>&form_id=<?php echo $q['form_id']; ?>&visit_id=<?php echo $q['visit_id']; ?>&instance=<?php echo $q['repeating_instance_id']; ?>&focus_query=<?php echo $q['id']; ?>#field-<?php echo $q['field_id']; ?>" class="btn btn-sm btn-outline">View</a>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+
+        </div>
+    </main>
+</div>
+<script src="assets/js/app.js"></script>
+</body>
+</html>
