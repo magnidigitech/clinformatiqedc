@@ -15,18 +15,37 @@ if (!$study_id) redirect('dashboard.php');
 $pdo = getDB();
 
 // --- 1. Filter Parameters ---
-$status_filter = $_GET['status'] ?? ''; // e.g. 'open', 'closed', 'new'
+$status_filter = $_GET['status'] ?? ''; // e.g. 'all', 'new', 'open', 'answered', 'closed'
 $site_filter   = $_GET['site'] ?? '';
 $subject_filter = $_GET['subject'] ?? '';
 
-// Map 'open' filter to multiple statuses if needed
-// "Open" usually means New, Open, Answered (everything not Closed/Resolved)
+// Fetch counts for each status tab
+$stmt_counts = $pdo->prepare("
+    SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN q.status = 'new' THEN 1 ELSE 0 END) as new_count,
+        SUM(CASE WHEN q.status = 'open' THEN 1 ELSE 0 END) as open_count,
+        SUM(CASE WHEN q.status = 'answered' THEN 1 ELSE 0 END) as answered_count,
+        SUM(CASE WHEN q.status = 'closed' THEN 1 ELSE 0 END) as closed_count
+    FROM data_queries q
+    JOIN subjects s ON q.subject_id = s.id
+    LEFT JOIN subject_repeating_instances sri ON q.repeating_instance_id = sri.id
+    WHERE q.study_id = ?
+    AND (q.repeating_instance_id = 0 OR q.repeating_instance_id IS NULL OR sri.status = 'active')
+");
+$stmt_counts->execute([$study_id]);
+$counts = $stmt_counts->fetch(PDO::FETCH_ASSOC);
+
+$total_count = $counts['total'] ?? 0;
+$new_count = $counts['new_count'] ?? 0;
+$open_count = $counts['open_count'] ?? 0;
+$answered_count = $counts['answered_count'] ?? 0;
+$closed_count = $counts['closed_count'] ?? 0;
+
 $status_clause = "";
 $params = [$study_id];
 
-if ($status_filter === 'open') {
-    $status_clause = "AND q.status IN ('new', 'open', 'answered', 'unconfirmed')";
-} elseif ($status_filter) {
+if ($status_filter && $status_filter !== 'all') {
     $status_clause = "AND q.status = ?";
     $params[] = $status_filter;
 }
@@ -51,14 +70,17 @@ $sql = "
         s.subject_code,
         s.site_name,
         f.name as form_name,
+        f.repeating_module_id,
         ff.label as field_label,
-        u.username as created_by_name
+        COALESCE(u.name, u.username) as created_by_name
     FROM data_queries q
     JOIN subjects s ON q.subject_id = s.id
     LEFT JOIN study_forms f ON q.form_id = f.id
     LEFT JOIN form_fields ff ON q.field_id = ff.id
     LEFT JOIN users u ON q.created_by = u.id
+    LEFT JOIN subject_repeating_instances sri ON q.repeating_instance_id = sri.id
     WHERE q.study_id = ?
+    AND (q.repeating_instance_id = 0 OR q.repeating_instance_id IS NULL OR sri.status = 'active')
     $status_clause
     ORDER BY q.created_at DESC
 ";
@@ -69,8 +91,8 @@ $queries = $stmt->fetchAll();
 
 // --- 3. Dynamic Title ---
 $page_title = "Queries";
-if ($status_filter === 'open') $page_title = "Open Queries";
-elseif ($status_filter) $page_title = ucfirst($status_filter) . " Queries";
+if ($status_filter === 'all' || $status_filter === '') $page_title = "All Queries";
+else $page_title = ucfirst($status_filter) . " Queries";
 
 ?>
 <!DOCTYPE html>
@@ -104,13 +126,36 @@ elseif ($status_filter) $page_title = ucfirst($status_filter) . " Queries";
 
         <div class="page-content">
             
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
                 <h2 style="font-size: 1.5rem;"><?php echo htmlspecialchars($page_title); ?></h2>
-                
-                <div style="display: flex; gap: 0.5rem;">
-                    <a href="queries.php?status=open" class="btn <?php echo $status_filter === 'open' ? 'btn-primary' : 'btn-outline'; ?>">Open Queries</a>
-                    <a href="queries.php" class="btn <?php echo $status_filter === '' ? 'btn-primary' : 'btn-outline'; ?>">All Queries</a>
-                </div>
+            </div>
+
+            <?php
+            $tab_params = '';
+            if (!empty($subject_filter)) {
+                $tab_params .= '&subject=' . urlencode($subject_filter);
+            }
+            if (!empty($site_filter)) {
+                $tab_params .= '&site=' . urlencode($site_filter);
+            }
+            ?>
+            <!-- Tabs Navigation -->
+            <div class="query-tabs" style="display: flex; gap: 1.5rem; border-bottom: 2px solid #e2e8f0; margin-bottom: 2rem; padding-bottom: 0.5rem; flex-wrap: wrap;">
+                <a href="queries.php?status=all<?php echo $tab_params; ?>" class="query-tab" style="text-decoration: none; color: <?php echo ($status_filter === '' || $status_filter === 'all') ? 'var(--primary-color)' : '#64748b'; ?>; font-weight: 600; padding-bottom: 0.5rem; border-bottom: 2px solid <?php echo ($status_filter === '' || $status_filter === 'all') ? 'var(--primary-color)' : 'transparent'; ?>; margin-bottom: -0.65rem; display: flex; align-items: center; gap: 0.5rem; transition: all 0.2s;">
+                    All <span style="font-size: 0.75rem; background: #f1f5f9; color: #475569; padding: 2px 6px; border-radius: 99px; font-weight: 500;"><?php echo $total_count; ?></span>
+                </a>
+                <a href="queries.php?status=new<?php echo $tab_params; ?>" class="query-tab" style="text-decoration: none; color: <?php echo $status_filter === 'new' ? '#2563eb' : '#64748b'; ?>; font-weight: 600; padding-bottom: 0.5rem; border-bottom: 2px solid <?php echo $status_filter === 'new' ? '#2563eb' : 'transparent'; ?>; margin-bottom: -0.65rem; display: flex; align-items: center; gap: 0.5rem; transition: all 0.2s;">
+                    New <span style="font-size: 0.75rem; background: #dbeafe; color: #2563eb; padding: 2px 6px; border-radius: 99px; font-weight: 500;"><?php echo $new_count; ?></span>
+                </a>
+                <a href="queries.php?status=open<?php echo $tab_params; ?>" class="query-tab" style="text-decoration: none; color: <?php echo $status_filter === 'open' ? '#0284c7' : '#64748b'; ?>; font-weight: 600; padding-bottom: 0.5rem; border-bottom: 2px solid <?php echo $status_filter === 'open' ? '#0284c7' : 'transparent'; ?>; margin-bottom: -0.65rem; display: flex; align-items: center; gap: 0.5rem; transition: all 0.2s;">
+                    Open <span style="font-size: 0.75rem; background: #e0f2fe; color: #0284c7; padding: 2px 6px; border-radius: 99px; font-weight: 500;"><?php echo $open_count; ?></span>
+                </a>
+                <a href="queries.php?status=answered<?php echo $tab_params; ?>" class="query-tab" style="text-decoration: none; color: <?php echo $status_filter === 'answered' ? '#ea580c' : '#64748b'; ?>; font-weight: 600; padding-bottom: 0.5rem; border-bottom: 2px solid <?php echo $status_filter === 'answered' ? '#ea580c' : 'transparent'; ?>; margin-bottom: -0.65rem; display: flex; align-items: center; gap: 0.5rem; transition: all 0.2s;">
+                    Answered <span style="font-size: 0.75rem; background: #ffedd5; color: #ea580c; padding: 2px 6px; border-radius: 99px; font-weight: 500;"><?php echo $answered_count; ?></span>
+                </a>
+                <a href="queries.php?status=closed<?php echo $tab_params; ?>" class="query-tab" style="text-decoration: none; color: <?php echo $status_filter === 'closed' ? '#16a34a' : '#64748b'; ?>; font-weight: 600; padding-bottom: 0.5rem; border-bottom: 2px solid <?php echo $status_filter === 'closed' ? '#16a34a' : 'transparent'; ?>; margin-bottom: -0.65rem; display: flex; align-items: center; gap: 0.5rem; transition: all 0.2s;">
+                    Closed <span style="font-size: 0.75rem; background: #dcfce7; color: #16a34a; padding: 2px 6px; border-radius: 99px; font-weight: 500;"><?php echo $closed_count; ?></span>
+                </a>
             </div>
 
             <!-- Filters Bar -->
@@ -166,10 +211,10 @@ elseif ($status_filter) $page_title = ucfirst($status_filter) . " Queries";
                                     <?php 
                                         $sColor = '#64748b'; $sBg = '#f1f5f9';
                                         switch($q['status']) {
-                                            case 'new': $sColor = '#ef4444'; $sBg = '#fee2e2'; break;
-                                            case 'open': $sColor = '#ef4444'; $sBg = '#fee2e2'; break; // Treat open like new visually
-                                            case 'answered': $sColor = '#f59e0b'; $sBg = '#fef3c7'; break;
-                                            case 'closed': $sColor = '#10b981'; $sBg = '#dcfce7'; break;
+                                            case 'new': $sColor = '#2563eb'; $sBg = '#dbeafe'; break; // Blue
+                                            case 'open': $sColor = '#0284c7'; $sBg = '#e0f2fe'; break; // Sky Blue
+                                            case 'answered': $sColor = '#ea580c'; $sBg = '#ffedd5'; break; // Orange
+                                            case 'closed': $sColor = '#16a34a'; $sBg = '#dcfce7'; break; // Green
                                         }
                                     ?>
                                     <span style="color: <?php echo $sColor; ?>; background: <?php echo $sBg; ?>; padding: 0.1rem 0.5rem; border-radius: 99px; font-size: 0.75rem; font-weight: 500; text-transform: uppercase;">
@@ -186,7 +231,16 @@ elseif ($status_filter) $page_title = ucfirst($status_filter) . " Queries";
                                     <div style="color: var(--text-light);"><?php echo formatDate($q['created_at']); ?></div>
                                 </td>
                                 <td style="padding: 1rem;">
-                                    <a href="subject_data_entry.php?subject_id=<?php echo $q['subject_id']; ?>&form_id=<?php echo $q['form_id']; ?>&visit_id=<?php echo $q['visit_id']; ?>&instance=<?php echo $q['repeating_instance_id']; ?>&focus_query=<?php echo $q['id']; ?>#field-<?php echo $q['field_id']; ?>" class="btn btn-sm btn-outline">View</a>
+                                    <?php 
+                                    $link_params = "subject_id=" . $q['subject_id'] . "&form_id=" . $q['form_id'];
+                                    if ($q['repeating_module_id']) {
+                                        $link_params .= "&module_id=" . $q['repeating_module_id'] . "&instance_id=" . $q['repeating_instance_id'];
+                                    } else {
+                                        $link_params .= "&visit_id=" . $q['visit_id'];
+                                    }
+                                    $link_params .= "&focus_query=" . $q['id'] . "#field-" . $q['field_id'];
+                                    ?>
+                                    <a href="subject_data_entry.php?<?php echo $link_params; ?>" class="btn btn-sm btn-outline">View</a>
                                 </td>
                             </tr>
                             <?php endforeach; ?>

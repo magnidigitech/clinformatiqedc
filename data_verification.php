@@ -37,14 +37,18 @@ $sql = "
         s.subject_code,
         s.site_name,
         f.name as form_name,
-        v.name as visit_name
+        f.repeating_module_id,
+        COALESCE(v.name, m.name) as visit_name
     FROM subject_form_status sfs
     JOIN subjects s ON sfs.subject_id = s.id
     JOIN study_forms f ON sfs.form_id = f.id
-    JOIN study_visits v ON sfs.visit_id = v.id
+    LEFT JOIN study_visits v ON f.visit_id = v.id
+    LEFT JOIN study_repeating_modules m ON f.repeating_module_id = m.id
+    LEFT JOIN subject_repeating_instances sri ON sfs.repeating_instance_id = sri.id
     WHERE s.study_id = ?
     AND sfs.is_complete = $is_complete_val
     AND (sfs.is_verified = $is_verified_val OR sfs.is_verified IS NULL)
+    AND (sfs.repeating_instance_id IS NULL OR sfs.repeating_instance_id = 0 OR sri.status = 'active')
 ";
 
 if ($site_filter) {
@@ -159,7 +163,15 @@ $forms = $stmt->fetchAll();
                                         </td>
                                         <td style="padding: 1rem; color: #64748b;"><?php echo date('d-M-Y H:i', strtotime($form['updated_at'])); ?></td>
                                         <td style="text-align: right; padding: 1rem 1.5rem;">
-                                            <a href="subject_data_entry.php?subject_id=<?php echo $form['subject_id']; ?>&visit_id=<?php echo $form['visit_id']; ?>&form_id=<?php echo $form['form_id']; ?>&instance_id=<?php echo $form['repeating_instance_id'] ?: ''; ?>" class="btn btn-primary btn-sm">Review & Verify</a>
+                                            <?php 
+                                            $link_params = "subject_id=" . $form['subject_id'] . "&form_id=" . $form['form_id'];
+                                            if ($form['repeating_module_id']) {
+                                                $link_params .= "&module_id=" . $form['repeating_module_id'] . "&instance_id=" . $form['repeating_instance_id'];
+                                            } else {
+                                                $link_params .= "&visit_id=" . $form['visit_id'];
+                                            }
+                                            ?>
+                                            <a href="subject_data_entry.php?<?php echo $link_params; ?>" class="btn btn-primary btn-sm">Review & Verify</a>
                                         </td>
                                     </tr>
                                     <?php endforeach; ?>

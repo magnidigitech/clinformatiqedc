@@ -93,7 +93,7 @@ if (isApiRequest()) {
                     <span class="material-icons-round" style="position: absolute; left: 0.5rem; top: 50%; transform: translateY(-50%); font-size: 1rem; color: var(--text-light);">search</span>
                 </div>
 
-                <?php if (hasPermission('add') || hasPermission('all')): ?>
+                <?php if (hasPermission('add_subject')): ?>
                 <a href="subject_entry.php" class="btn btn-primary">
                     <span class="material-icons-round" style="font-size: 1.25rem; margin-right: 0.5rem;">add</span>
                     New Subject
@@ -159,22 +159,5 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
-                        
-                        <?php if (empty($subjects)): ?>
-                        <tr>
-                            <td colspan="5" style="padding: 3rem; text-align: center; color: var(--text-light);">
-                                <span class="material-icons-round" style="font-size: 3rem; color: var(--border-color); display: block; margin-bottom: 1rem;">person_off</span>
-                                No subjects found.
-                            </td>
-                        </tr>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
-
-        </div>
-    </main>
-</div>
-<script src="assets/js/app.js"></script>
 </body>
 </html>

@@ -9,7 +9,7 @@ if (!isset($_SESSION['active_study_id'])) {
     redirect('dashboard.php');
 }
 
-if (!hasPermission('add_subject') && !hasPermission('all')) {
+if (!hasPermission('add_subject')) {
     die("Unauthorized access. You do not have permission to add subjects.");
 }
 

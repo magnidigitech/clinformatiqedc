@@ -20,7 +20,7 @@ try {
     $study_id = $_SESSION['active_study_id'];
 
     if ($action === 'save_data') {
-        if (!hasPermission('enter_data') && !hasPermission('edit') && !hasPermission('all')) {
+        if (!hasPermission('enter_data') && !hasPermission('edit')) {
             throw new Exception("Unauthorized: Enter Data permission required");
         }
         // 1. Ensure Tables Exist (Lazy Migration)
@@ -76,10 +76,35 @@ try {
             // Robust delete: handles both NULL and 0 when instance is 0
             $stmt_delete = $pdo->prepare("DELETE FROM subject_data WHERE subject_id = ? AND form_id = ? AND field_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
             $stmt_insert = $pdo->prepare("INSERT INTO subject_data (study_id, subject_id, visit_id, form_id, repeating_instance_id, field_id, value, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt_old = $pdo->prepare("SELECT value FROM subject_data WHERE subject_id = ? AND form_id = ? AND field_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
+            $stmt_audit = $pdo->prepare("INSERT INTO data_audit_log (study_id, subject_id, visit_id, form_id, field_id, repeating_instance_id, old_value, new_value, reason_for_change, change_type, action_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
             foreach ($data as $field_id => $value) {
                 // Ensure value is a string for storage (collapses checkbox arrays)
                 $val_to_save = is_array($value) ? implode(',', $value) : $value;
+                
+                // Get old value for audit logging
+                $stmt_old->execute([$subject_id, $form_id, $field_id, $repeating_instance_id, $repeating_instance_id]);
+                $old_val_raw = $stmt_old->fetch();
+                
+                if ($old_val_raw === false) {
+                    // Initial insert
+                    if ($val_to_save !== '') {
+                        $stmt_audit->execute([
+                            $study_id, $subject_id, $visit_id, $form_id, $field_id, $repeating_instance_id,
+                            null, $val_to_save, 'Initial Value Entry', 'insert', $_SESSION['user_id']
+                        ]);
+                    }
+                } else {
+                    $old_val = $old_val_raw['value'];
+                    if ($old_val !== $val_to_save) {
+                        // Value updated
+                        $stmt_audit->execute([
+                            $study_id, $subject_id, $visit_id, $form_id, $field_id, $repeating_instance_id,
+                            $old_val, $val_to_save, 'Value Updated', 'update', $_SESSION['user_id']
+                        ]);
+                    }
+                }
                 
                 // 1. Delete any existing rows for this field (robustly matches 0 and NULL)
                 $stmt_delete->execute([$subject_id, $form_id, $field_id, $repeating_instance_id, $repeating_instance_id]);
@@ -113,7 +138,7 @@ try {
     } 
     
     elseif ($action === 'create_instance') {
-        if (!hasPermission('enter_data') && !hasPermission('all')) throw new Exception("Unauthorized");
+        if (!hasPermission('enter_data')) throw new Exception("Unauthorized");
         
         $subject_id = $_POST['subject_id'];
         $module_id = $_POST['module_id'];
@@ -134,7 +159,7 @@ try {
     }
     
     elseif ($action === 'delete_instance') {
-        if (!hasPermission('enter_data') && !hasPermission('all')) throw new Exception("Unauthorized");
+        if (!hasPermission('enter_data')) throw new Exception("Unauthorized");
         
         $instance_id = $_POST['instance_id'];
         
@@ -152,25 +177,31 @@ try {
         $repeating_instance_id = (int)($_POST['repeating_instance_id'] ?? 0);
         
         // 1. Queries
-        $stmt_q = $pdo->prepare("SELECT q.*, u.username as created_by_name FROM data_queries q LEFT JOIN users u ON q.created_by = u.id WHERE subject_id = ? AND form_id = ? AND field_id = ? AND repeating_instance_id = ? ORDER BY created_at DESC");
-        $stmt_q->execute([$subject_id, $form_id, $field_id, $repeating_instance_id]);
+        $stmt_q = $pdo->prepare("SELECT q.*, COALESCE(u.name, u.username) as created_by_name FROM data_queries q LEFT JOIN users u ON q.created_by = u.id WHERE subject_id = ? AND form_id = ? AND field_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL)) ORDER BY created_at DESC");
+        $stmt_q->execute([$subject_id, $form_id, $field_id, $repeating_instance_id, $repeating_instance_id]);
         $queries = $stmt_q->fetchAll(PDO::FETCH_ASSOC);
         
         // 2. Comments
-        $stmt_c = $pdo->prepare("SELECT c.*, u.username as created_by_name FROM data_comments c LEFT JOIN users u ON c.created_by = u.id WHERE subject_id = ? AND form_id = ? AND field_id = ? AND repeating_instance_id = ? ORDER BY created_at DESC");
-        $stmt_c->execute([$subject_id, $form_id, $field_id, $repeating_instance_id]);
+        $stmt_c = $pdo->prepare("SELECT c.*, COALESCE(u.name, u.username) as created_by_name FROM data_comments c LEFT JOIN users u ON c.created_by = u.id WHERE subject_id = ? AND form_id = ? AND field_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL)) ORDER BY created_at DESC");
+        $stmt_c->execute([$subject_id, $form_id, $field_id, $repeating_instance_id, $repeating_instance_id]);
         $comments = $stmt_c->fetchAll(PDO::FETCH_ASSOC);
         
         // 3. History (Audit Log)
-        $stmt_h = $pdo->prepare("SELECT h.*, u.username as action_by_name FROM data_audit_log h LEFT JOIN users u ON h.action_by = u.id WHERE subject_id = ? AND form_id = ? AND field_id = ? AND repeating_instance_id = ? ORDER BY action_at DESC");
-        $stmt_h->execute([$subject_id, $form_id, $field_id, $repeating_instance_id]);
+        $stmt_h = $pdo->prepare("SELECT h.*, COALESCE(u.name, u.username) as action_by_name FROM data_audit_log h LEFT JOIN users u ON h.action_by = u.id WHERE subject_id = ? AND form_id = ? AND field_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL)) AND h.change_type NOT IN ('query_update', 'query_status_updated') ORDER BY action_at DESC");
+        $stmt_h->execute([$subject_id, $form_id, $field_id, $repeating_instance_id, $repeating_instance_id]);
         $history = $stmt_h->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Format action_at to clinical format: dd-mm-yyyy | hh:mm:ss
+        foreach ($history as &$h) {
+            $h['action_at'] = date('d-m-Y | H:i:s', strtotime($h['action_at']));
+        }
+        unset($h); // break reference
         
         echo json_encode(['success' => true, 'queries' => $queries, 'comments' => $comments, 'history' => $history]);
     }
 
     elseif ($action === 'add_query') {
-        if (!hasPermission('raise_query') && !hasPermission('all')) {
+        if (!hasPermission('raise_query')) {
             throw new Exception("Unauthorized: Raise Query permission required");
         }
         $subject_id = $_POST['subject_id'];
@@ -181,7 +212,9 @@ try {
         $query_text = trim($_POST['query_text'] ?? '');
         $user_id = $_SESSION['user_id'];
         
-        if (!$query_text) throw new Exception("Remark is required");
+        if ($query_text === '') {
+            $query_text = 'Query raised';
+        }
 
         $pdo->beginTransaction();
         try {
@@ -193,6 +226,13 @@ try {
             // Log History (Initial creation)
             $stmt_h = $pdo->prepare("INSERT INTO data_query_history (query_id, status_from, status_to, remark, created_by) VALUES (?, NULL, 'new', ?, ?)");
             $stmt_h->execute([$query_id, $query_text, $user_id]);
+            
+            // Log in data_audit_log so it shows in field history
+            $stmt_audit = $pdo->prepare("INSERT INTO data_audit_log (study_id, subject_id, visit_id, form_id, field_id, repeating_instance_id, old_value, new_value, reason_for_change, change_type, action_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'query_raised', ?)");
+            $stmt_audit->execute([
+                $study_id, $subject_id, $visit_id, $form_id, $field_id, $repeating_instance_id,
+                null, null, "Query Raised (" . $query_id . "): " . $query_text, $user_id
+            ]);
             
             $pdo->commit();
             echo json_encode(['success' => true]);
@@ -207,11 +247,75 @@ try {
         $new_status = $_POST['status'];
         $remark = trim($_POST['remark'] ?? '');
         $user_id = $_SESSION['user_id'];
+        
+        if ($remark === '') {
+            $remark = 'Status updated';
+        }
 
         if (!$new_status) throw new Exception("Status required");
         
         $pdo->beginTransaction();
         try {
+            // Check if there is an optional field value update
+            $hist_old_val = null;
+            $hist_new_val = null;
+            
+            if (isset($_POST['field_value'])) {
+                if (!hasPermission('enter_data') && !hasPermission('edit')) {
+                    throw new Exception("Unauthorized to edit clinical data");
+                }
+                
+                // Get query information to know context
+                $stmt_qinfo = $pdo->prepare("SELECT subject_id, visit_id, form_id, field_id, COALESCE(repeating_instance_id, 0) as repeating_instance_id FROM data_queries WHERE id = ?");
+                $stmt_qinfo->execute([$query_id]);
+                $qinfo = $stmt_qinfo->fetch();
+                
+                if ($qinfo) {
+                    $field_value = $_POST['field_value'];
+                    $sub_id = $qinfo['subject_id'];
+                    $vis_id = $qinfo['visit_id'];
+                    $frm_id = $qinfo['form_id'];
+                    $fld_id = $qinfo['field_id'];
+                    $inst_id = $qinfo['repeating_instance_id'];
+                    
+                    // Fetch existing value
+                    $stmt_old = $pdo->prepare("SELECT value FROM subject_data WHERE subject_id = ? AND form_id = ? AND field_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
+                    $stmt_old->execute([$sub_id, $frm_id, $fld_id, $inst_id, $inst_id]);
+                    $old_val = $stmt_old->fetchColumn();
+                    
+                    if ($old_val !== $field_value) {
+                        $hist_old_val = $old_val;
+                        $hist_new_val = $field_value;
+                        
+                        // Delete existing rows
+                        $stmt_del = $pdo->prepare("DELETE FROM subject_data WHERE subject_id = ? AND form_id = ? AND field_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
+                        $stmt_del->execute([$sub_id, $frm_id, $fld_id, $inst_id, $inst_id]);
+                        
+                        // Insert new value
+                        $stmt_ins = $pdo->prepare("INSERT INTO subject_data (study_id, subject_id, visit_id, form_id, repeating_instance_id, field_id, value, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                        $stmt_ins->execute([$study_id, $sub_id, $vis_id, $frm_id, $inst_id, $fld_id, $field_value, $user_id]);
+                        
+                        // Log Audit Log entry
+                        $stmt_a = $pdo->prepare("INSERT INTO data_audit_log (study_id, subject_id, visit_id, form_id, field_id, repeating_instance_id, old_value, new_value, reason_for_change, change_type, action_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'update', ?)");
+                        $stmt_a->execute([
+                            $study_id,
+                            $sub_id,
+                            $vis_id,
+                            $frm_id,
+                            $fld_id,
+                            $inst_id,
+                            $old_val,
+                            $field_value,
+                            "Updated query (" . $query_id . ") : Answered: " . $remark,
+                            $user_id
+                        ]);
+                        
+                        // Recalculate Progress
+                        calculateAndSaveProgress($pdo, $study_id, $sub_id, $vis_id, $frm_id, $inst_id);
+                    }
+                }
+            }
+            
             // Get Current Status
             $stmt_curr = $pdo->prepare("SELECT status FROM data_queries WHERE id = ?");
             $stmt_curr->execute([$query_id]);
@@ -219,21 +323,44 @@ try {
             if (!$curr) throw new Exception("Query not found");
             $old_status = $curr['status'];
             
-            // Workflow Logic:
-            // If replying to a query (adding a remark) without explicit status change, or if Manager replies
-            // Manager Replied -> Set to 'answered' (or 'open' if we don't have answered)
-            // Monitor Verified -> Set to 'closed'
-            
-            // For now, trust the frontend passed 'status', but maybe force 'answered' if Manager replies?
-            // Let's rely on frontend passing the correct Next Status, but validate here if needed.
-            
-            // Update Query
+            // Update Query status
             $stmt_upd = $pdo->prepare("UPDATE data_queries SET status = ? WHERE id = ?");
             $stmt_upd->execute([$new_status, $query_id]);
             
-            // Log History
-            $stmt_h = $pdo->prepare("INSERT INTO data_query_history (query_id, status_from, status_to, remark, created_by) VALUES (?, ?, ?, ?, ?)");
-            $stmt_h->execute([$query_id, $old_status, $new_status, $remark, $user_id]);
+            // Log History (with value changes)
+            $stmt_h = $pdo->prepare("INSERT INTO data_query_history (query_id, status_from, status_to, remark, old_value, new_value, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)");
+            $stmt_h->execute([$query_id, $old_status, $new_status, $remark, $hist_old_val, $hist_new_val, $user_id]);
+            
+            // Get query information to log in data_audit_log (when closed or requery)
+            if ($new_status === 'closed' || ($new_status === 'open' && $old_status === 'answered')) {
+                $stmt_qinfo = $pdo->prepare("SELECT subject_id, visit_id, form_id, field_id, COALESCE(repeating_instance_id, 0) as repeating_instance_id FROM data_queries WHERE id = ?");
+                $stmt_qinfo->execute([$query_id]);
+                $qinfo = $stmt_qinfo->fetch();
+                
+                if ($qinfo) {
+                    $sub_id = $qinfo['subject_id'];
+                    $vis_id = $qinfo['visit_id'];
+                    $frm_id = $qinfo['form_id'];
+                    $fld_id = $qinfo['field_id'];
+                    $inst_id = $qinfo['repeating_instance_id'];
+                    
+                    $reason = '';
+                    $change_type = '';
+                    if ($new_status === 'closed') {
+                        $reason = "Query (" . $query_id . ") Closed: " . $remark;
+                        $change_type = 'query_closed';
+                    } else {
+                        $reason = "Requery (" . $query_id . "): " . $remark;
+                        $change_type = 'query_reopened';
+                    }
+                    
+                    $stmt_audit = $pdo->prepare("INSERT INTO data_audit_log (study_id, subject_id, visit_id, form_id, field_id, repeating_instance_id, old_value, new_value, reason_for_change, change_type, action_by) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)");
+                    $stmt_audit->execute([
+                        $study_id, $sub_id, $vis_id, $frm_id, $fld_id, $inst_id,
+                        $reason, $change_type, $user_id
+                    ]);
+                }
+            }
             
             $pdo->commit();
             echo json_encode(['success' => true]);
@@ -245,9 +372,16 @@ try {
 
     elseif ($action === 'get_query_history') {
         $query_id = $_POST['query_id'];
-        $stmt = $pdo->prepare("SELECT h.*, u.username as created_by_name FROM data_query_history h LEFT JOIN users u ON h.created_by = u.id WHERE query_id = ? ORDER BY created_at DESC");
+        $stmt = $pdo->prepare("SELECT h.*, COALESCE(u.name, u.username) as created_by_name FROM data_query_history h LEFT JOIN users u ON h.created_by = u.id WHERE query_id = ? ORDER BY created_at DESC");
         $stmt->execute([$query_id]);
         $history = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Format created_at to clinical format: dd-mm-yyyy | hh:mm:ss
+        foreach ($history as &$h) {
+            $h['created_at'] = date('d-m-Y | H:i:s', strtotime($h['created_at']));
+        }
+        unset($h); // break reference
+        
         echo json_encode(['success' => true, 'history' => $history]);
     }
     
@@ -269,7 +403,7 @@ try {
 
     elseif ($action === 'clear_data') {
         // Strict data entry permission required
-        if (!hasPermission('enter_data') && !hasPermission('edit') && !hasPermission('all')) {
+        if (!hasPermission('enter_data') && !hasPermission('edit')) {
             throw new Exception("Unauthorized: Edit permission required");
         }
         
@@ -311,7 +445,7 @@ try {
 
     elseif ($action === 'mark_missing') {
         // Strict data entry permission required
-        if (!hasPermission('enter_data') && !hasPermission('edit') && !hasPermission('all')) {
+        if (!hasPermission('enter_data') && !hasPermission('edit')) {
             throw new Exception("Unauthorized: Edit permission required");
         }
         
@@ -356,7 +490,7 @@ try {
     }
 
     elseif ($action === 'verify_form') {
-        if (!hasPermission('verify') && !hasPermission('all')) {
+        if (!hasPermission('verify')) {
             throw new Exception("Unauthorized: Verify permission required");
         }
         

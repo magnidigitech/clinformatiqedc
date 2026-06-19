@@ -23,12 +23,15 @@ $pdo = getDB();
 // Handle Add User / Update Roles
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = trim($_POST['email'] ?? '');
+    $name = trim($_POST['name'] ?? '');
     $selected_roles = $_POST['roles'] ?? []; // Array of role names
     $selected_sites = $_POST['sites'] ?? []; // Array of site IDs
     $temp_pass = $_POST['temp_password'] ?? 'ChangeMe123!'; 
 
     if (empty($email)) {
         $error = "Email is required.";
+    } elseif (empty($name)) {
+        $error = "Full Name is required.";
     } elseif (empty($selected_roles)) {
         $error = "Please select at least one role.";
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -51,13 +54,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $username = strstr($email, '@', true);
                 $hash = password_hash($temp_pass, PASSWORD_DEFAULT);
                 
-                $stmt = $pdo->prepare("INSERT INTO users (username, email, password_hash) VALUES (:user, :email, :pass)");
+                $stmt = $pdo->prepare("INSERT INTO users (username, email, password_hash, name) VALUES (:user, :email, :pass, :name)");
                 $stmt->execute([
                     'user' => $username,
                     'email' => $email,
-                    'pass' => $hash
+                    'pass' => $hash,
+                    'name' => $name
                 ]);
                 $target_user_id = $pdo->lastInsertId();
+            } else {
+                // Update Name for existing user
+                $stmt = $pdo->prepare("UPDATE users SET name = :name WHERE id = :id");
+                $stmt->execute(['name' => $name, 'id' => $existing_user_id]);
             }
 
             // 2. Clear existing roles for this user in this study (to handle updates/re-adds cleanly)
@@ -69,9 +77,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             foreach ($selected_roles as $role_name) {
                 $perms = '';
-                if ($role_name === 'Admin') $perms = 'all'; // Or JSON {"all": true} but auth checks for 'all' string too or logic
-                elseif ($role_name === 'Data Manager') $perms = '{"view": true, "add": true, "add_subject": true, "enter_data": true, "edit": true}';
-                elseif ($role_name === 'Data Monitor') $perms = '{"view": true, "query": true, "raise_query": true}';
+                if ($role_name === 'Admin') $perms = 'all';
+                elseif ($role_name === 'Data Coordinator') $perms = '{"view": true, "add": true, "add_subject": true, "enter_data": true, "edit": true}';
+                elseif ($role_name === 'Data Entry') $perms = '{"view": true, "add_subject": true, "enter_data": true, "edit": true}';
+                elseif ($role_name === 'Data Monitor') $perms = '{"view": true, "query": true, "raise_query": true, "verify": true}';
+                elseif ($role_name === 'Data Manager') $perms = '{"view": true, "query": true, "raise_query": true, "verify": true}';
                 
                 $stmt->execute([
                     'uid' => $target_user_id,
@@ -114,13 +124,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Fetch Current Users & Aggregate Roles
 $stmt = $pdo->prepare("
-    SELECT u.username, u.email, su.role_name, su.created_at as joined_at 
+    SELECT u.username, u.email, u.name, su.role_name, su.created_at as joined_at 
     FROM study_users su 
     JOIN users u ON su.user_id = u.id 
     WHERE su.study_id = :sid
     ORDER BY su.created_at DESC
 ");
-$stmt->execute(['sid' => $study_id]);
 $stmt->execute(['sid' => $study_id]);
 $raw_users = $stmt->fetchAll();
 
@@ -137,6 +146,7 @@ foreach ($raw_users as $row) {
         $study_users[$email] = [
             'username' => $row['username'],
             'email' => $row['email'],
+            'name' => $row['name'],
             'joined_at' => $row['joined_at'],
             'roles' => []
         ];
@@ -212,9 +222,12 @@ foreach ($raw_users as $row) {
                                         <td style="padding: 1rem; font-weight: 500;">
                                             <div style="display: flex; align-items: center; gap: 0.5rem;">
                                                 <div style="width: 24px; height: 24px; background: #e2e8f0; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; color: #64748b;">
-                                                    <?php echo strtoupper(substr($u['username'], 0, 1)); ?>
+                                                    <?php echo strtoupper(substr($u['name'] ?: $u['username'], 0, 1)); ?>
                                                 </div>
-                                                <?php echo htmlspecialchars($u['username']); ?>
+                                                <div>
+                                                    <div style="font-weight: 600; color: var(--text-main);"><?php echo htmlspecialchars($u['name'] ?: $u['username']); ?></div>
+                                                    <div style="font-size: 0.75rem; color: var(--text-light);"><?php echo htmlspecialchars($u['username']); ?></div>
+                                                </div>
                                             </div>
                                         </td>
                                         <td style="padding: 1rem;">
@@ -237,6 +250,11 @@ foreach ($raw_users as $row) {
                             <h3 style="margin-bottom: 1rem; font-size: 1rem;">Assign / Update User</h3>
                             <form method="POST">
                                 <div class="form-group">
+                                    <label class="form-label">Full Name</label>
+                                    <input type="text" name="name" class="form-input" placeholder="John Doe" required>
+                                </div>
+
+                                <div class="form-group">
                                     <label class="form-label">Email Address</label>
                                     <input type="email" name="email" class="form-input" placeholder="colleague@example.com" required>
                                 </div>
@@ -244,23 +262,32 @@ foreach ($raw_users as $row) {
                                 <div class="form-group">
                                     <label class="form-label">Roles</label>
                                     <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem;">
-                                        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem;">
-                                            <input type="checkbox" name="roles[]" value="Admin"> 
-                                            <span style="font-weight: 500;">Admin</span>
-                                            <span style="color: var(--text-light); font-size: 0.75rem;">(Full Config Access)</span>
-                                        </label>
-                                        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem;">
-                                            <input type="checkbox" name="roles[]" value="Data Manager"> 
-                                            <span style="font-weight: 500;">Data Manager</span>
-                                            <span style="color: var(--text-light); font-size: 0.75rem;">(Entry & Edit)</span>
-                                        </label>
-                                        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem;">
-                                            <input type="checkbox" name="roles[]" value="Data Monitor"> 
-                                            <span style="font-weight: 500;">Data Monitor</span>
-                                            <span style="color: var(--text-light); font-size: 0.75rem;">(Queries & Verify)</span>
-                                        </label>
-                                    </div>
-                                    </div>
+                                         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem;">
+                                             <input type="checkbox" name="roles[]" value="Admin"> 
+                                             <span style="font-weight: 500;">Admin</span>
+                                             <span style="color: var(--text-light); font-size: 0.75rem;">(Full Config Access)</span>
+                                         </label>
+                                         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem;">
+                                             <input type="checkbox" name="roles[]" value="Data Coordinator"> 
+                                             <span style="font-weight: 500;">Data Coordinator</span>
+                                             <span style="color: var(--text-light); font-size: 0.75rem;">(Entry, Edit & Manage)</span>
+                                         </label>
+                                         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem;">
+                                             <input type="checkbox" name="roles[]" value="Data Entry"> 
+                                             <span style="font-weight: 500;">Data Entry</span>
+                                             <span style="color: var(--text-light); font-size: 0.75rem;">(Enter & Edit Data)</span>
+                                         </label>
+                                         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem;">
+                                             <input type="checkbox" name="roles[]" value="Data Monitor"> 
+                                             <span style="font-weight: 500;">Data Monitor</span>
+                                             <span style="color: var(--text-light); font-size: 0.75rem;">(Queries & Verify)</span>
+                                         </label>
+                                         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem;">
+                                             <input type="checkbox" name="roles[]" value="Data Manager"> 
+                                             <span style="font-weight: 500;">Data Manager</span>
+                                             <span style="color: var(--text-light); font-size: 0.75rem;">(Queries & Verify, identical to Monitor)</span>
+                                         </label>
+                                     </div>
                                 </div>
 
                                 <div class="form-group">

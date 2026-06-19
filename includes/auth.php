@@ -73,6 +73,60 @@ function initializeUserRoles($user_id) {
 }
 
 /**
+ * Refresh user assignments from DB to stay in sync with database changes
+ */
+function refreshUserAssignments($user_id) {
+    $pdo = getDB();
+    
+    // Get all assignments for this user
+    $stmt = $pdo->prepare("
+        SELECT su.*, su.role_name, su.permissions, s.name as study_name, s.study_code, s.created_at as study_created_at 
+        FROM study_users su 
+        JOIN studies s ON su.study_id = s.id 
+        WHERE su.user_id = :uid
+    ");
+    $stmt->execute(['uid' => $user_id]);
+    $assignments = $stmt->fetchAll();
+    
+    $_SESSION['assignments'] = $assignments;
+    
+    // If we have an active assignment, verify it still exists. If not, reset/set to first.
+    $active_id = $_SESSION['active_assignment_id'] ?? null;
+    $still_valid = false;
+    if ($active_id) {
+        foreach ($assignments as $assign) {
+            if ($assign['id'] == $active_id) {
+                $still_valid = true;
+                // Update active context session values in case permissions/names changed
+                $_SESSION['active_role_name'] = $assign['role_name'];
+                $_SESSION['active_study_name'] = $assign['study_name'];
+                $_SESSION['active_study_code'] = $assign['study_code'] ?? 'None';
+                $raw_perms = $assign['permissions'];
+                if ($raw_perms === 'all') {
+                    $_SESSION['active_permissions'] = ['all' => true];
+                } else {
+                    $perms = json_decode($raw_perms, true);
+                    $_SESSION['active_permissions'] = $perms ?? [];
+                }
+                break;
+            }
+        }
+    }
+    
+    if (!$still_valid && !empty($assignments)) {
+        setActiveContext($assignments[0]['id']);
+    } elseif (empty($assignments)) {
+        $_SESSION['active_assignment_id'] = null;
+        $_SESSION['active_role_id'] = null;
+        $_SESSION['active_study_id'] = null;
+        $_SESSION['active_role_name'] = 'None';
+        $_SESSION['active_study_name'] = 'None';
+        $_SESSION['active_study_code'] = 'None';
+        $_SESSION['active_permissions'] = [];
+    }
+}
+
+/**
  * Switch the active context (Role/Study pair)
  */
 function setActiveContext($assignment_id) {
@@ -105,25 +159,35 @@ function setActiveContext($assignment_id) {
  * Check if current user has specific permission
  */
 function hasPermission($permission_key) {
-    // 1. Admin Override
+    // 1. Admin Override (Restricted to read-only for clinical data/queries)
     $role = $_SESSION['active_role_name'] ?? '';
     // Normalize mainly for comparison
     $role_lower = strtolower($role);
 
     if ($role_lower === 'admin') {
+        $clinical_writes = ['add', 'add_subject', 'enter_data', 'edit', 'raise_query', 'verify'];
+        if (in_array($permission_key, $clinical_writes)) {
+            return false;
+        }
         return true;
     }
 
     // 2. Strict Role Definitions
     
-    // Data Manager: Can add subjects, enter data. NO Queries. (Update: Can view queries now)
-    if ($role_lower === 'data manager') {
+    // Data Coordinator (previously Data Manager): Can add subjects, enter data, view queries.
+    if ($role_lower === 'data coordinator') {
         $allowed = ['view', 'add', 'add_subject', 'enter_data', 'edit', 'query'];
         return in_array($permission_key, $allowed);
     }
     
-    // Data Monitor: Can Query + Verify. NO add/edit subjects/data.
-    if ($role_lower === 'data monitor') {
+    // Data Entry: Can view/add subjects, enter/edit data.
+    if ($role_lower === 'data entry') {
+        $allowed = ['view', 'add_subject', 'enter_data', 'edit'];
+        return in_array($permission_key, $allowed);
+    }
+    
+    // Data Monitor / Data Manager: Can Query + Verify. NO add/edit subjects/data.
+    if ($role_lower === 'data monitor' || $role_lower === 'data manager') {
         // Added 'verify' for SDV (Source Data Verification)
         $allowed = ['view', 'query', 'raise_query', 'verify'];
         return in_array($permission_key, $allowed);
@@ -149,6 +213,9 @@ function requireLogin() {
         header("Location: index.php");
         exit();
     }
+    // Refresh assignments dynamically to pull in any database updates (e.g. Data Manager role)
+    refreshUserAssignments($_SESSION['user_id']);
+    
     // Prevent caching of protected pages
     header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
     header("Cache-Control: post-check=0, pre-check=0", false);

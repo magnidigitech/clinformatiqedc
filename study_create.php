@@ -78,13 +78,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'abbr' => $abbreviation
             ]);
 
-            // 2. Assign Current User as Admin, Data Manager, AND Data Monitor
+            // 2. Assign Current User as Admin, Data Coordinator, AND Data Monitor
             // We use the new 'study_users' table structure
             
             $roles_to_assign = [
                 ['name' => 'Admin', 'perms' => 'all'],
-                ['name' => 'Data Manager', 'perms' => '{"view": true, "add": true, "add_subject": true, "enter_data": true, "edit": true}'],
-                ['name' => 'Data Monitor', 'perms' => '{"view": true, "query": true, "raise_query": true}']
+                ['name' => 'Data Coordinator', 'perms' => '{"view": true, "add": true, "add_subject": true, "enter_data": true, "edit": true}'],
+                ['name' => 'Data Monitor', 'perms' => '{"view": true, "query": true, "raise_query": true, "verify": true}'],
+                ['name' => 'Data Manager', 'perms' => '{"view": true, "query": true, "raise_query": true, "verify": true}']
             ];
 
             $stmt = $pdo->prepare("INSERT INTO study_users (user_id, study_id, role_name, permissions) VALUES (:uid, :sid, :role, :perms)");

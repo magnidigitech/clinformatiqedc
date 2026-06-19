@@ -27,38 +27,67 @@ $modules_stmt->execute([$study_id]);
 $modules = $modules_stmt->fetchAll();
 
 // Determine Context
-$current_module_id = $_GET['module_id'] ?? null;
-$current_visit_id = $_GET['visit_id'] ?? null;
-$current_form_id = $_GET['form_id'] ?? null;
-
-// Default to Visit context if nothing selected, unless no visits then module.
-if (!$current_visit_id && !$current_module_id) {
-    if (!empty($visits)) {
-        $current_visit_id = $visits[0]['id'];
-    } elseif (!empty($modules)) {
-        $current_module_id = $modules[0]['id'];
+$context = 'visit'; // default
+if (isset($_GET['module_id'])) {
+    $context = 'module';
+} elseif (isset($_GET['visit_id'])) {
+    $context = 'visit';
+} else {
+    // If neither is in the URL, default based on visits/modules existence
+    if (empty($visits) && !empty($modules)) {
+        $context = 'module';
     }
 }
 
-$forms = [];
-$context = 'visit'; // or 'module'
+$current_module_id = null;
+$current_visit_id = null;
+$current_form_id = $_GET['form_id'] ?? null;
 
-if ($current_module_id) {
-    $context = 'module';
-    $current_visit_id = null; // Reset visit if module selected
+$forms = [];
+$curr_parent_name = '';
+
+if ($context === 'module') {
+    $current_module_id = $_GET['module_id'] ?? null;
+    if (empty($current_module_id) && !empty($modules)) {
+        $current_module_id = $modules[0]['id'];
+    }
     
-    $forms_stmt = $pdo->prepare("SELECT * FROM study_forms WHERE repeating_module_id = ? ORDER BY order_index ASC");
-    $forms_stmt->execute([$current_module_id]);
-    $forms = $forms_stmt->fetchAll();
+    if ($current_module_id) {
+        // Fetch module name
+        foreach ($modules as $m) {
+            if ($m['id'] == $current_module_id) {
+                $curr_parent_name = $m['name'];
+                break;
+            }
+        }
+        
+        $forms_stmt = $pdo->prepare("SELECT * FROM study_forms WHERE repeating_module_id = ? ORDER BY order_index ASC");
+        $forms_stmt->execute([$current_module_id]);
+        $forms = $forms_stmt->fetchAll();
+    }
     
     if (!$current_form_id && !empty($forms)) {
         $current_form_id = $forms[0]['id'];
     }
-} elseif ($current_visit_id) {
-    $context = 'visit';
-    $forms_stmt = $pdo->prepare("SELECT * FROM study_forms WHERE visit_id = ? ORDER BY order_index ASC");
-    $forms_stmt->execute([$current_visit_id]);
-    $forms = $forms_stmt->fetchAll();
+} else {
+    $current_visit_id = $_GET['visit_id'] ?? null;
+    if (empty($current_visit_id) && !empty($visits)) {
+        $current_visit_id = $visits[0]['id'];
+    }
+    
+    if ($current_visit_id) {
+        // Fetch visit name
+        foreach ($visits as $v) {
+            if ($v['id'] == $current_visit_id) {
+                $curr_parent_name = $v['name'];
+                break;
+            }
+        }
+        
+        $forms_stmt = $pdo->prepare("SELECT * FROM study_forms WHERE visit_id = ? ORDER BY order_index ASC");
+        $forms_stmt->execute([$current_visit_id]);
+        $forms = $forms_stmt->fetchAll();
+    }
     
     if (!$current_form_id && !empty($forms)) {
         $current_form_id = $forms[0]['id'];
@@ -333,19 +362,26 @@ $option_groups = $opt_groups_stmt->fetchAll();
             </div>
 
             <div id="form-canvas" class="builder-canvas" data-form-id="<?php echo $current_form_id; ?>">
-                <?php if (empty($visits)): ?>
+                <?php if ($context === 'visit' && empty($visits)): ?>
                     <div class="empty-canvas-state">
                         <span class="material-icons-round" style="font-size: 3rem; color: var(--accent-color); margin-bottom: 1rem;">account_tree</span>
                         <h3 style="margin-bottom: 0.5rem; color: var(--primary-color);">Let's set up your study</h3>
                         <p style="margin-bottom: 1.5rem; max-width: 400px; margin-left: auto; margin-right: auto;">You need to create at least one Visit (e.g., "Screening") before you can build forms.</p>
                         <button class="btn btn-primary" onclick="openVisitModal()">Create First Visit</button>
                     </div>
+                <?php elseif ($context === 'module' && empty($modules)): ?>
+                    <div class="empty-canvas-state">
+                        <span class="material-icons-round" style="font-size: 3rem; color: var(--accent-color); margin-bottom: 1rem;">repeat</span>
+                        <h3 style="margin-bottom: 0.5rem; color: var(--primary-color);">Let's set up your repeating data</h3>
+                        <p style="margin-bottom: 1.5rem; max-width: 400px; margin-left: auto; margin-right: auto;">You need to create at least one Repeating Module (e.g., "Adverse Events") before you can build forms.</p>
+                        <button class="btn btn-primary" onclick="openModuleModal()">Create First Module</button>
+                    </div>
                 <?php elseif (!$current_form_id): ?>
                     <div class="empty-canvas-state">
                         <span class="material-icons-round" style="font-size: 3rem; color: var(--accent-color); margin-bottom: 1rem;">description</span>
                         <h3 style="margin-bottom: 0.5rem; color: var(--primary-color);">Select or Create a Form</h3>
                         <p style="margin-bottom: 1.5rem;">There are no forms selected. Choose one from the sidebar or create a new one to start building.</p>
-                        <button class="btn btn-primary" onclick="openFormModal()">+ Create Form in <?php echo htmlspecialchars($curr_visit_name); ?></button>
+                        <button class="btn btn-primary" onclick="openFormModal()">+ Create Form in <?php echo htmlspecialchars($curr_parent_name); ?></button>
                     </div>
                 <?php else: ?>
                     <?php if (empty($fields)): ?>

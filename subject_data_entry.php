@@ -31,11 +31,12 @@ try {
 // Helper to check roles
 // Helper to check roles
 $current_role = strtolower($_SESSION['active_role_name'] ?? '');
-// Loose matching for roles
-$is_monitor = (strpos($current_role, 'monitor') !== false);
-$is_manager = (strpos($current_role, 'manager') !== false) || (strpos($current_role, 'coordinator') !== false); 
+// Monitor includes data monitor and data manager roles
+$is_monitor = (strpos($current_role, 'monitor') !== false) || (strpos($current_role, 'manager') !== false);
+// Manager includes coordinator (which represents data coordinator role)
+$is_manager = (strpos($current_role, 'coordinator') !== false); 
 $is_admin = (strpos($current_role, 'admin') !== false);
-$can_edit = ($is_admin || $current_role === 'data_entry' || $current_role === 'investigator' || $is_manager);
+$can_edit = ($current_role === 'data_entry' || strpos($current_role, 'entry') !== false || $current_role === 'investigator' || $is_manager || (strpos($current_role, 'manager') !== false));
 
 // Mock Subject ID for now if not passed (or handle error)
 $subject_id = $_GET['subject_id'] ?? 1;
@@ -152,10 +153,26 @@ $current_instance_id = $_GET['instance_id'] ?? null;
 $current_visit_id = $_GET['visit_id'] ?? null;
 $current_form_id = $_GET['form_id'] ?? null;
 
+if ($current_form_id) {
+    $stmt_f_chk = $pdo->prepare("SELECT visit_id, repeating_module_id FROM study_forms WHERE id = ?");
+    $stmt_f_chk->execute([$current_form_id]);
+    $form_parent = $stmt_f_chk->fetch(PDO::FETCH_ASSOC);
+    if ($form_parent) {
+        if ($form_parent['repeating_module_id']) {
+            $current_module_id = $form_parent['repeating_module_id'];
+            $current_visit_id = null;
+        } else {
+            $current_visit_id = $form_parent['visit_id'];
+            $current_module_id = null;
+        }
+    }
+}
+
 // Default to first visit if nothing selected
 if (!$current_module_id && !$current_visit_id) {
     $current_visit_id = array_key_first($structure);
 }
+
 
 // If in Module Mode
 $current_module = null;
@@ -417,7 +434,7 @@ if ($current_form_id && $subject_id) {
         </div>
 <?php
 // Determine View Mode
-$can_edit = hasPermission('enter_data') || hasPermission('all');
+$can_edit = hasPermission('enter_data');
 ?>
         <div style="margin-left: auto; display: flex; gap: 0.5rem;">
             <?php 
@@ -434,7 +451,7 @@ $can_edit = hasPermission('enter_data') || hasPermission('all');
             
             <button class="btn btn-outline" onclick="location.reload()"><?php echo $can_edit ? 'Discard Changes' : 'Refresh'; ?></button>
             
-            <?php if (($is_monitor || $is_admin) && $is_complete && !$is_verified): ?>
+            <?php if (hasPermission('verify') && $is_complete && !$is_verified): ?>
                 <button type="button" class="btn btn-primary" style="background-color: #059669; border-color: #059669;" onclick="verifyForm()">
                     <span class="material-icons-round" style="font-size: 1.1rem; margin-right: 0.25rem;">verified</span>
                     Mark as Verified
@@ -722,16 +739,28 @@ $can_edit = hasPermission('enter_data') || hasPermission('all');
                                 $f_val = $existing_data[$field['id']] ?? '';
                                 $is_f = ($f_val !== '' && $f_val !== null);
                                 
-                                // Query Logic
-                                $field_queries = $q_map[$field['id']] ?? [];
-                                $has_open_query = false;
-                                $query_count = count($field_queries);
-                                foreach ($field_queries as $s) {
-                                    if (in_array($s, ['new', 'open', 'unconfirmed'])) {
-                                        $has_open_query = true;
-                                        break;
-                                    }
-                                }
+                                 // Query Logic
+                                 $field_queries = $q_map[$field['id']] ?? [];
+                                 $query_count = count($field_queries);
+                                 
+                                 $active_queries = [];
+                                 foreach ($field_queries as $s) {
+                                     if ($s !== 'closed') {
+                                         $active_queries[] = $s;
+                                     }
+                                 }
+                                 $active_query_count = count($active_queries);
+                                 
+                                 $has_open_query = false;
+                                 $has_answered_query = false;
+                                 foreach ($active_queries as $s) {
+                                     if (in_array($s, ['new', 'open', 'unconfirmed'])) {
+                                         $has_open_query = true;
+                                     }
+                                     if ($s === 'answered') {
+                                         $has_answered_query = true;
+                                     }
+                                 }
                             ?>
                                 <div class="crf-field" data-field-id="<?php echo $field['id']; ?>">
                                     <div class="field-label-row">
@@ -741,63 +770,90 @@ $can_edit = hasPermission('enter_data') || hasPermission('all');
                                         </span>
                                         
                                         <!-- Field Label -->
-                                        <div class="field-label">
-                                            <?php echo ($index + 1) . '. ' . htmlspecialchars($field['label']); ?>
+                                        <div class="field-label" style="display: flex; align-items: center; gap: 0.25rem; flex-wrap: wrap;">
+                                            <span><?php echo ($index + 1) . '. ' . htmlspecialchars($field['label']); ?></span>
                                             <?php if($field['is_required']) echo '<span style="color:#ef4444">*</span>'; ?>
+                                            <?php if (!empty($field['help_text'])): ?>
+                                                <div class="tooltip-container">
+                                                    <span class="material-icons-round tooltip-trigger" style="font-size: 1.1rem; color: #94a3b8; cursor: help; vertical-align: middle; margin-left: 2px;">info_outline</span>
+                                                    <span class="tooltip-text"><?php echo htmlspecialchars($field['help_text']); ?></span>
+                                                </div>
+                                            <?php endif; ?>
                                         </div>
                                         
-                                        <!-- Query Status Icon (Red ?) -->
-                                        <?php if ($query_count > 0): ?>
-                                            <div style="cursor: pointer; position: relative;" onclick="handleFieldAction('view_queries', <?php echo $field['id']; ?>, '<?php echo addslashes($field['label']); ?>')">
-                                                <span class="material-icons-round" style="color: <?php echo $has_open_query ? '#ef4444' : '#10b981'; ?>;">help_outline</span>
-                                                <span style="position: absolute; top: -5px; right: -5px; background: <?php echo $has_open_query ? '#ef4444' : '#10b981'; ?>; color: white; font-size: 0.6rem; padding: 1px 4px; border-radius: 99px;"><?php echo $query_count; ?></span>
-                                            </div>
-                                        <?php endif; ?>
-
-                                        <!-- Actions Menu (3 dots) -->
-                                        <div class="field-actions" style="position: relative;">
-                                            <span class="material-icons-round hover-icon" style="font-size: 1.25rem; color: #94a3b8; cursor: pointer;" onclick="toggleMenu('field-menu-<?php echo $field['id']; ?>', event)">more_vert</span>
-                                            
-                                            <!-- Dropdown -->
-                                            <div id="field-menu-<?php echo $field['id']; ?>" class="dropdown-menu">
-                                                
-                                                <?php if ($is_monitor || $is_admin): ?>
-                                                <div class="dropdown-item" onclick="handleFieldAction('add_query', <?php echo $field['id']; ?>, '<?php echo addslashes($field['label']); ?>')">
-                                                    <span class="material-icons-round" style="font-size: 1rem; color: #ef4444; margin-right: 0.5rem;">help_outline</span> Add query
-                                                </div>
-                                                <?php endif; ?>
-                                                
-                                                <?php if($query_count > 0): ?>
-                                                    <div class="dropdown-item" onclick="handleFieldAction('view_queries', <?php echo $field['id']; ?>, '<?php echo addslashes($field['label']); ?>')">
-                                                        <span class="material-icons-round" style="font-size: 1rem; color: var(--accent-color); margin-right: 0.5rem;">visibility</span> View queries
-                                                    </div>
-                                                <?php endif; ?>
-                                                
-                                                <?php if ($is_manager || $is_admin): ?>
-                                                    <div class="dropdown-item" onclick="handleFieldAction('clear_data', <?php echo $field['id']; ?>, '<?php echo addslashes($field['label']); ?>')">
-                                                        <span class="material-icons-round" style="font-size: 1rem; color: #f59e0b; margin-right: 0.5rem;">backspace</span> Clear
-                                                    </div>
-                                                    
-                                                    <div class="dropdown-item" onclick="handleFieldAction('mark_missing', <?php echo $field['id']; ?>, '<?php echo addslashes($field['label']); ?>')">
-                                                        <span class="material-icons-round" style="font-size: 1rem; color: #64748b; margin-right: 0.5rem;">block</span> Mark field section
-                                                    </div>
-                                                <?php endif; ?>
-                                                
-                                                <div class="dropdown-item" onclick="handleFieldAction('comments', <?php echo $field['id']; ?>, '<?php echo addslashes($field['label']); ?>')">
-                                                    <span class="material-icons-round" style="font-size: 1rem; color: var(--text-light); margin-right: 0.5rem;">chat_bubble_outline</span> Comments
-                                                </div>
-                                                
-                                                <div class="dropdown-item" onclick="handleFieldAction('history', <?php echo $field['id']; ?>, '<?php echo addslashes($field['label']); ?>')">
-                                                    <span class="material-icons-round" style="font-size: 1rem; color: var(--text-light); margin-right: 0.5rem;">history</span> History
-                                                </div>
-                                            </div>
-                                        </div>
+                                         <!-- Direct Field Action Icons -->
+                                         <div class="field-direct-actions" style="display: flex; align-items: center; gap: 0.25rem;">
+                                               <?php 
+                                               $can_raise_query = hasPermission('raise_query');
+                                               $can_view_query = hasPermission('query') || hasPermission('all');
+                                               
+                                               if ($can_view_query || $can_raise_query): 
+                                                   $query_color = '#94a3b8'; // default gray
+                                                   $query_tooltip = 'Queries';
+                                                   $click_handler = '';
+                                                   
+                                                   if ($active_query_count > 0) {
+                                                       if ($has_open_query) {
+                                                           $query_color = '#3b82f6'; // Blue if query is not answered (new / open)
+                                                           $query_tooltip = 'View Queries (Unanswered)';
+                                                           $click_handler = "onclick=\"handleFieldAction('view_queries', {$field['id']}, '" . addslashes($field['label']) . "')\"";
+                                                       } elseif ($has_answered_query) {
+                                                           $query_color = '#ea580c'; // Orange if query is answered
+                                                           $query_tooltip = 'View Queries (Answered)';
+                                                           $click_handler = "onclick=\"handleFieldAction('view_queries', {$field['id']}, '" . addslashes($field['label']) . "')\"";
+                                                       }
+                                                   } else {
+                                                       if ($query_count > 0) {
+                                                           // Closed queries exist - allow raising a new query if permitted, otherwise view history
+                                                           if ($can_raise_query) {
+                                                               $query_tooltip = 'Add Query';
+                                                               $click_handler = "onclick=\"handleFieldAction('add_query', {$field['id']}, '" . addslashes($field['label']) . "')\"";
+                                                           } else {
+                                                               $query_tooltip = 'View Queries (Closed)';
+                                                               $click_handler = "onclick=\"handleFieldAction('view_queries', {$field['id']}, '" . addslashes($field['label']) . "')\"";
+                                                           }
+                                                       } else {
+                                                           // No queries ever raised
+                                                           if ($can_raise_query) {
+                                                               $query_tooltip = 'Add Query';
+                                                               $click_handler = "onclick=\"handleFieldAction('add_query', {$field['id']}, '" . addslashes($field['label']) . "')\"";
+                                                           } else {
+                                                               // Data coordinator / Admin can only view and cannot raise query. Since no query exists, disabled look
+                                                               $query_tooltip = 'No queries raised';
+                                                               $click_handler = 'style="cursor: default; opacity: 0.4;"';
+                                                           }
+                                                       }
+                                                   }
+                                                   ?>
+                                                  <button type="button" class="btn-icon-sm" title="<?php echo $query_tooltip; ?>" <?php echo (strpos($click_handler, 'onclick') !== false) ? $click_handler : ''; ?> <?php echo (strpos($click_handler, 'style') !== false) ? $click_handler : ''; ?>>
+                                                      <span class="material-icons-round" style="color: <?php echo $query_color; ?>; font-size: 1.15rem;">help_outline</span>
+                                                      <?php if ($active_query_count > 0): ?>
+                                                          <span class="badge" style="background: <?php echo $query_color; ?>;"><?php echo $active_query_count; ?></span>
+                                                      <?php endif; ?>
+                                                  </button>
+                                              <?php endif; ?>
+                                             
+                                             <?php if ($can_edit): ?>
+                                                 <button type="button" class="btn-icon-sm" title="Clear Data" onclick="handleFieldAction('clear_data', <?php echo $field['id']; ?>, '<?php echo addslashes($field['label']); ?>')">
+                                                     <span class="material-icons-round" style="color: #f59e0b; font-size: 1.15rem;">backspace</span>
+                                                 </button>
+                                                 
+                                                 <button type="button" class="btn-icon-sm" title="Mark Missing" onclick="handleFieldAction('mark_missing', <?php echo $field['id']; ?>, '<?php echo addslashes($field['label']); ?>')">
+                                                     <span class="material-icons-round" style="color: #64748b; font-size: 1.15rem;">block</span>
+                                                 </button>
+                                             <?php endif; ?>
+                                             
+                                             <button type="button" class="btn-icon-sm" title="Comments" onclick="handleFieldAction('comments', <?php echo $field['id']; ?>, '<?php echo addslashes($field['label']); ?>')">
+                                                 <span class="material-icons-round" style="color: var(--text-light); font-size: 1.15rem;">chat_bubble_outline</span>
+                                             </button>
+                                             
+                                             <button type="button" class="btn-icon-sm" title="History" onclick="handleFieldAction('history', <?php echo $field['id']; ?>, '<?php echo addslashes($field['label']); ?>')">
+                                                 <span class="material-icons-round" style="color: var(--text-light); font-size: 1.15rem;">history</span>
+                                             </button>
+                                         </div>
                                     </div>
                                     <div class="input-wrapper">
                                         <?php renderFieldInput($field, $existing_data[$field['id']] ?? '', $choices_map); ?>
-                                        <?php if(!empty($field['help_text'])): ?>
-                                            <div class="field-help"><?php echo htmlspecialchars($field['help_text']); ?></div>
-                                        <?php endif; ?>
                                     </div>
                                 </div>
                             <?php endforeach; ?>
@@ -979,6 +1035,15 @@ $can_edit = hasPermission('enter_data') || hasPermission('all');
                          document.querySelectorAll('.btn-primary').forEach(b => b.disabled = false);
                      }
                      
+                     // Update current form progress inside CRF card dynamically
+                     if (data.form_progress !== undefined) {
+                        const fText = document.querySelector('.form-progress-text');
+                        const fBar = document.querySelector('.current-form-progress');
+                        if (fText) fText.innerText = data.form_progress + '%';
+                        if (fBar) fBar.style.width = data.form_progress + '%';
+                     }
+
+                     
                      // Global Progress
                      if (data.subject_progress !== undefined) {
                         const gpBar = document.getElementById('global-progress-bar');
@@ -1137,7 +1202,7 @@ $can_edit = hasPermission('enter_data') || hasPermission('all');
             </div>
             
             <div class="form-group">
-                <label>Remark <span style="color:red">*</span></label>
+                <label>Remark</label>
                 <textarea id="addQueryText" class="form-input" rows="4" style="font-family: inherit;"></textarea>
             </div>
         </div>
@@ -1152,12 +1217,12 @@ $can_edit = hasPermission('enter_data') || hasPermission('all');
 <div id="viewQueryModal" class="modal-overlay">
     <div class="modal-content" style="width: 600px;">
         <div class="modal-header">
-            <h3>Queries for field <span id="viewQueryFieldName"></span></h3>
+            <h3>Query #<span id="viewQueryHeaderId"></span> - <span id="viewQueryFieldName"></span></h3>
             <button class="btn-icon" onclick="closeModal('viewQueryModal')"><span class="material-icons-round">close</span></button>
         </div>
         <div class="modal-body">
             <input type="hidden" id="viewQueryFieldId">
-            <div class="form-group">
+            <div class="form-group" style="display: none;">
                 <label>Select a query</label>
                 <select id="querySelect" class="form-input" onchange="loadQueryDetails(this.value)">
                     <option value="">Loading...</option>
@@ -1169,6 +1234,14 @@ $can_edit = hasPermission('enter_data') || hasPermission('all');
                 
                 <div style="margin-bottom: 1rem;">
                     <label style="font-size: 0.85rem; color: #64748b;">Current status: <span id="queryCurrentStatus" style="font-weight: 600; color: var(--text-dark);"></span></label>
+                </div>
+                
+                <div class="form-group">
+                    <label style="font-weight: 600; font-size: 0.875rem; color: var(--text-main); margin-bottom: 0.5rem; display: block;">Field Value</label>
+                    <div id="queryPreviousValueText" style="font-size: 0.85rem; color: var(--text-light); margin-bottom: 0.5rem;">Previous Value: </div>
+                    <div id="queryFieldEditContainer">
+                        <!-- Cloned field input will be placed here by JS -->
+                    </div>
                 </div>
                 
                 <div class="form-group">
@@ -1184,7 +1257,7 @@ $can_edit = hasPermission('enter_data') || hasPermission('all');
                 </div>
                 
                 <div class="form-group">
-                    <label>Remark <span style="color:red">*</span></label>
+                    <label>Remark</label>
                     <textarea id="queryUpdateRemark" class="form-input" rows="3"></textarea>
                 </div>
                 
@@ -1200,8 +1273,11 @@ $can_edit = hasPermission('enter_data') || hasPermission('all');
             </div>
         </div>
         <div class="modal-footer">
+            <?php if ($can_raise_query): ?>
+                <button class="btn btn-outline" id="btnRaiseNewQueryFromModal" style="margin-right: auto; border-color: var(--primary-color); color: var(--primary-color);" onclick="raiseNewQueryFromModal()">Raise New Query</button>
+            <?php endif; ?>
             <button class="btn btn-outline" onclick="closeModal('viewQueryModal')">Cancel</button>
-            <button class="btn btn-primary" onclick="submitUpdateQuery()">Save changes</button>
+            <button class="btn btn-primary" id="btnSaveQueryUpdate" onclick="submitUpdateQuery()">Save changes</button>
         </div>
     </div>
 </div>
@@ -1303,19 +1379,19 @@ $can_edit = hasPermission('enter_data') || hasPermission('all');
 
 <!-- 6. History Modal -->
 <div id="historyModal" class="modal-overlay">
-    <div class="modal-content" style="width: 800px;">
+    <div class="modal-content" style="width: 90%; max-width: 950px;">
         <div class="modal-header">
             <h3>Value change history for '<span id="historyFieldName"></span>'</h3>
             <button class="btn-icon" onclick="closeModal('historyModal')"><span class="material-icons-round">close</span></button>
         </div>
-        <div class="modal-body">
-            <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+        <div class="modal-body" style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; table-layout: fixed; min-width: 750px;">
                 <thead style="background: #f8fafc; border-bottom: 1px solid var(--border-color);">
                     <tr>
-                        <th style="text-align: left; padding: 0.75rem;">Updated on</th>
-                        <th style="text-align: left; padding: 0.75rem;">Updated by</th>
-                        <th style="text-align: left; padding: 0.75rem;">Old value</th>
-                        <th style="text-align: left; padding: 0.75rem;">New value</th>
+                        <th style="text-align: left; padding: 0.75rem; width: 170px;">Updated on</th>
+                        <th style="text-align: left; padding: 0.75rem; width: 120px;">Updated by</th>
+                        <th style="text-align: left; padding: 0.75rem; width: 120px;">Old value</th>
+                        <th style="text-align: left; padding: 0.75rem; width: 120px;">New value</th>
                         <th style="text-align: left; padding: 0.75rem;">Reason / Type</th>
                     </tr>
                 </thead>
@@ -1324,11 +1400,9 @@ $can_edit = hasPermission('enter_data') || hasPermission('all');
                 </tbody>
             </table>
         </div>
-        <div class="modal-footer">
-            <button class="btn btn-outline" onclick="closeModal('historyModal')">Close</button>
-        </div>
     </div>
 </div>
+
 
 <style>
 /* Dropdown Styles */
@@ -1416,7 +1490,6 @@ $can_edit = hasPermission('enter_data') || hasPermission('all');
     // --- Add Query ---
     async function submitAddQuery() {
         const text = document.getElementById('addQueryText').value;
-        if (!text) { alert("Remark is required"); return; }
         
         const fd = new FormData();
         fd.append('action', 'add_query');
@@ -1486,10 +1559,66 @@ $can_edit = hasPermission('enter_data') || hasPermission('all');
 
     // --- View/Update Query ---
     let currentQueries = [];
+    let fieldAuditHistory = [];
     async function openViewQueryModal(fieldId, fieldName) {
          document.getElementById('viewQueryFieldId').value = fieldId;
          document.getElementById('viewQueryFieldName').innerText = fieldName;
+         
          openModal('viewQueryModal');
+         
+         // 1. Clone the field input from the page and add to query field edit container
+         const container = document.getElementById('queryFieldEditContainer');
+         container.innerHTML = '';
+         const originalWrapper = document.querySelector(`.crf-field[data-field-id="${fieldId}"] .input-wrapper`);
+         if (originalWrapper) {
+             const prevVal = getFieldWrapperValueText(originalWrapper);
+             document.getElementById('queryPreviousValueText').innerHTML = `Previous Value: <span style="font-weight: 600; color: var(--text-dark);">${prevVal}</span>`;
+             
+             const clonedWrapper = originalWrapper.cloneNode(true);
+             clonedWrapper.style.marginLeft = '0';
+             clonedWrapper.style.maxWidth = '100%';
+             
+             // To prevent name collision, prefix names and ids in the clone
+             clonedWrapper.querySelectorAll('input, select, textarea').forEach(el => {
+                 if (el.name) el.name = 'modal_' + el.name;
+                 if (el.id) el.id = 'modal_' + el.id;
+             });
+             
+             // Keep cloned inputs empty/blank initially for Coordinator, copy for Monitor
+             const isMonitor = <?php echo $is_monitor ? 'true' : 'false'; ?>;
+             const clonedInputs = clonedWrapper.querySelectorAll('input, select, textarea');
+             if (!isMonitor) {
+                 clonedInputs.forEach(clone => {
+                     if (clone.type === 'radio' || clone.type === 'checkbox') {
+                         clone.checked = false;
+                     } else if (clone.tagName === 'SELECT') {
+                         clone.value = '';
+                     } else {
+                         clone.value = '';
+                     }
+                 });
+             } else {
+                 // Explicitly copy values for Monitor
+                 const originalInputs = originalWrapper.querySelectorAll('input, select, textarea');
+                 originalInputs.forEach((orig, idx) => {
+                     const clone = clonedInputs[idx];
+                     if (!clone) return;
+                     if (orig.type === 'radio' || orig.type === 'checkbox') {
+                         clone.checked = orig.checked;
+                     } else {
+                         clone.value = orig.value;
+                     }
+                 });
+             }
+             
+             // Disable clone elements if user cannot edit
+             const canEdit = <?php echo $can_edit ? 'true' : 'false'; ?>;
+             if (!canEdit) {
+                 clonedInputs.forEach(el => { el.disabled = true; });
+             }
+             
+             container.appendChild(clonedWrapper);
+         }
          
          const fd = new FormData();
          fd.append('action', 'get_field_details');
@@ -1506,11 +1635,13 @@ $can_edit = hasPermission('enter_data') || hasPermission('all');
              const data = await res.json();
              if (data.success) {
                  currentQueries = data.queries;
+                 fieldAuditHistory = data.history; // Cache field audit logs
                  select.innerHTML = '<option value="">Select a query</option>';
                  data.queries.forEach((q, idx) => {
                      const opt = document.createElement('option');
                      opt.value = q.id;
-                     opt.text = `Query #${q.id} (${q.status}) - ${q.created_at}`;
+                     const statusCapitalized = q.status.charAt(0).toUpperCase() + q.status.slice(1);
+                     opt.text = `Query #${q.id} (${statusCapitalized})`;
                      select.add(opt);
                  });
                  if (data.queries.length > 0) {
@@ -1519,6 +1650,39 @@ $can_edit = hasPermission('enter_data') || hasPermission('all');
                  }
              }
          } catch(e) { console.error(e); }
+    }
+    
+    function getClonedFieldValue() {
+        const container = document.getElementById('queryFieldEditContainer');
+        if (!container) return '';
+        
+        const radios = container.querySelectorAll('input[type="radio"]');
+        if (radios.length > 0) {
+            const checked = Array.from(radios).find(r => r.checked);
+            return checked ? checked.value : '';
+        }
+        
+        const checkboxes = container.querySelectorAll('input[type="checkbox"]');
+        if (checkboxes.length > 0) {
+            return Array.from(checkboxes).filter(c => c.checked).map(c => c.value).join(',');
+        }
+        
+        const select = container.querySelector('select');
+        if (select) {
+            return select.value;
+        }
+        
+        const textarea = container.querySelector('textarea');
+        if (textarea) {
+            return textarea.value;
+        }
+        
+        const input = container.querySelector('input');
+        if (input) {
+            return input.value;
+        }
+        
+        return '';
     }
     
     async function loadQueryDetails(queryId) {
@@ -1530,39 +1694,90 @@ $can_edit = hasPermission('enter_data') || hasPermission('all');
         if (!query) return;
         
         document.getElementById('queryDetailsSection').style.display = 'block';
-        document.getElementById('queryCurrentStatus').innerText = query.status.charAt(0).toUpperCase() + query.status.slice(1);
+        document.getElementById('viewQueryHeaderId').innerText = query.id;
+        
+        // Dynamically style current status
+        const statusSpan = document.getElementById('queryCurrentStatus');
+        statusSpan.innerText = query.status.charAt(0).toUpperCase() + query.status.slice(1);
+        if (query.status === 'new') {
+            statusSpan.style.color = '#2563eb'; // Blue
+        } else if (query.status === 'open') {
+            statusSpan.style.color = '#0284c7'; // Sky Blue
+        } else if (query.status === 'answered') {
+            statusSpan.style.color = '#ea580c'; // Orange
+        } else if (query.status === 'closed') {
+            statusSpan.style.color = '#16a34a'; // Green
+        } else {
+            statusSpan.style.color = 'var(--text-dark)';
+        }
         
         // Dynamic Status Options based on Role and Current Status
         const statusSelect = document.getElementById('queryNewStatus');
         statusSelect.innerHTML = '<option value="">Please select</option>';
         
-        <?php if ($is_monitor || $is_admin): ?>
-            // Monitors can: Close, Re-open (if answered), Confirm
+        <?php if ($is_monitor): ?>
+            // Monitor can select Close Query (if new, open, or answered) and Re Query (if answered)
             if (['new', 'open', 'answered', 'unconfirmed'].includes(query.status)) {
                  statusSelect.add(new Option('Close Query', 'closed'));
             }
-             if (['closed', 'resolved'].includes(query.status)) {
-                 statusSelect.add(new Option('Re-open Query', 'open'));
+            if (query.status === 'answered') {
+                 statusSelect.add(new Option('Re Query', 'open'));
             }
         <?php endif; ?>
 
-        <?php if ($is_manager || $is_admin): ?>
-            // Managers can: Answer (mark as Answered)
-            // If they are replying, standard flow is to set to Answered
+        <?php if ($is_manager || $current_role === 'data_entry' || strpos($current_role, 'entry') !== false): ?>
+            // Coordinator can only select Answered Query if status is new or open
              if (['new', 'open'].includes(query.status)) {
-                 statusSelect.add(new Option('Mark as Answered', 'answered'));
+                  statusSelect.add(new Option('Answered Query', 'answered'));
             }
         <?php endif; ?>
-
-        // Default open fallback
-        if (statusSelect.options.length === 1) {
-             statusSelect.add(new Option('Open', 'open'));
-             statusSelect.add(new Option('Answered', 'answered'));
-             statusSelect.add(new Option('Closed', 'closed'));
-        }
 
         document.getElementById('queryNewStatus').value = '';
         document.getElementById('queryUpdateRemark').value = '';
+
+        const hasOptions = (statusSelect.options.length > 1);
+        document.getElementById('queryNewStatus').disabled = !hasOptions;
+        document.getElementById('queryUpdateRemark').disabled = !hasOptions;
+        const btnSave = document.getElementById('btnSaveQueryUpdate');
+        if (btnSave) btnSave.style.display = hasOptions ? 'block' : 'none';
+        
+        // Show Previous Value for Monitors on answered/closed queries
+        const isMonitor = <?php echo $is_monitor ? 'true' : 'false'; ?>;
+        const prevTextEl = document.getElementById('queryPreviousValueText');
+        
+        if (isMonitor && ['answered', 'closed'].includes(query.status)) {
+            // Find the audit log entry where the query was resolved (coordinator saved new value)
+            const resolutionAudit = fieldAuditHistory.find(h => 
+                h.change_type === 'update' && 
+                h.reason_for_change && 
+                (h.reason_for_change.includes('Updated via query resolution') || h.reason_for_change.includes('Updated query'))
+            );
+            
+            let prevVal = 'Empty';
+            if (resolutionAudit) {
+                prevVal = resolutionAudit.old_value || 'Empty';
+            } else {
+                const originalWrapper = document.querySelector(`.crf-field[data-field-id="${query.field_id}"] .input-wrapper`);
+                prevVal = getFieldWrapperValueText(originalWrapper);
+            }
+            
+            prevTextEl.innerHTML = `Previous Value: <span style="font-weight: 600; color: var(--text-dark);">${prevVal}</span>`;
+        } else {
+            // Coordinator view or new/open query: show the current page value as Previous Value
+            const originalWrapper = document.querySelector(`.crf-field[data-field-id="${query.field_id}"] .input-wrapper`);
+            const currentVal = getFieldWrapperValueText(originalWrapper);
+            prevTextEl.innerHTML = `Previous Value: <span style="font-weight: 600; color: var(--text-dark);">${currentVal}</span>`;
+        }
+
+        const clonedInputs = document.getElementById('queryFieldEditContainer').querySelectorAll('input, select, textarea');
+        clonedInputs.forEach(el => {
+            // Keep disabled for Monitors since they only verify, otherwise based on hasOptions
+            if (isMonitor) {
+                el.disabled = true;
+            } else {
+                el.disabled = !hasOptions;
+            }
+        });
         
         // Fetch History
         const fd = new FormData();
@@ -1576,23 +1791,84 @@ $can_edit = hasPermission('enter_data') || hasPermission('all');
             const res = await fetch('ajax_data.php', { method: 'POST', body: fd });
             const data = await res.json();
              if (data.success) {
-                 list.innerHTML = '';
-                 data.history.forEach(h => {
-                     const li = document.createElement('li');
-                     li.style.cssText = "border-bottom: 1px solid #e2e8f0; padding: 0.5rem 0;";
-                     li.innerHTML = `
-                        <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 2px;">
-                            <strong>${h.created_by_name || 'User'}</strong> - ${h.created_at}
-                        </div>
-                        <div style="font-size: 0.85rem; color: #334155; margin-bottom: 4px;">${h.remark}</div>
-                        <div style="font-size: 0.75rem; color: #94a3b8; font-style: italic;">
-                            Status: ${h.status_from || 'New'} &rarr; ${h.status_to}
-                        </div>
-                     `;
-                     list.appendChild(li);
-                 });
-             }
-        } catch(e) {}
+                  list.innerHTML = '';
+                  data.history.forEach(h => {
+                      const li = document.createElement('li');
+                      li.style.cssText = "border-bottom: 1px solid #e2e8f0; padding: 0.5rem 0;";
+                      
+                      let statusText = '';
+                      if (!h.status_from) {
+                          statusText = 'New Query Raised';
+                      } else if (h.status_to === 'closed') {
+                          statusText = 'Query Resolved';
+                      } else {
+                          statusText = `Status: ${h.status_from} &rarr; ${h.status_to}`;
+                      }
+
+                      let valueChangeHtml = '';
+                      if (h.old_value !== null && h.new_value !== null) {
+                          valueChangeHtml = `
+                             <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 4px;">
+                                 Value change: <span style="text-decoration: line-through; color: #ef4444;">${h.old_value || 'Empty'}</span> &rarr; <span style="font-weight: 600; color: #16a34a;">${h.new_value || 'Empty'}</span>
+                             </div>
+                          `;
+                      }
+
+                      li.innerHTML = `
+                         <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 2px;">
+                             <strong>${h.created_by_name || 'User'}</strong> - ${h.created_at}
+                         </div>
+                         <div style="font-size: 0.85rem; color: #334155; margin-bottom: 4px;">${h.remark}</div>
+                         ${valueChangeHtml}
+                         <div style="font-size: 0.75rem; color: #94a3b8; font-style: italic;">
+                             ${statusText}
+                         </div>
+                      `;
+                      list.appendChild(li);
+                  });
+              }
+         } catch(e) {}
+     }
+
+    function getFieldWrapperValueText(wrapper) {
+        if (!wrapper) return 'Empty';
+        
+        const radios = wrapper.querySelectorAll('input[type="radio"]');
+        if (radios.length > 0) {
+            const checked = Array.from(radios).find(r => r.checked);
+            return checked ? checked.value : 'Empty';
+        }
+        
+        const checkboxes = wrapper.querySelectorAll('input[type="checkbox"]');
+        if (checkboxes.length > 0) {
+            const checkedVals = Array.from(checkboxes).filter(c => c.checked).map(c => c.value);
+            return checkedVals.length > 0 ? checkedVals.join(', ') : 'Empty';
+        }
+        
+        const select = wrapper.querySelector('select');
+        if (select) {
+            const selectedOpt = select.options[select.selectedIndex];
+            return selectedOpt ? (selectedOpt.text || selectedOpt.value) : 'Empty';
+        }
+        
+        const textarea = wrapper.querySelector('textarea');
+        if (textarea) {
+            return textarea.value.trim() || 'Empty';
+        }
+        
+        const input = wrapper.querySelector('input');
+        if (input) {
+            return input.value.trim() || 'Empty';
+        }
+        
+        return 'Empty';
+    }
+
+    function raiseNewQueryFromModal() {
+        const fieldId = document.getElementById('viewQueryFieldId').value;
+        const fieldName = document.getElementById('viewQueryFieldName').innerText;
+        closeModal('viewQueryModal');
+        handleFieldAction('add_query', fieldId, fieldName);
     }
 
     async function submitUpdateQuery() {
@@ -1601,14 +1877,28 @@ $can_edit = hasPermission('enter_data') || hasPermission('all');
          const remark = document.getElementById('queryUpdateRemark').value;
          
          if (!queryId) return;
-         if (!status) { alert("Please select a new status"); return; }
-         if (!remark) { alert("Remark is required"); return; }
+         if (!status) {
+             const statusSelect = document.getElementById('queryNewStatus');
+             statusSelect.style.outline = '2px solid #ef4444';
+             statusSelect.scrollIntoView({ behavior: 'smooth', block: 'center' });
+             setTimeout(() => {
+                 statusSelect.style.outline = '';
+             }, 3000);
+             return;
+         }
          
          const fd = new FormData();
          fd.append('action', 'update_query_status');
          fd.append('query_id', queryId);
          fd.append('status', status);
          fd.append('remark', remark);
+         
+         // Only collect field_value if user can edit
+         const canEdit = <?php echo $can_edit ? 'true' : 'false'; ?>;
+         if (canEdit) {
+             const fValue = getClonedFieldValue();
+             fd.append('field_value', fValue);
+         }
          
          try {
             const res = await fetch('ajax_data.php', { method: 'POST', body: fd });
@@ -1762,11 +2052,11 @@ $can_edit = hasPermission('enter_data') || hasPermission('all');
                      const tr = document.createElement('tr');
                      tr.style.borderBottom = '1px solid var(--border-color)';
                      tr.innerHTML = `
-                        <td style="padding: 0.75rem;">${h.action_at}</td>
-                        <td style="padding: 0.75rem;">${h.action_by_name}</td>
-                        <td style="padding: 0.75rem; color: #ef4444;">${h.old_value || ''}</td>
-                        <td style="padding: 0.75rem; color: #10b981;">${h.new_value || ''}</td>
-                        <td style="padding: 0.75rem;">${h.reason_for_change || h.change_type}</td>
+                        <td style="padding: 0.75rem; white-space: nowrap;">${h.action_at}</td>
+                        <td style="padding: 0.75rem; white-space: normal; word-break: break-word;">${h.action_by_name}</td>
+                        <td style="padding: 0.75rem; color: #ef4444; white-space: normal; word-break: break-word;">${h.old_value || ''}</td>
+                        <td style="padding: 0.75rem; color: #10b981; white-space: normal; word-break: break-word;">${h.new_value || ''}</td>
+                        <td style="padding: 0.75rem; white-space: normal; word-break: break-word;">${h.reason_for_change || h.change_type}</td>
                      `;
                      tbody.appendChild(tr);
                  });

@@ -778,3 +778,77 @@ table {
         width: 100% !important;
     }
 }
+
+/* Tooltip Styles */
+.tooltip-container {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+.tooltip-container .tooltip-text {
+    visibility: hidden;
+    width: 250px;
+    background-color: var(--primary-light);
+    color: #fff;
+    text-align: left;
+    border-radius: var(--radius-md);
+    padding: 8px 12px;
+    position: absolute;
+    z-index: 100;
+    top: 50%;
+    left: calc(100% + 10px);
+    transform: translateY(-50%);
+    opacity: 0;
+    transition: opacity 0.2s, visibility 0.2s;
+    font-size: 0.75rem;
+    font-weight: 400;
+    line-height: 1.4;
+    box-shadow: var(--shadow-lg);
+    pointer-events: none;
+    border: 1px solid rgba(255,255,255,0.1);
+    white-space: normal;
+}
+.tooltip-container .tooltip-text::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    right: 100%;
+    margin-top: -6px;
+    border-width: 6px;
+    border-style: solid;
+    border-color: transparent var(--primary-light) transparent transparent;
+}
+.tooltip-container:hover .tooltip-text {
+    visibility: visible;
+    opacity: 1;
+}
+
+/* Direct Field Action Icons styles */
+.btn-icon-sm {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: var(--radius-md);
+    transition: background-color 0.2s, opacity 0.2s;
+    opacity: 0.6;
+}
+.btn-icon-sm:hover {
+    background-color: #f1f5f9;
+    opacity: 1;
+}
+.btn-icon-sm .badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    color: white;
+    font-size: 0.65rem;
+    padding: 1px 4.5px;
+    border-radius: 99px;
+    font-weight: 700;
+    line-height: 1;
+}
