@@ -493,7 +493,7 @@ if ($current_form_id && $subject_id) {
         
         <!-- Centered Logo -->
         <div style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); height: 32px; display: flex; align-items: center;">
-            <img src="EDC.png" alt="Logo" style="height: 100%; width: auto;">
+            <img src="edc_large_logo.png" alt="Logo" style="height: 100%; width: auto;">
         </div>
 <?php
 // Determine View Mode

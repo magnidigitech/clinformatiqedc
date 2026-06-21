@@ -61,7 +61,7 @@ $sites = $stmt->fetchAll();
     <aside class="sidebar">
         <div class="sidebar-header">
             <img src="edc_small_logo.png" class="sidebar-logo logo-small" alt="Logo">
-            <img src="EDC.png" class="sidebar-logo logo-large" alt="Logo">
+            <img src="edc_large_logo.png" class="sidebar-logo logo-large" alt="Logo">
         </div>
         <nav style="padding: 1rem 0;">
             <a href="study.php" class="nav-link">

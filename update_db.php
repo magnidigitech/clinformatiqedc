@@ -239,7 +239,7 @@ foreach ($queries as $index => $query) {
 <body>
     <div class="container">
         <div class="header">
-            <img src="EDC.png" alt="Logo">
+            <img src="edc_large_logo.png" alt="Logo">
             <div>
                 <h1>Database Schema Update</h1>
                 <div style="font-size: 0.85rem; color: var(--text-light); margin-top: 0.25rem;">Automatic Migration Log</div>
