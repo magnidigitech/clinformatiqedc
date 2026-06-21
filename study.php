@@ -249,11 +249,9 @@ if (isApiRequest() || isset($_GET['ajax_search'])) {
             <td style="padding: 1rem 0.5rem;"><?php echo htmlspecialchars($sub['site_name']); ?></td>
             <td style="padding: 1rem 0.5rem;">
                 <?php 
-                    $statusColor = '#64748b'; $bg = '#f1f5f9';
-                    if ($sub['status'] == 'Active') { $statusColor = '#166534'; $bg = '#dcfce7'; }
-                    if ($sub['status'] == 'Screening') { $statusColor = '#854d0e'; $bg = '#fef9c3'; }
+                    $subj_status = getSubjectReviewStatus($pdo, $sub['id']);
                 ?>
-                <span style="color: <?php echo $statusColor; ?>; background: <?php echo $bg; ?>; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.75rem;"><?php echo htmlspecialchars($sub['status']); ?></span>
+                <span style="color: <?php echo $subj_status['color']; ?>; background: <?php echo $subj_status['bg']; ?>; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.75rem; font-weight: 500;"><?php echo htmlspecialchars($subj_status['text']); ?></span>
             </td>
             <td style="padding: 1rem 0.5rem;">
                 <?php $prog = $sub['progress'] ?? 0; ?>
@@ -482,7 +480,7 @@ if (isApiRequest() || isset($_GET['ajax_search'])) {
                         <tr style="text-align: left; border-bottom: 2px solid var(--border-color);">
                             <th style="padding: 0.75rem 0.5rem;">Subject ID</th>
                             <th style="padding: 0.75rem 0.5rem;">Site</th>
-                            <th style="padding: 0.75rem 0.5rem;">Status</th>
+                            <th style="padding: 0.75rem 0.5rem;">Review Status</th>
                             <th style="padding: 0.75rem 0.5rem;">Progress</th>
                             <th style="padding: 0.75rem 0.5rem;">Actions</th>
                         </tr>
@@ -496,11 +494,9 @@ if (isApiRequest() || isset($_GET['ajax_search'])) {
                             <td style="padding: 1rem 0.5rem;"><?php echo htmlspecialchars($sub['site_name']); ?></td>
                             <td style="padding: 1rem 0.5rem;">
                                 <?php 
-                                    $statusColor = '#64748b'; $bg = '#f1f5f9';
-                                    if ($sub['status'] == 'Active') { $statusColor = '#166534'; $bg = '#dcfce7'; }
-                                    if ($sub['status'] == 'Screening') { $statusColor = '#854d0e'; $bg = '#fef9c3'; }
+                                    $subj_status = getSubjectReviewStatus($pdo, $sub['id']);
                                 ?>
-                                <span style="color: <?php echo $statusColor; ?>; background: <?php echo $bg; ?>; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.75rem;"><?php echo htmlspecialchars($sub['status']); ?></span>
+                                <span style="color: <?php echo $subj_status['color']; ?>; background: <?php echo $subj_status['bg']; ?>; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.75rem; font-weight: 500;"><?php echo htmlspecialchars($subj_status['text']); ?></span>
                             </td>
                             <td style="padding: 1rem 0.5rem;">
                                 <?php $prog = $sub['progress'] ?? 0; ?>

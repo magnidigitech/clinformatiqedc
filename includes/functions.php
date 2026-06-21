@@ -287,3 +287,61 @@ function renderFormAuditTrail($pdo, $study_id, $subject_id, $current_form_id, $r
     $html .= '</tbody></table>';
     return $html;
 }
+
+/**
+ * Calculate the overall Review Status of a Subject
+ */
+function getSubjectReviewStatus($pdo, $subject_id) {
+    // Fetch all form statuses for this subject
+    $stmt = $pdo->prepare("SELECT * FROM subject_form_status WHERE subject_id = ?");
+    $stmt->execute([$subject_id]);
+    $statuses = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    if (empty($statuses)) {
+        return ['text' => 'Draft', 'color' => '#64748b', 'bg' => '#f1f5f9'];
+    }
+    
+    $any_completed = false;
+    $all_sdr = true;
+    $all_monitor = true;
+    $all_manager = true;
+    
+    foreach ($statuses as $s) {
+        $is_complete = (bool)($s['is_complete'] ?? false) || ($s['status'] === 'complete');
+        if ($is_complete) {
+            $any_completed = true;
+            if (empty($s['sdr_submitted'])) {
+                $all_sdr = false;
+            }
+            if (empty($s['monitor_reviewed'])) {
+                $all_monitor = false;
+            }
+            if (empty($s['manager_reviewed'])) {
+                $all_manager = false;
+            }
+        }
+    }
+    
+    if (!$any_completed) {
+        return ['text' => 'Draft', 'color' => '#64748b', 'bg' => '#f1f5f9'];
+    }
+    
+    if ($all_monitor && $all_manager && $all_sdr) {
+        return ['text' => 'SRVed', 'color' => '#0d8e6f', 'bg' => '#f0fdf4'];
+    }
+    
+    if ($all_manager && $all_sdr) {
+        return ['text' => 'Manager Reviewed', 'color' => '#0d8e6f', 'bg' => '#f0fdf4'];
+    }
+    
+    if ($all_monitor && $all_sdr) {
+        return ['text' => 'Monitor Reviewed', 'color' => '#ea580c', 'bg' => '#fff7ed'];
+    }
+    
+    if ($all_sdr) {
+        return ['text' => 'SDR Submitted', 'color' => '#1d6f97', 'bg' => '#eef7fa'];
+    }
+    
+    return ['text' => 'Draft', 'color' => '#64748b', 'bg' => '#f1f5f9'];
+}
+
