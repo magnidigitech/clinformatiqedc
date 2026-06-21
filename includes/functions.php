@@ -292,12 +292,105 @@ function renderFormAuditTrail($pdo, $study_id, $subject_id, $current_form_id, $r
  * Calculate the overall Review Status of a Subject
  */
 function getSubjectReviewStatus($pdo, $subject_id) {
-    // Fetch all form statuses for this subject
-    $stmt = $pdo->prepare("SELECT * FROM subject_form_status WHERE subject_id = ?");
-    $stmt->execute([$subject_id]);
-    $statuses = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    // 1. Get study ID for this subject
+    $stmt_sub = $pdo->prepare("SELECT study_id FROM subjects WHERE id = ?");
+    $stmt_sub->execute([$subject_id]);
+    $study_id = $stmt_sub->fetchColumn();
     
-    if (empty($statuses)) {
+    if (!$study_id) {
+        return ['text' => 'Draft', 'color' => '#64748b', 'bg' => '#f1f5f9'];
+    }
+
+    // 2. Fetch all main forms (linked to visits) for this study
+    $stmt_main_forms = $pdo->prepare("
+        SELECT f.id FROM study_forms f
+        JOIN study_visits v ON f.visit_id = v.id
+        WHERE v.study_id = ?
+    ");
+    $stmt_main_forms->execute([$study_id]);
+    $main_form_ids = $stmt_main_forms->fetchAll(PDO::FETCH_COLUMN);
+
+    // 3. Fetch all active repeating instances for the subject
+    $stmt_rep_instances = $pdo->prepare("
+        SELECT id, repeating_module_id FROM subject_repeating_instances
+        WHERE subject_id = ? AND status = 'active'
+    ");
+    $stmt_rep_instances->execute([$subject_id]);
+    $rep_instances = $stmt_rep_instances->fetchAll(PDO::FETCH_ASSOC);
+
+    // 4. Fetch all repeating module forms
+    $stmt_rep_forms = $pdo->prepare("
+        SELECT id, repeating_module_id FROM study_forms
+        WHERE repeating_module_id IS NOT NULL
+    ");
+    $stmt_rep_forms->execute();
+    $rep_forms_raw = $stmt_rep_forms->fetchAll(PDO::FETCH_ASSOC);
+    
+    $rep_module_forms = [];
+    foreach ($rep_forms_raw as $rf) {
+        $rep_module_forms[$rf['repeating_module_id']][] = $rf['id'];
+    }
+
+    // 5. Query all status entries for this subject in subject_form_status
+    $stmt_status = $pdo->prepare("SELECT * FROM subject_form_status WHERE subject_id = ?");
+    $stmt_status->execute([$subject_id]);
+    $status_rows = $stmt_status->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Index status entries by [form_id][repeating_instance_id]
+    $status_map = [];
+    foreach ($status_rows as $row) {
+        $inst_id = (int)($row['repeating_instance_id'] ?? 0);
+        $status_map[$row['form_id']][$inst_id] = $row;
+    }
+
+    // 6. Check if ALL main forms and repeating instance forms are completed and reviewed
+    $all_completed_and_reviewed = true;
+    $any_form_started = false;
+
+    if (empty($main_form_ids)) {
+        $all_completed_and_reviewed = false;
+    } else {
+        foreach ($main_form_ids as $fid) {
+            $s = $status_map[$fid][0] ?? null;
+            $is_complete = $s ? ((bool)($s['is_complete'] ?? false) || ($s['status'] === 'complete') || ((int)($s['progress_percent'] ?? 0) === 100)) : false;
+            $is_reviewed = $s ? ((bool)($s['monitor_reviewed'] ?? false) && (bool)($s['manager_reviewed'] ?? false)) : false;
+            
+            if ($s) {
+                $any_form_started = true;
+            }
+            if (!$is_complete || !$is_reviewed) {
+                $all_completed_and_reviewed = false;
+            }
+        }
+    }
+
+    // Check repeating instances
+    foreach ($rep_instances as $inst) {
+        $inst_id = $inst['id'];
+        $mod_id = $inst['repeating_module_id'];
+        $forms = $rep_module_forms[$mod_id] ?? [];
+        
+        foreach ($forms as $fid) {
+            $s = $status_map[$fid][$inst_id] ?? null;
+            $is_complete = $s ? ((bool)($s['is_complete'] ?? false) || ($s['status'] === 'complete') || ((int)($s['progress_percent'] ?? 0) === 100)) : false;
+            $is_reviewed = $s ? ((bool)($s['monitor_reviewed'] ?? false) && (bool)($s['manager_reviewed'] ?? false)) : false;
+            
+            if ($s) {
+                $any_form_started = true;
+            }
+            if (!$is_complete || !$is_reviewed) {
+                $all_completed_and_reviewed = false;
+            }
+        }
+    }
+
+    // If completely done and reviewed, return Completed
+    if ($all_completed_and_reviewed) {
+        return ['text' => 'Completed', 'color' => '#0d8e6f', 'bg' => '#f0fdf4'];
+    }
+
+    // 7. Fallback to calculating status of currently completed/started forms
+    if (empty($status_rows) || !$any_form_started) {
         return ['text' => 'Draft', 'color' => '#64748b', 'bg' => '#f1f5f9'];
     }
     
@@ -306,8 +399,8 @@ function getSubjectReviewStatus($pdo, $subject_id) {
     $all_monitor = true;
     $all_manager = true;
     
-    foreach ($statuses as $s) {
-        $is_complete = (bool)($s['is_complete'] ?? false) || ($s['status'] === 'complete');
+    foreach ($status_rows as $s) {
+        $is_complete = (bool)($s['is_complete'] ?? false) || ($s['status'] === 'complete') || ((int)($s['progress_percent'] ?? 0) === 100);
         if ($is_complete) {
             $any_completed = true;
             if (empty($s['sdr_submitted'])) {
