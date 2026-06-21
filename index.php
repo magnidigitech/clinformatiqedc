@@ -37,10 +37,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <div class="login-wrapper">
     <div class="login-card">
-        <div class="login-header">
-            <img src="EDC.png" alt="Logo" style="height: 64px; width: 64px; object-fit: contain; margin-bottom: 1.25rem; border-radius: var(--radius-lg);">
-            <h2>Clinformatiq EDC</h2>
-            <p style="color: var(--text-light); margin-top: 0.5rem;">Secure Access Portal</p>
+        <div class="login-header" style="text-align: center; margin-bottom: 2rem;">
+            <img src="EDC.png" alt="Logo" style="height: 90px; width: auto; object-fit: contain;">
         </div>
 
         <?php if ($error): ?>
