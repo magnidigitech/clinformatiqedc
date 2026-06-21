@@ -2,20 +2,20 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 :root {
-    --primary-color: #0f172a;
-    /* Slate 900 */
-    --primary-light: #1e293b;
-    /* Slate 800 */
-    --accent-color: #2563eb;
-    /* Blue 600 */
-    --accent-hover: #1d4ed8;
-    /* Blue 700 */
+    --primary-color: #0d8e6f;
+    /* Brand Blue/Cyan */
+    --primary-light: #0b785e;
+    /* Darker shade for hover/active */
+    --accent-color: #1d6f97;
+    /* Brand Teal/Green */
+    --accent-hover: #165675;
+    /* Darker shade of teal */
     --text-main: #334155;
     /* Slate 700 */
     --text-light: #64748b;
     /* Slate 500 */
-    --bg-body: #f8fafc;
-    /* Slate 50 */
+    --bg-body: #f5faf8;
+    /* Soft teal-tinted background */
     --bg-card: #ffffff;
     --border-color: #e2e8f0;
     /* Slate 200 */
@@ -435,32 +435,41 @@ a {
     height: 64px;
     display: flex;
     align-items: center;
-    padding: 0 1.25rem;
-    /* Center icon in collapsed state */
-    font-weight: 700;
-    font-size: 1.25rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    justify-content: center;
+    background-color: #ffffff;
+    border-bottom: 1px solid var(--border-color);
     overflow: hidden;
+    padding: 0 0.5rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.sidebar-header span {
-    opacity: 0;
-    transition: opacity 0.2s;
-    margin-left: 0.5rem;
+.sidebar-logo {
+    height: 48px;
+    max-width: 90%;
+    object-fit: contain;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.sidebar:hover .sidebar-header span {
-    opacity: 1;
+/* Toggle logo display based on sidebar expanded/collapsed state */
+.sidebar-logo.logo-small {
+    display: block;
+}
+
+.sidebar-logo.logo-large {
+    display: none;
+}
+
+.sidebar:hover .sidebar-logo.logo-small {
+    display: none;
+}
+
+.sidebar:hover .sidebar-logo.logo-large {
+    display: block;
 }
 
 /* Logo icon replacement (optional, or just hide text) */
 .sidebar-header::before {
-    content: 'C';
-    /* Simple logo fallback */
-    font-size: 1.5rem;
-    font-weight: 800;
-    min-width: 24px;
-    text-align: center;
+    display: none;
 }
 
 /* Nav Links */
@@ -565,8 +574,8 @@ a {
     border-radius: 9999px;
     font-size: 0.75rem;
     font-weight: 600;
-    background-color: #eff6ff;
-    color: #2563eb;
+    background-color: #e0f2fe;
+    color: var(--primary-color);
     white-space: nowrap;
 }
 
@@ -576,7 +585,7 @@ a {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, #f1f5f9 0%, #cbd5e1 100%);
+    background: linear-gradient(135deg, #e6f4f1 0%, #d5e9f2 100%);
     padding: 1rem;
 }
 
@@ -680,24 +689,22 @@ table {
 
     .sidebar-header {
         display: flex;
-        /* Note: In this specific DOM structure, sidebar is inside flex container.
-           Complex without rewrites. 
-           Let's just allow the sidebar to be a Drawer and add a button to Top Nav via JS?
-           
-           Actually, the JS I wrote adds the button to sidebar-header. 
-           If sidebar is hidden (translateX -100%), button is hidden.
-           
-           ADJUSTMENT: We need a visible header bar on mobile.
-        */
         position: absolute;
         top: 0;
         right: 0;
         left: 0;
         z-index: 51;
         width: 100%;
-        background: var(--primary-color);
+        background: #ffffff;
         transform: none;
-        /* Always visible header? No, sidebar is transformed */
+    }
+
+    .sidebar-logo.logo-small {
+        display: none !important;
+    }
+
+    .sidebar-logo.logo-large {
+        display: block !important;
     }
 
     /* NEW MOBILE STRATEGY */
@@ -785,6 +792,7 @@ table {
     display: inline-flex;
     align-items: center;
 }
+
 .tooltip-container .tooltip-text {
     visibility: hidden;
     width: 250px;
@@ -805,9 +813,10 @@ table {
     line-height: 1.4;
     box-shadow: var(--shadow-lg);
     pointer-events: none;
-    border: 1px solid rgba(255,255,255,0.1);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     white-space: normal;
 }
+
 .tooltip-container .tooltip-text::after {
     content: "";
     position: absolute;
@@ -818,6 +827,7 @@ table {
     border-style: solid;
     border-color: transparent var(--primary-light) transparent transparent;
 }
+
 .tooltip-container:hover .tooltip-text {
     visibility: visible;
     opacity: 1;
@@ -837,10 +847,12 @@ table {
     transition: background-color 0.2s, opacity 0.2s;
     opacity: 0.6;
 }
+
 .btn-icon-sm:hover {
     background-color: #f1f5f9;
     opacity: 1;
 }
+
 .btn-icon-sm .badge {
     position: absolute;
     top: -4px;

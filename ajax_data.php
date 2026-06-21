@@ -19,6 +19,11 @@ try {
     $pdo = getDB();
     $study_id = $_SESSION['active_study_id'];
 
+    $role_lower = strtolower($_SESSION['active_role_name'] ?? '');
+    $is_coordinator = (strpos($role_lower, 'coordinator') !== false) || (strpos($role_lower, 'admin') !== false);
+    $is_monitor = (strpos($role_lower, 'monitor') !== false) || (strpos($role_lower, 'admin') !== false);
+    $is_manager = (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'admin') !== false);
+
     if ($action === 'save_data') {
         if (!hasPermission('enter_data') && !hasPermission('edit')) {
             throw new Exception("Unauthorized: Enter Data permission required");
@@ -63,6 +68,14 @@ try {
         $chk = $pdo->prepare("SELECT id FROM subjects WHERE id = ? AND study_id = ?");
         $chk->execute([$subject_id, $study_id]);
         if (!$chk->fetch()) throw new Exception("Invalid subject");
+
+        // Enforce read-only lock if SDR is submitted
+        $stmt_lock = $pdo->prepare("SELECT sdr_submitted FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
+        $stmt_lock->execute([$subject_id, $form_id, $repeating_instance_id, $repeating_instance_id]);
+        $lock_row = $stmt_lock->fetch();
+        if ($lock_row && (bool)$lock_row['sdr_submitted']) {
+            throw new Exception("This form is locked (SDR submitted) and cannot be edited.");
+        }
 
         $pdo->beginTransaction();
 
@@ -211,6 +224,25 @@ try {
         $repeating_instance_id = (int)($_POST['repeating_instance_id'] ?? 0);
         $query_text = trim($_POST['query_text'] ?? '');
         $user_id = $_SESSION['user_id'];
+
+        // Server side check if form is reviewed for active role
+        $stmt_stat = $pdo->prepare("SELECT monitor_reviewed, manager_reviewed FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
+        $stmt_stat->execute([$subject_id, $form_id, $repeating_instance_id, $repeating_instance_id]);
+        $status_row = $stmt_stat->fetch(PDO::FETCH_ASSOC);
+        
+        $monitor_reviewed = $status_row ? (bool)$status_row['monitor_reviewed'] : false;
+        $manager_reviewed = $status_row ? (bool)$status_row['manager_reviewed'] : false;
+        
+        if (($is_monitor && $monitor_reviewed) || ($is_manager && $manager_reviewed)) {
+            throw new Exception("Cannot Raise Query as the form is marked as review");
+        }
+        
+        // Server side check if there is an unresolved query
+        $stmt_open = $pdo->prepare("SELECT COUNT(*) FROM data_queries WHERE subject_id = ? AND form_id = ? AND field_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL)) AND status != 'closed'");
+        $stmt_open->execute([$subject_id, $form_id, $field_id, $repeating_instance_id, $repeating_instance_id]);
+        if ($stmt_open->fetchColumn() > 0) {
+            throw new Exception("Cannot Raise Query as a query is open");
+        }
         
         if ($query_text === '') {
             $query_text = 'Query raised';
@@ -415,6 +447,14 @@ try {
         
         if (!$reason) throw new Exception("Reason required");
         
+        // Enforce read-only lock if SDR is submitted
+        $stmt_lock = $pdo->prepare("SELECT sdr_submitted FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
+        $stmt_lock->execute([$subject_id, $form_id, $repeating_instance_id, $repeating_instance_id]);
+        $lock_row = $stmt_lock->fetch();
+        if ($lock_row && (bool)$lock_row['sdr_submitted']) {
+            throw new Exception("This form is locked (SDR submitted) and cannot be edited.");
+        }
+
         $pdo->beginTransaction();
         try {
             // Get Old Value
@@ -458,6 +498,14 @@ try {
         
         if (!$code) throw new Exception("Missing code required");
         
+        // Enforce read-only lock if SDR is submitted
+        $stmt_lock = $pdo->prepare("SELECT sdr_submitted FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
+        $stmt_lock->execute([$subject_id, $form_id, $repeating_instance_id, $repeating_instance_id]);
+        $lock_row = $stmt_lock->fetch();
+        if ($lock_row && (bool)$lock_row['sdr_submitted']) {
+            throw new Exception("This form is locked (SDR submitted) and cannot be edited.");
+        }
+
         $pdo->beginTransaction();
         try {
             // Get Old Value
@@ -527,14 +575,355 @@ try {
              $stmt_a = $pdo->prepare("INSERT INTO data_audit_log (study_id, subject_id, visit_id, form_id, repeating_instance_id, change_type, reason_for_change, action_by) VALUES (?, ?, ?, ?, ?, 'verify', 'Source Data Verification', ?)");
              $stmt_a->execute([$study_id, $subject_id, $_POST['visit_id'] ?? 0, $form_id, $repeating_instance_id, $_SESSION['user_id']]);
              
+             // Recalculate study progress
+             $progress_stats = calculateAndSaveProgress($pdo, $study_id, $subject_id, $_POST['visit_id'] ?? 0, $form_id, $repeating_instance_id);
+             
+             // Fetch updated row
+             $stmt_stat = $pdo->prepare("SELECT * FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
+             $stmt_stat->execute([$subject_id, $form_id, $repeating_instance_id, $repeating_instance_id]);
+             $f_stat_curr = $stmt_stat->fetch(PDO::FETCH_ASSOC) ?: [
+                 'status' => 'empty', 
+                 'progress_percent' => 0, 
+                 'is_verified' => 0,
+                 'sdr_submitted' => 0, 
+                 'monitor_reviewed' => 0, 
+                 'manager_reviewed' => 0
+             ];
+             
+             $f_stat_curr['progress'] = $f_stat_curr['progress_percent'];
+             $rev_status_curr = getFormReviewStatus($f_stat_curr);
+             
+             // Build buttons HTML
+             $all_mandatory_completed = areAllMandatoryFieldsCompleted($pdo, $subject_id, $form_id, $repeating_instance_id);
+             $sdr_submitted = (bool)($f_stat_curr['sdr_submitted'] ?? false);
+             $monitor_reviewed = (bool)($f_stat_curr['monitor_reviewed'] ?? false);
+             $manager_reviewed = (bool)($f_stat_curr['manager_reviewed'] ?? false);
+             $is_verified = ($f_stat_curr['status'] === 'verified' || !empty($f_stat_curr['is_verified']));
+             $can_edit = hasPermission('enter_data');
+             if ($sdr_submitted) {
+                 $can_edit = false;
+             }
+             
+             $buttons_html = renderWorkflowButtons($is_coordinator, $is_monitor, $is_manager, $sdr_submitted, $monitor_reviewed, $manager_reviewed, $all_mandatory_completed);
+             
+             $prev_link = $_POST['prev_link'] ?? '';
+             $next_link = $_POST['next_link'] ?? '';
+             
+             $header_html = renderHeaderActions($prev_link, $next_link, $can_edit, $is_verified);
+             $audit_trail_html = renderFormAuditTrail($pdo, $study_id, $subject_id, $form_id, $repeating_instance_id);
+             
              $pdo->commit();
-             echo json_encode(['success' => true]);
+             echo json_encode(array_merge([
+                 'success' => true,
+                 'sdr_submitted' => $sdr_submitted,
+                 'monitor_reviewed' => $monitor_reviewed,
+                 'manager_reviewed' => $manager_reviewed,
+                 'is_verified' => $is_verified,
+                 'can_edit' => $can_edit,
+                 'review_text' => $rev_status_curr['text'],
+                 'review_color' => $rev_status_curr['color'],
+                 'review_bg' => $rev_status_curr['bg'],
+                 'review_icon' => $rev_status_curr['icon'],
+                 'review_progress' => $rev_status_curr['progress'],
+                 'review_bar_color' => $rev_status_curr['bar_color'],
+                 'buttons_html' => $buttons_html,
+                 'header_html' => $header_html,
+                 'audit_trail_html' => $audit_trail_html
+             ], $progress_stats));
         } catch (Exception $e) {
             error_log("Verification Error: " . $e->getMessage());
             $pdo->rollBack();
             throw $e;
         }
     }
+
+    elseif ($action === 'update_review_status') {
+         $subject_id = (int)$_POST['subject_id'];
+         $form_id = (int)$_POST['form_id'];
+         $visit_id = (int)($_POST['visit_id'] ?? 0);
+         $repeating_instance_id = (int)($_POST['repeating_instance_id'] ?? 0);
+         $workflow_action = $_POST['workflow_action'] ?? '';
+         $user_id = $_SESSION['user_id'];
+         
+
+         if (!$subject_id || !$form_id) {
+             throw new Exception("Missing required subject or form context.");
+         }
+         
+         ensureTablesExist($pdo);
+         
+         // Fetch current status row
+         $stmt_stat = $pdo->prepare("SELECT * FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
+         $stmt_stat->execute([$subject_id, $form_id, $repeating_instance_id, $repeating_instance_id]);
+         $status_row = $stmt_stat->fetch(PDO::FETCH_ASSOC);
+         
+         $sdr_submitted = $status_row ? (bool)$status_row['sdr_submitted'] : false;
+         $monitor_reviewed = $status_row ? (bool)$status_row['monitor_reviewed'] : false;
+         $manager_reviewed = $status_row ? (bool)$status_row['manager_reviewed'] : false;
+         
+         $pdo->beginTransaction();
+         try {
+             $audit_logs = []; // entries to write: [change_type, reason_for_change]
+             
+             if ($workflow_action === 'mark_sdr') {
+                 if (!$is_coordinator) {
+                     throw new Exception("Unauthorized: Only Data Coordinators can mark a form as SDR.");
+                 }
+                 if ($sdr_submitted) {
+                     throw new Exception("Form is already marked as SDR.");
+                 }
+                 
+                 // Enforce that all mandatory fields are completed
+                 if (!areAllMandatoryFieldsCompleted($pdo, $subject_id, $form_id, $repeating_instance_id)) {
+                     throw new Exception("Cannot mark as SDR: Not all mandatory fields are completed.");
+                 }
+                 
+                 $sdr_submitted = true;
+                 $audit_logs[] = ['sdr_submitted', 'Form marked as SDR'];
+                 
+             } elseif ($workflow_action === 'revoke_sdr') {
+                  if (!$is_coordinator) {
+                      throw new Exception("Unauthorized: Only Data Coordinators can revoke SDR.");
+                  }
+                  if (!$sdr_submitted) {
+                      throw new Exception("Form is not marked as SDR.");
+                  }
+                  if ($monitor_reviewed && $manager_reviewed) {
+                      throw new Exception("Cannot revoke SDR: The form has completed the full review workflow.");
+                  }
+                  
+                  $sdr_submitted = false;
+                  $audit_logs[] = ['sdr_revoked', 'SDR Revoked'];
+                  
+                  // Automatically remove monitor review if present
+                  if ($monitor_reviewed) {
+                      $monitor_reviewed = false;
+                      $audit_logs[] = ['monitor_revoked', 'Monitor Review Revoked due to SDR Revocation'];
+                  }
+                  // Automatically remove manager review if present
+                  if ($manager_reviewed) {
+                      $manager_reviewed = false;
+                      $audit_logs[] = ['manager_revoked', 'Manager Review Revoked due to SDR Revocation'];
+                  }
+                 
+             } elseif ($workflow_action === 'monitor_review') {
+                 if (!$is_monitor) {
+                     throw new Exception("Unauthorized: Only Monitors can review.");
+                 }
+                 if (!$sdr_submitted) {
+                     throw new Exception("Cannot review: Form must be SDR submitted first.");
+                 }
+                 if ($monitor_reviewed) {
+                     throw new Exception("Form is already reviewed by Monitor.");
+                 }
+                 
+                 $monitor_reviewed = true;
+                 $audit_logs[] = ['monitor_reviewed', 'Reviewed by Monitor'];
+                 
+              } elseif ($workflow_action === 'monitor_revoke') {
+                  if (!$is_monitor) {
+                      throw new Exception("Unauthorized: Only Monitors can revoke review.");
+                  }
+                  if (!$monitor_reviewed) {
+                      throw new Exception("Monitor review has not been completed.");
+                  }
+                  
+                  $remarks = trim($_POST['remarks'] ?? '');
+                  if ($remarks === '') {
+                      throw new Exception("Please enter a reason before revoking the review.");
+                  }
+                  if (mb_strlen($remarks) < 10) {
+                      throw new Exception("Remarks must be at least 10 characters.");
+                  }
+                  if (mb_strlen($remarks) > 500) {
+                      throw new Exception("Remarks cannot exceed 500 characters.");
+                  }
+                  
+                  $sdr_submitted = false;
+                  $monitor_reviewed = false;
+                  $manager_reviewed = false;
+                  $audit_logs[] = ['monitor_revoked', $remarks];
+                  $audit_logs[] = ['sdr_revoked', 'SDR Revoked due to Monitor Review Revocation. Remarks: ' . $remarks];
+                 
+             } elseif ($workflow_action === 'manager_review') {
+                 if (!$is_manager) {
+                     throw new Exception("Unauthorized: Only Managers can review.");
+                 }
+                 if (!$sdr_submitted) {
+                     throw new Exception("Cannot review: Form must be SDR submitted first.");
+                 }
+                 if ($manager_reviewed) {
+                     throw new Exception("Form is already reviewed by Manager.");
+                 }
+                 
+                 $manager_reviewed = true;
+                 $audit_logs[] = ['manager_reviewed', 'Reviewed by Manager'];
+                 
+             } elseif ($workflow_action === 'manager_revoke') {
+                   if (!$is_manager) {
+                       throw new Exception("Unauthorized: Only Managers can revoke review.");
+                   }
+                   if (!$manager_reviewed) {
+                       throw new Exception("Manager review has not been completed.");
+                   }
+                   
+                   $remarks = trim($_POST['remarks'] ?? '');
+                   if ($remarks === '') {
+                       throw new Exception("Please enter a reason before revoking the review.");
+                   }
+                   if (mb_strlen($remarks) < 10) {
+                       throw new Exception("Remarks must be at least 10 characters.");
+                   }
+                   if (mb_strlen($remarks) > 500) {
+                       throw new Exception("Remarks cannot exceed 500 characters.");
+                   }
+                   
+                   $sdr_submitted = false;
+                   $monitor_reviewed = false;
+                   $manager_reviewed = false;
+                   $audit_logs[] = ['manager_revoked', $remarks];
+                   $audit_logs[] = ['sdr_revoked', 'SDR Revoked due to Manager Review Revocation. Remarks: ' . $remarks];
+                 
+             } else {
+                 throw new Exception("Invalid workflow action: " . htmlspecialchars($workflow_action));
+             }
+             
+             $was_srved = $status_row && (bool)$status_row['monitor_reviewed'] && (bool)$status_row['manager_reviewed'];
+             $is_srved = $monitor_reviewed && $manager_reviewed;
+             if ($is_srved && !$was_srved) {
+                 $audit_logs[] = ['form_srved', 'Form SRVed'];
+             }
+             
+             // Map values for Postgres/MySQL driver
+             $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+             $sdr_val = $sdr_submitted ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
+             $mon_val = $monitor_reviewed ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
+             $mgr_val = $manager_reviewed ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
+             
+             // Update or Insert the subject_form_status row
+             // We can calculate status text based on matrix for backward compatibility
+             $status_text = 'in_progress';
+             if (!$sdr_submitted) {
+                 // Determine completion status
+                 $stmt_count_fields = $pdo->prepare("SELECT COUNT(*) FROM form_fields WHERE form_id = ?");
+                 $stmt_count_fields->execute([$form_id]);
+                 $total_fields = (int)$stmt_count_fields->fetchColumn(); 
+
+                 $stmt_count_filled = $pdo->prepare("SELECT COUNT(DISTINCT field_id) FROM subject_data WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL)) AND value IS NOT NULL AND CHAR_LENGTH(value) > 0");
+                 $stmt_count_filled->execute([$subject_id, $form_id, $repeating_instance_id, $repeating_instance_id]);
+                 $filled_fields = (int)$stmt_count_filled->fetchColumn();
+
+                 $progress = 0;
+                 if ($total_fields > 0) {
+                     $progress = round(($filled_fields / $total_fields) * 100);
+                 } else {
+                     $progress = 100;
+                 }
+                 if ($progress > 100) $progress = 100;
+                 $status_text = ($progress == 100) ? 'complete' : 'in_progress';
+             } else {
+                 if ($manager_reviewed) {
+                     $status_text = 'verified'; 
+                 } elseif ($monitor_reviewed) {
+                     $status_text = 'verified'; 
+                 } else {
+                     $status_text = 'complete';
+                 }
+             }
+             
+             $is_complete_val = ($status_text === 'complete' || $status_text === 'verified') ? 1 : 0;
+             
+             if ($status_row) {
+                 $sql_upd = "UPDATE subject_form_status 
+                             SET sdr_submitted = $sdr_val, 
+                                 monitor_reviewed = $mon_val, 
+                                 manager_reviewed = $mgr_val, 
+                                 status = ?, 
+                                 is_complete = ?,
+                                 updated_at = NOW() 
+                             WHERE id = ?";
+                 $pdo->prepare($sql_upd)->execute([$status_text, $is_complete_val, $status_row['id']]);
+             } else {
+                 $sql_ins = "INSERT INTO subject_form_status (study_id, subject_id, visit_id, form_id, repeating_instance_id, sdr_submitted, monitor_reviewed, manager_reviewed, status, is_complete, progress_percent, updated_at) 
+                             VALUES (?, ?, ?, ?, ?, $sdr_val, $mon_val, $mgr_val, ?, ?, 0, NOW())";
+                 $pdo->prepare($sql_ins)->execute([$study_id, $subject_id, $visit_id, $form_id, $repeating_instance_id, $status_text, $is_complete_val]);
+             }
+             
+             // Insert Data Audit Logs
+             $stmt_audit = $pdo->prepare("INSERT INTO data_audit_log (study_id, subject_id, visit_id, form_id, field_id, repeating_instance_id, old_value, new_value, reason_for_change, change_type, action_by) VALUES (?, ?, ?, ?, NULL, ?, NULL, NULL, ?, ?, ?)");
+             foreach ($audit_logs as $log) {
+                 $stmt_audit->execute([
+                     $study_id,
+                     $subject_id,
+                     $visit_id,
+                     $form_id,
+                     $repeating_instance_id,
+                     $log[1], 
+                     $log[0], 
+                     $user_id
+                 ]);
+             }
+             
+             // Recalculate study progress
+             $progress_stats = calculateAndSaveProgress($pdo, $study_id, $subject_id, $visit_id, $form_id, $repeating_instance_id);
+             
+             // Fetch updated row
+             $stmt_stat = $pdo->prepare("SELECT * FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
+             $stmt_stat->execute([$subject_id, $form_id, $repeating_instance_id, $repeating_instance_id]);
+             $f_stat_curr = $stmt_stat->fetch(PDO::FETCH_ASSOC) ?: [
+                 'status' => 'empty', 
+                 'progress_percent' => 0, 
+                 'is_verified' => 0,
+                 'sdr_submitted' => 0, 
+                 'monitor_reviewed' => 0, 
+                 'manager_reviewed' => 0
+             ];
+             
+             $f_stat_curr['progress'] = $f_stat_curr['progress_percent'];
+             $rev_status_curr = getFormReviewStatus($f_stat_curr);
+             
+             // Build buttons HTML
+             $all_mandatory_completed = areAllMandatoryFieldsCompleted($pdo, $subject_id, $form_id, $repeating_instance_id);
+             $sdr_submitted = (bool)($f_stat_curr['sdr_submitted'] ?? false);
+             $monitor_reviewed = (bool)($f_stat_curr['monitor_reviewed'] ?? false);
+             $manager_reviewed = (bool)($f_stat_curr['manager_reviewed'] ?? false);
+             $is_verified = ($f_stat_curr['status'] === 'verified' || !empty($f_stat_curr['is_verified']));
+             $can_edit = hasPermission('enter_data');
+             if ($sdr_submitted) {
+                 $can_edit = false;
+             }
+             
+             $buttons_html = renderWorkflowButtons($is_coordinator, $is_monitor, $is_manager, $sdr_submitted, $monitor_reviewed, $manager_reviewed, $all_mandatory_completed);
+             
+             $prev_link = $_POST['prev_link'] ?? '';
+             $next_link = $_POST['next_link'] ?? '';
+             
+             $header_html = renderHeaderActions($prev_link, $next_link, $can_edit, $is_verified);
+             $audit_trail_html = renderFormAuditTrail($pdo, $study_id, $subject_id, $form_id, $repeating_instance_id);
+             
+             $pdo->commit();
+             echo json_encode(array_merge([
+                 'success' => true,
+                 'sdr_submitted' => $sdr_submitted,
+                 'monitor_reviewed' => $monitor_reviewed,
+                 'manager_reviewed' => $manager_reviewed,
+                 'is_verified' => $is_verified,
+                 'can_edit' => $can_edit,
+                 'review_text' => $rev_status_curr['text'],
+                 'review_color' => $rev_status_curr['color'],
+                 'review_bg' => $rev_status_curr['bg'],
+                 'review_icon' => $rev_status_curr['icon'],
+                 'review_progress' => $rev_status_curr['progress'],
+                 'review_bar_color' => $rev_status_curr['bar_color'],
+                 'buttons_html' => $buttons_html,
+                 'header_html' => $header_html,
+                 'audit_trail_html' => $audit_trail_html
+             ], $progress_stats));
+         } catch (Exception $e) {
+             $pdo->rollBack();
+             throw $e;
+         }
+     }
 
 } catch (Throwable $e) {
     ob_clean();
@@ -589,6 +978,18 @@ function ensureTablesExist($pdo) {
             } catch (Exception $e) {}
             try {
                 $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN is_complete BOOLEAN DEFAULT FALSE");
+            } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN sdr_submitted BOOLEAN DEFAULT FALSE");
+            } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN monitor_reviewed BOOLEAN DEFAULT FALSE");
+            } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN manager_reviewed BOOLEAN DEFAULT FALSE");
+            } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE data_audit_log ALTER COLUMN field_id DROP NOT NULL");
             } catch (Exception $e) {}
             
             // Create trigger/function if not exists
@@ -661,9 +1062,19 @@ function ensureTablesExist($pdo) {
             // Lazy Update: Add is_verified if missing
             try {
                 $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN is_verified TINYINT(1) DEFAULT 0");
-            } catch (Exception $e) {
-                // Ignore if exists
-            }
+            } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN sdr_submitted TINYINT(1) DEFAULT 0");
+            } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN monitor_reviewed TINYINT(1) DEFAULT 0");
+            } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN manager_reviewed TINYINT(1) DEFAULT 0");
+            } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE data_audit_log MODIFY COLUMN field_id INT NULL");
+            } catch (Exception $e) {}
             
         } catch (Exception $e) {
             error_log("Table migration logic error: " . $e->getMessage());
@@ -710,13 +1121,22 @@ function calculateAndSaveProgress($pdo, $study_id, $subject_id, $visit_id, $form
     $status = ($progress == 100) ? 'complete' : 'in_progress';
 
     // Update Status (handle unique constraint updates)
-    $stmt_stat_chk = $pdo->prepare("SELECT id, status FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
+    $stmt_stat_chk = $pdo->prepare("SELECT id, status, sdr_submitted, monitor_reviewed, manager_reviewed FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
     $stmt_stat_chk->execute([$subject_id, $form_id, $repeating_instance_id, $repeating_instance_id]);
     $stat_row = $stmt_stat_chk->fetch();
     
-    // Preserve Verified status
-    if ($stat_row && $stat_row['status'] === 'verified') {
-        $status = 'verified';
+    // Preserve Verified/SDR statuses
+    if ($stat_row) {
+        $db_sdr = (bool)($stat_row['sdr_submitted'] ?? false);
+        $db_monitor = (bool)($stat_row['monitor_reviewed'] ?? false);
+        $db_manager = (bool)($stat_row['manager_reviewed'] ?? false);
+        if ($db_sdr) {
+            if ($db_monitor || $db_manager) {
+                $status = 'verified';
+            } else {
+                $status = 'complete';
+            }
+        }
     }
     
     $is_complete = ($status === 'complete' || $status === 'verified') ? 1 : 0;
@@ -774,5 +1194,30 @@ function calculateAndSaveProgress($pdo, $study_id, $subject_id, $visit_id, $form
         'visit_progress' => $visit_progress,
         'subject_progress' => $subject_progress
     ];
+}
+
+function areAllMandatoryFieldsCompleted($pdo, $subject_id, $form_id, $repeating_instance_id) {
+    // Get all mandatory field IDs for this form
+    $stmt = $pdo->prepare("SELECT id FROM form_fields WHERE form_id = ? AND is_required = TRUE");
+    $stmt->execute([$form_id]);
+    $mandatory_ids = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    
+    if (empty($mandatory_ids)) {
+        return true;
+    }
+    
+    // Check how many of these mandatory fields have a filled value in subject_data
+    $placeholders = implode(',', array_fill(0, count($mandatory_ids), '?'));
+    $sql = "SELECT COUNT(DISTINCT field_id) FROM subject_data 
+            WHERE subject_id = ? AND form_id = ? AND field_id IN ($placeholders) 
+            AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL)) 
+            AND value IS NOT NULL AND CHAR_LENGTH(value) > 0";
+    
+    $params = array_merge([$subject_id, $form_id], $mandatory_ids, [$repeating_instance_id, $repeating_instance_id]);
+    $stmt_filled = $pdo->prepare($sql);
+    $stmt_filled->execute($params);
+    $filled_count = (int)$stmt_filled->fetchColumn();
+    
+    return $filled_count === count($mandatory_ids);
 }
 ?>

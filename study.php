@@ -22,7 +22,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['switch_role_study']))
     }
     
     if ($valid && setActiveContext($new_role_id)) {
-        redirect('study.php');
+        $redirect_to = $_POST['redirect_to'] ?? 'study.php';
+        redirect($redirect_to);
     }
 }
 

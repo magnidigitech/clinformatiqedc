@@ -29,7 +29,6 @@ try {
 // ---------------------------------------------
 
 // Helper to check roles
-// Helper to check roles
 $current_role = strtolower($_SESSION['active_role_name'] ?? '');
 // Monitor includes data monitor and data manager roles
 $is_monitor = (strpos($current_role, 'monitor') !== false) || (strpos($current_role, 'manager') !== false);
@@ -37,6 +36,39 @@ $is_monitor = (strpos($current_role, 'monitor') !== false) || (strpos($current_r
 $is_manager = (strpos($current_role, 'coordinator') !== false); 
 $is_admin = (strpos($current_role, 'admin') !== false);
 $can_edit = ($current_role === 'data_entry' || strpos($current_role, 'entry') !== false || $current_role === 'investigator' || $is_manager || (strpos($current_role, 'manager') !== false));
+
+// Specific precise roles for workflow
+$is_coordinator = (strpos($current_role, 'coordinator') !== false) || (strpos($current_role, 'admin') !== false);
+$is_monitor_role = (strpos($current_role, 'monitor') !== false) || (strpos($current_role, 'admin') !== false);
+$is_manager_role = (strpos($current_role, 'manager') !== false) || (strpos($current_role, 'admin') !== false);
+
+// Review status resolver is now defined in includes/functions.php
+
+// Helper to check mandatory fields completion
+function areAllMandatoryFieldsCompletedPHP($pdo, $subject_id, $form_id, $repeating_instance_id) {
+    // Get all mandatory field IDs for this form
+    $stmt = $pdo->prepare("SELECT id FROM form_fields WHERE form_id = ? AND is_required = TRUE");
+    $stmt->execute([$form_id]);
+    $mandatory_ids = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    
+    if (empty($mandatory_ids)) {
+        return true;
+    }
+    
+    // Check how many of these mandatory fields have a filled value in subject_data
+    $placeholders = implode(',', array_fill(0, count($mandatory_ids), '?'));
+    $sql = "SELECT COUNT(DISTINCT field_id) FROM subject_data 
+            WHERE subject_id = ? AND form_id = ? AND field_id IN ($placeholders) 
+            AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL)) 
+            AND value IS NOT NULL AND CHAR_LENGTH(value) > 0";
+    
+    $params = array_merge([$subject_id, $form_id], $mandatory_ids, [$repeating_instance_id, $repeating_instance_id]);
+    $stmt_filled = $pdo->prepare($sql);
+    $stmt_filled->execute($params);
+    $filled_count = (int)$stmt_filled->fetchColumn();
+    
+    return $filled_count === count($mandatory_ids);
+}
 
 // Mock Subject ID for now if not passed (or handle error)
 $subject_id = $_GET['subject_id'] ?? 1;
@@ -63,7 +95,7 @@ $stmt->execute([$study_id]);
 $tree_data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Fetch ALL Form Statuses for this Subject
-$stmt_status = $pdo->prepare("SELECT form_id, status, progress_percent, is_verified, COALESCE(repeating_instance_id, 0) as repeating_instance_id FROM subject_form_status WHERE subject_id = ?");
+$stmt_status = $pdo->prepare("SELECT form_id, status, progress_percent, is_verified, sdr_submitted, monitor_reviewed, manager_reviewed, COALESCE(repeating_instance_id, 0) as repeating_instance_id FROM subject_form_status WHERE subject_id = ?");
 $stmt_status->execute([$subject_id]);
 $raw_statuses = $stmt_status->fetchAll(PDO::FETCH_ASSOC);
 $statuses = [];
@@ -74,6 +106,9 @@ foreach($raw_statuses as $s) {
         'status' => $s['status'], // 'empty', 'in_progress', 'complete', 'verified'
         'progress' => $s['progress_percent'],
         'is_verified' => $s['is_verified'],
+        'sdr_submitted' => $s['sdr_submitted'] ?? 0,
+        'monitor_reviewed' => $s['monitor_reviewed'] ?? 0,
+        'manager_reviewed' => $s['manager_reviewed'] ?? 0,
         'query_count' => 0 // Default
     ];
 }
@@ -173,7 +208,6 @@ if (!$current_module_id && !$current_visit_id) {
     $current_visit_id = array_key_first($structure);
 }
 
-
 // If in Module Mode
 $current_module = null;
 $current_instance = null;
@@ -235,12 +269,17 @@ if ($current_module_id) {
         $current_form_name = 'Instance List';
     }
 } else {
-    $current_visit_name = $structure[$current_visit_id]['name'] ?? '';
+    $current_visit_name = '';
+    if ($current_visit_id && isset($structure[$current_visit_id])) {
+        $current_visit_name = $structure[$current_visit_id]['name'] ?? '';
+    }
     $current_form_name = '';
-    foreach ($structure[$current_visit_id]['forms'] ?? [] as $frm) {
-        if ($frm['id'] == $current_form_id) {
-            $current_form_name = $frm['name'];
-            break;
+    if ($current_visit_id && isset($structure[$current_visit_id]['forms'])) {
+        foreach ($structure[$current_visit_id]['forms'] as $frm) {
+            if ($frm['id'] == $current_form_id) {
+                $current_form_name = $frm['name'];
+                break;
+            }
         }
     }
 }
@@ -335,6 +374,7 @@ if (!$current_module_id) {
 
 // Fetch Existing Subject Data for this Form
 $existing_data = [];
+$form_audit_trail = [];
 if ($current_form_id && $subject_id) {
     // Standardize instance ID for query
     $rep_inst_id = (int)($current_instance_id ?? 0);
@@ -343,6 +383,24 @@ if ($current_form_id && $subject_id) {
     $stmt = $pdo->prepare("SELECT field_id, value FROM subject_data WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
     $stmt->execute([$subject_id, $current_form_id, $rep_inst_id, $rep_inst_id]);
     $existing_data = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+    
+    // Fetch unified audit trail for this form
+    $stmt_audit = $pdo->prepare("
+        SELECT a.*, 
+               COALESCE(u.name, u.username) as action_by_name, 
+               u.username as action_by_username,
+               ff.label as field_label,
+               (SELECT role_name FROM study_users WHERE user_id = a.action_by AND study_id = a.study_id LIMIT 1) as action_role
+        FROM data_audit_log a
+        LEFT JOIN users u ON a.action_by = u.id
+        LEFT JOIN form_fields ff ON a.field_id = ff.id
+        WHERE a.subject_id = ? 
+          AND a.form_id = ? 
+          AND (a.repeating_instance_id = ? OR (? = 0 AND a.repeating_instance_id IS NULL))
+        ORDER BY a.action_at DESC, a.id DESC
+    ");
+    $stmt_audit->execute([$subject_id, $current_form_id, $rep_inst_id, $rep_inst_id]);
+    $form_audit_trail = $stmt_audit->fetchAll(PDO::FETCH_ASSOC);
 }
 
 
@@ -379,7 +437,7 @@ if ($current_form_id && $subject_id) {
             padding: 0.5rem 1rem 0.5rem 2.5rem; color: var(--text-light); font-size: 0.875rem; display: flex; align-items: center; justify-content: space-between; cursor: pointer; text-decoration: none;
         }
         .tree-form:hover { color: var(--accent-color); background: #f8fafc; }
-        .tree-form.active { color: var(--accent-color); font-weight: 500; background: #eff6ff; }
+        .tree-form.active { color: var(--accent-color); font-weight: 500; background: rgba(29, 111, 151, 0.08); }
         
         /* Data Entry Form Styles */
         .crf-card { background: white; border: 1px solid var(--border-color); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); margin-bottom: 2rem; max-width: 900px; margin: 0 auto 2rem auto; }
@@ -399,7 +457,7 @@ if ($current_form_id && $subject_id) {
         
         .field-label-row { display: flex; align-items: flex-start; gap: 0.75rem; }
         .status-icon { color: #cbd5e1; font-size: 1.25rem; margin-top: 0.1rem; }
-        .status-icon.completed { color: #10b981; }
+        .status-icon.completed { color: var(--primary-color); }
         
         .field-label { font-weight: 500; color: var(--text-dark); font-size: 0.95rem; flex: 1; }
         .field-actions { opacity: 0; transition: opacity 0.2s; }
@@ -407,13 +465,13 @@ if ($current_form_id && $subject_id) {
         
         .input-wrapper { margin-left: 2rem; max-width: 400px; }
         .crf-input { width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 4px; font-size: 0.9rem; transition: border-color 0.2s; }
-        .crf-input:focus { border-color: var(--accent-color); outline: none; box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1); }
+        .crf-input:focus { border-color: var(--accent-color); outline: none; box-shadow: 0 0 0 2px rgba(29, 111, 151, 0.15); }
         
         .field-help { font-size: 0.75rem; color: #64748b; margin-top: 0.25rem; font-style: italic; }
         .field-unit { position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 0.85rem; pointer-events: none; }
         
         .progress-bar { height: 4px; background: #e2e8f0; border-radius: 2px; margin-top: 0.5rem; overflow: hidden; }
-        .progress-fill { height: 100%; background: #10b981; width: 0%; transition: width 0.3s; }
+        .progress-fill { height: 100%; background: var(--primary-color); width: 0%; transition: width 0.3s; }
         
     </style>
 </head>
@@ -421,7 +479,7 @@ if ($current_form_id && $subject_id) {
 
 <div class="app-layout" style="display: block;">
     <!-- Top Header -->
-    <header class="top-nav" style="border-bottom: 1px solid var(--border-color); padding: 0 1.5rem; height: 64px; display: flex; align-items: center; background: white; z-index: 10;">
+    <header class="top-nav" style="border-bottom: 1px solid var(--border-color); padding: 0 1.5rem; height: 64px; display: flex; align-items: center; justify-content: space-between; background: white; z-index: 10; position: relative;">
         <div style="display: flex; align-items: center; gap: 1rem;">
             <a href="study.php" style="color: var(--text-light);"><span class="material-icons-round">arrow_back</span></a>
             <div>
@@ -432,48 +490,41 @@ if ($current_form_id && $subject_id) {
                 </div>
             </div>
         </div>
+        
+        <!-- Centered Logo -->
+        <div style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); height: 32px; display: flex; align-items: center;">
+            <img src="EDC.png" alt="Logo" style="height: 100%; width: auto;">
+        </div>
 <?php
 // Determine View Mode
-$can_edit = hasPermission('enter_data');
+$can_edit = $current_form_id ? hasPermission('enter_data') : false;
+
+// Check if current form is verifiable
+$curr_stat_key = $current_form_id ? ($current_form_id . '_' . (int)($current_instance_id ?? 0)) : '0_0';
+$curr_stat = $statuses[$curr_stat_key] ?? [
+    'status' => 'empty', 
+    'progress' => 0, 
+    'is_verified' => 0,
+    'sdr_submitted' => 0,
+    'monitor_reviewed' => 0,
+    'manager_reviewed' => 0
+];
+$is_complete = ($curr_stat['status'] === 'complete' || $curr_stat['progress'] == 100);
+$is_verified = ($curr_stat['status'] === 'verified' || !empty($curr_stat['is_verified'])); // Check both for safety
+
+$sdr_submitted = (bool)($curr_stat['sdr_submitted'] ?? false);
+$monitor_reviewed = (bool)($curr_stat['monitor_reviewed'] ?? false);
+$manager_reviewed = (bool)($curr_stat['manager_reviewed'] ?? false);
+
+if ($sdr_submitted) {
+    $can_edit = false; // Lock editing!
+}
+
+// Check if all mandatory fields are completed
+$all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP($pdo, $subject_id, $current_form_id, (int)($current_instance_id ?? 0)) : false;
 ?>
-        <div style="margin-left: auto; display: flex; gap: 0.5rem;">
-            <?php 
-                // Check if current form is verifiable
-                $curr_stat_key = $current_form_id . '_' . (int)($current_instance_id ?? 0);
-                $curr_stat = $statuses[$curr_stat_key] ?? ['status' => 'empty', 'progress' => 0, 'is_verified' => 0];
-                $is_complete = ($curr_stat['status'] === 'complete' || $curr_stat['progress'] == 100);
-                $is_verified = ($curr_stat['status'] === 'verified' || !empty($curr_stat['is_verified'])); // Check both for safety
-            ?>
-
-            <?php if ($prev_link): ?>
-                <a href="<?php echo $prev_link; ?>" class="btn btn-outline">Previous</a>
-            <?php endif; ?>
-            
-            <button class="btn btn-outline" onclick="location.reload()"><?php echo $can_edit ? 'Discard Changes' : 'Refresh'; ?></button>
-            
-            <?php if (hasPermission('verify') && $is_complete && !$is_verified): ?>
-                <button type="button" class="btn btn-primary" style="background-color: #059669; border-color: #059669;" onclick="verifyForm()">
-                    <span class="material-icons-round" style="font-size: 1.1rem; margin-right: 0.25rem;">verified</span>
-                    Mark as Verified
-                </button>
-            <?php endif; ?>
-
-            <?php if ($is_verified): ?>
-                 <span style="display: flex; align-items: center; color: #059669; font-weight: 600; padding: 0 1rem; background: #d1fae5; border-radius: 6px; font-size: 0.9rem;">
-                    <span class="material-icons-round" style="font-size: 1.1rem; margin-right: 0.25rem;">verified</span> Verified
-                 </span>
-            <?php endif; ?>
-            
-            <?php if ($can_edit && !$is_verified): ?>
-                <button class="btn btn-primary" onclick="saveData(false)">Save</button>
-                <?php if ($next_link): ?>
-                    <button class="btn btn-primary" style="background:#2563eb;" onclick="saveData(true)">Save & Next</button>
-                <?php endif; ?>
-            <?php endif; ?>
-            
-            <?php if (!$can_edit && $next_link): ?>
-                 <a href="<?php echo $next_link; ?>" class="btn btn-primary">Next</a>
-            <?php endif; ?>
+        <div style="margin-left: auto; display: flex; gap: 0.5rem; align-items: center;" id="header-workflow-actions">
+            <?php echo renderHeaderActions($prev_link, $next_link, $can_edit, $is_verified); ?>
         </div>
     </header>
 
@@ -486,7 +537,7 @@ $can_edit = hasPermission('enter_data');
                     <span id="global-progress-text"><?php echo $subject_global_progress; ?>%</span>
                 </div>
                 <div class="progress-bar" style="height: 6px; margin-top: 0; background: #e2e8f0;">
-                    <div id="global-progress-bar" class="progress-fill" style="width: <?php echo $subject_global_progress; ?>%; background: #10b981;"></div>
+                    <div id="global-progress-bar" class="progress-fill" style="width: <?php echo $subject_global_progress; ?>%; background: var(--primary-color);"></div>
                 </div>
                 <!-- Optional: Reuse Checkbox for repeating data if needed later -->
                 <!-- <div style="margin-top: 0.5rem; font-size: 0.8rem; display: flex; gap: 0.5rem;">
@@ -523,7 +574,7 @@ $can_edit = hasPermission('enter_data');
                                     </span>
                                 <?php endif; ?>
                                 <div class="progress-bar" style="flex: 1; height: 4px; background: #e2e8f0; margin: 0;">
-                                    <div id="visit-progress-bar-<?php echo $vid; ?>" class="progress-fill" style="width: <?php echo $v_prog; ?>%; background: #10b981;"></div>
+                                    <div id="visit-progress-bar-<?php echo $vid; ?>" class="progress-fill" style="width: <?php echo $v_prog; ?>%; background: var(--primary-color);"></div>
                                 </div>
                                 <span id="visit-progress-text-<?php echo $vid; ?>" style="font-size: 0.75rem; font-weight: 600; color: #475569; min-width: 35px; text-align: right;"><?php echo $v_prog; ?> %</span>
                              </div>
@@ -536,22 +587,15 @@ $can_edit = hasPermission('enter_data');
                                     $f_key = $form['id'] . '_0';
                                     $f_stat = $statuses[$f_key] ?? ['status' => 'empty', 'progress' => 0];
                                     $q_cnt = $form['query_count'] ?? 0;
+                                    $rev_status = getFormReviewStatus($f_stat);
                                 ?>
                                 <a href="?subject_id=<?php echo $subject_id; ?>&visit_id=<?php echo $vid; ?>&form_id=<?php echo $form['id']; ?>" 
                                    class="tree-form <?php echo ($form['id'] == $current_form_id && !$current_module_id) ? 'active' : ''; ?>">
                                    
                                    <div style="display: flex; align-items: center; gap: 0.75rem;">
                                        <!-- Status Icon -->
-                                       <span id="form-icon-<?php echo $form['id']; ?>-0" class="material-icons-round" style="font-size: 1.25rem; <?php 
-                                            if ($f_stat['status'] == 'complete' || $f_stat['progress'] == 100) echo 'color: #10b981;';
-                                            elseif ($f_stat['status'] == 'in_progress' || $f_stat['progress'] > 0) echo 'color: #3b82f6;';
-                                            else echo 'color: #cbd5e1;';
-                                       ?>">
-                                            <?php 
-                                            if ($f_stat['status'] == 'complete' || $f_stat['progress'] == 100) echo 'check_circle';
-                                            elseif ($f_stat['status'] == 'in_progress' || $f_stat['progress'] > 0) echo 'hourglass_top';
-                                            else echo 'radio_button_unchecked';
-                                            ?>
+                                       <span id="form-icon-<?php echo $form['id']; ?>-0" class="material-icons-round" style="font-size: 1.25rem; color: <?php echo $rev_status['color']; ?>;">
+                                            <?php echo $rev_status['icon']; ?>
                                        </span>
                                        
                                        <span style="font-weight: 500; color: var(--text-main);"><?php echo htmlspecialchars($form['name']); ?></span>
@@ -620,8 +664,8 @@ $can_edit = hasPermission('enter_data');
                             <div style="font-size: 0.85rem; color: var(--text-light); margin-bottom: 0.25rem;">Repeating Data</div>
                             <h1 style="font-size: 1.5rem; margin: 0;"><?php echo htmlspecialchars($current_module['name']); ?></h1>
                         </div>
-                        <?php if ($can_edit): ?>
-                            <button class="btn btn-primary" onclick="createInstance()">+ Add New Entry</button>
+                        <?php if (hasPermission('enter_data')): ?>
+                            <button class="btn btn-primary" onclick="openAddInstanceModal()">+ Add New Entry</button>
                         <?php endif; ?>
                     </div>
                     
@@ -629,7 +673,10 @@ $can_edit = hasPermission('enter_data');
                         <?php if(empty($instances[$current_module_id] ?? [])): ?>
                              <div style="padding: 3rem; text-align: center; color: var(--text-light);">
                                 <span class="material-icons-round" style="font-size: 3rem; color: #cbd5e1; margin-bottom: 1rem;">toc</span>
-                                <p>No entries found for this module.</p>
+                                <p style="margin-bottom: 1.5rem;">No entries found for this module.</p>
+                                <?php if (hasPermission('enter_data')): ?>
+                                    <button class="btn btn-primary" onclick="openAddInstanceModal()">+ Add New Entry</button>
+                                <?php endif; ?>
                              </div>
                         <?php else: ?>
                             <table style="width: 100%; border-collapse: collapse;">
@@ -648,7 +695,7 @@ $can_edit = hasPermission('enter_data');
                                                 <?php echo htmlspecialchars($inst['instance_label'] ?? $inst['id']); ?>
                                             </td>
                                             <td style="padding: 1rem; color: #64748b; font-size: 0.9rem;">
-                                                <?php echo date('d M Y', strtotime($inst['created_at'])); ?>
+                                                <?php echo date('d-m-Y H:i:s', strtotime($inst['created_at'])); ?>
                                             </td>
                                             <td style="padding: 1rem;">
                                                 <span style="background: #ecfccb; color: #365314; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600;">Active</span>
@@ -670,6 +717,60 @@ $can_edit = hasPermission('enter_data');
             <?php else: ?>
                 <!-- CRF Form View -->
                 <div class="crf-card">
+                    <?php 
+                        // Resolve review status details
+                        $f_key_curr = $current_form_id . '_' . (int)($current_instance_id ?? 0);
+                        $f_stat_curr = $statuses[$f_key_curr] ?? [
+                            'status' => 'empty', 
+                            'progress' => 0, 
+                            'sdr_submitted' => 0, 
+                            'monitor_reviewed' => 0, 
+                            'manager_reviewed' => 0
+                        ];
+                        $rev_status_curr = getFormReviewStatus($f_stat_curr);
+
+                        // Fetch latest revocation remark if any
+                        $stmt_latest_revoke = $pdo->prepare("
+                            SELECT a.reason_for_change, COALESCE(u.name, u.username) as user_name, a.change_type, a.action_at
+                            FROM data_audit_log a
+                            LEFT JOIN users u ON a.action_by = u.id
+                            WHERE a.subject_id = ? AND a.form_id = ? AND (a.repeating_instance_id = ? OR (? = 0 AND a.repeating_instance_id IS NULL)) AND a.change_type IN ('monitor_revoked', 'manager_revoked')
+                            ORDER BY a.action_at DESC, a.id DESC LIMIT 1
+                        ");
+                        $stmt_latest_revoke->execute([$subject_id, $current_form_id, (int)($current_instance_id ?? 0), (int)($current_instance_id ?? 0)]);
+                        $latest_revoke = $stmt_latest_revoke->fetch(PDO::FETCH_ASSOC);
+                    ?>
+                    <!-- Review Status Banner -->
+                    <div class="review-status-banner" style="display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.5rem; background: #f8fafc; border-bottom: 1px solid var(--border-color); border-radius: var(--radius-lg) var(--radius-lg) 0 0;">
+                        <div style="display: flex; align-items: center; gap: 0.75rem;">
+                            <span style="font-size: 0.85rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">Review Status:</span>
+                            <span class="status-badge" style="background: <?php echo $rev_status_curr['bg']; ?>; color: <?php echo $rev_status_curr['color']; ?>; padding: 0.25rem 0.75rem; border-radius: 99px; font-size: 0.85rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem;">
+                                <span class="material-icons-round" style="font-size: 1rem;"><?php echo $rev_status_curr['icon']; ?></span>
+                                <?php echo $rev_status_curr['text']; ?>
+                            </span>
+                            
+                            <?php if ($latest_revoke && !$sdr_submitted && $is_coordinator): ?>
+                                <div class="click-tooltip-container" style="position: relative; display: inline-flex; align-items: center; cursor: pointer; margin-left: 0.25rem;" onclick="toggleClickTooltip(this, event)">
+                                    <span class="material-icons-round" style="color: #dc2626; font-size: 1.3rem; vertical-align: middle;">warning</span>
+                                    <div class="click-tooltip-text" style="visibility: hidden; opacity: 0; pointer-events: none; position: absolute; left: calc(100% + 8px); top: 50%; transform: translateY(-50%); width: 280px; background-color: #1e293b; color: #ffffff; text-align: left; border-radius: var(--radius-md); padding: 10px 14px; font-size: 0.8rem; font-weight: 400; line-height: 1.4; box-shadow: var(--shadow-lg); z-index: 100; transition: opacity 0.2s, visibility 0.2s;">
+                                        <span style="font-weight: 600; color: #fca5a5; display: block; margin-bottom: 2px;">Review Revoked by <?php echo htmlspecialchars($latest_revoke['user_name']); ?>:</span>
+                                        <span style="font-style: italic; color: #e2e8f0;">"<?php echo htmlspecialchars($latest_revoke['reason_for_change']); ?>"</span>
+                                    </div>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                        
+                        <div style="display: flex; align-items: center; gap: 1rem;">
+                            <div style="display: flex; flex-direction: column; align-items: flex-end;">
+                                <span style="font-size: 0.75rem; color: #64748b; font-weight: 500;">Review Progress</span>
+                                <span style="font-size: 0.95rem; font-weight: 700; color: #1e293b;"><?php echo $rev_status_curr['progress']; ?>%</span>
+                            </div>
+                            <div style="width: 100px; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; margin: 0;">
+                                <div style="width: <?php echo $rev_status_curr['progress']; ?>%; height: 100%; background: <?php echo $rev_status_curr['bar_color']; ?>; transition: width 0.3s ease;"></div>
+                            </div>
+                        </div>
+                    </div>
+                    
                     <div class="crf-header">
                         <?php if($current_module_id): ?>
                             <a href="?subject_id=<?php echo $subject_id; ?>&module_id=<?php echo $current_module_id; ?>" style="font-size: 0.85rem; color: var(--accent-color); text-decoration: none; display: inline-flex; align-items: center; gap: 0.25rem; margin-bottom: 0.5rem;">
@@ -686,13 +787,20 @@ $can_edit = hasPermission('enter_data');
                                 $f_stat = $statuses[$current_form_id . '_' . (int)($current_instance_id ?? 0)] ?? ['progress' => 0];
                                 $curr_pct = $f_stat['progress'];
                             ?>
-                            <div style="width: 200px;">
-                                <div style="display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 0.25rem;">
-                                    <span style="color: var(--text-light); font-weight: 500;">Form Progress</span>
-                                    <span style="color: var(--accent-color); font-weight: 600;" class="form-progress-text"><?php echo $curr_pct; ?>%</span>
+                            <div style="display: flex; align-items: center; gap: 1rem;">
+                                <!-- SDR / Review Workflow Buttons -->
+                                <div id="workflow-buttons-container" style="display: inline-flex; align-items: center; gap: 1rem;">
+                                    <?php echo renderWorkflowButtons($is_coordinator, $is_monitor_role, $is_manager_role, $sdr_submitted, $monitor_reviewed, $manager_reviewed, $all_mandatory_completed); ?>
                                 </div>
-                                <div style="height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden;">
-                                    <div class="current-form-progress" style="height: 100%; background: var(--accent-color); width: <?php echo $curr_pct; ?>%; transition: width 0.3s ease;"></div>
+
+                                <div style="width: 200px;">
+                                    <div style="display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 0.25rem;">
+                                        <span style="color: var(--text-light); font-weight: 500;">Form Progress</span>
+                                        <span style="color: var(--accent-color); font-weight: 600;" class="form-progress-text"><?php echo $curr_pct; ?>%</span>
+                                    </div>
+                                    <div style="height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden;">
+                                        <div class="current-form-progress" style="height: 100%; background: var(--accent-color); width: <?php echo $curr_pct; ?>%; transition: width 0.3s ease;"></div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -762,7 +870,7 @@ $can_edit = hasPermission('enter_data');
                                      }
                                  }
                             ?>
-                                <div class="crf-field" data-field-id="<?php echo $field['id']; ?>">
+                                <div class="crf-field" data-field-id="<?php echo $field['id']; ?>" <?php if ($field['is_required']) echo 'data-required="true"'; ?>>
                                     <div class="field-label-row">
                                         <!-- Field Status Icon -->
                                         <span class="material-icons-round status-icon" style="color: <?php echo $is_f ? 'var(--accent-color)' : '#94a3b8'; ?>">
@@ -784,47 +892,57 @@ $can_edit = hasPermission('enter_data');
                                          <!-- Direct Field Action Icons -->
                                          <div class="field-direct-actions" style="display: flex; align-items: center; gap: 0.25rem;">
                                                <?php 
-                                               $can_raise_query = hasPermission('raise_query');
-                                               $can_view_query = hasPermission('query') || hasPermission('all');
-                                               
-                                               if ($can_view_query || $can_raise_query): 
-                                                   $query_color = '#94a3b8'; // default gray
-                                                   $query_tooltip = 'Queries';
-                                                   $click_handler = '';
-                                                   
-                                                   if ($active_query_count > 0) {
-                                                       if ($has_open_query) {
-                                                           $query_color = '#3b82f6'; // Blue if query is not answered (new / open)
-                                                           $query_tooltip = 'View Queries (Unanswered)';
-                                                           $click_handler = "onclick=\"handleFieldAction('view_queries', {$field['id']}, '" . addslashes($field['label']) . "')\"";
-                                                       } elseif ($has_answered_query) {
-                                                           $query_color = '#ea580c'; // Orange if query is answered
-                                                           $query_tooltip = 'View Queries (Answered)';
-                                                           $click_handler = "onclick=\"handleFieldAction('view_queries', {$field['id']}, '" . addslashes($field['label']) . "')\"";
-                                                       }
-                                                   } else {
-                                                       if ($query_count > 0) {
-                                                           // Closed queries exist - allow raising a new query if permitted, otherwise view history
-                                                           if ($can_raise_query) {
-                                                               $query_tooltip = 'Add Query';
-                                                               $click_handler = "onclick=\"handleFieldAction('add_query', {$field['id']}, '" . addslashes($field['label']) . "')\"";
-                                                           } else {
-                                                               $query_tooltip = 'View Queries (Closed)';
-                                                               $click_handler = "onclick=\"handleFieldAction('view_queries', {$field['id']}, '" . addslashes($field['label']) . "')\"";
-                                                           }
-                                                       } else {
-                                                           // No queries ever raised
-                                                           if ($can_raise_query) {
-                                                               $query_tooltip = 'Add Query';
-                                                               $click_handler = "onclick=\"handleFieldAction('add_query', {$field['id']}, '" . addslashes($field['label']) . "')\"";
-                                                           } else {
-                                                               // Data coordinator / Admin can only view and cannot raise query. Since no query exists, disabled look
-                                                               $query_tooltip = 'No queries raised';
-                                                               $click_handler = 'style="cursor: default; opacity: 0.4;"';
-                                                           }
-                                                       }
-                                                   }
-                                                   ?>
+                                                $can_raise_query = hasPermission('raise_query');
+                                                $can_view_query = hasPermission('query') || hasPermission('all');
+                                                
+                                                if ($can_view_query || $can_raise_query): 
+                                                    $query_color = '#94a3b8'; // default gray
+                                                    $query_tooltip = 'Queries';
+                                                    $click_handler = '';
+                                                    $is_form_reviewed_for_role = ($is_monitor_role && $monitor_reviewed) || ($is_manager_role && $manager_reviewed);
+                                                    
+                                                    if ($active_query_count > 0) {
+                                                        if ($is_form_reviewed_for_role) {
+                                                            $query_tooltip = "Cannot Raise Query&#10;as the form is marked as review";
+                                                        } else {
+                                                            $query_tooltip = "Cannot Raise Query&#10;as a query is open";
+                                                        }
+                                                        if ($has_open_query) {
+                                                            $query_color = '#1d6f97'; // Brand color for active query
+                                                            $click_handler = "onclick=\"handleFieldAction('view_queries', {$field['id']}, '" . addslashes($field['label']) . "')\"";
+                                                        } elseif ($has_answered_query) {
+                                                            $query_color = '#ea580c'; // Orange if query is answered
+                                                            $click_handler = "onclick=\"handleFieldAction('view_queries', {$field['id']}, '" . addslashes($field['label']) . "')\"";
+                                                        }
+                                                    } else {
+                                                        if ($is_form_reviewed_for_role) {
+                                                            $query_tooltip = "Cannot Raise Query&#10;as the form is marked as review";
+                                                            $query_color = '#cbd5e1';
+                                                            $click_handler = 'style="cursor: not-allowed; opacity: 0.5;"';
+                                                        } else {
+                                                            if ($query_count > 0) {
+                                                                // Closed queries exist - allow raising a new query if permitted, otherwise view history
+                                                                if ($can_raise_query) {
+                                                                    $query_tooltip = 'Add Query';
+                                                                    $click_handler = "onclick=\"handleFieldAction('add_query', {$field['id']}, '" . addslashes($field['label']) . "')\"";
+                                                                } else {
+                                                                    $query_tooltip = 'View Queries (Closed)';
+                                                                    $click_handler = "onclick=\"handleFieldAction('view_queries', {$field['id']}, '" . addslashes($field['label']) . "')\"";
+                                                                }
+                                                            } else {
+                                                                // No queries ever raised
+                                                                if ($can_raise_query) {
+                                                                    $query_tooltip = 'Add Query';
+                                                                    $click_handler = "onclick=\"handleFieldAction('add_query', {$field['id']}, '" . addslashes($field['label']) . "')\"";
+                                                                } else {
+                                                                    // Data coordinator / Admin can only view and cannot raise query. Since no query exists, disabled look
+                                                                    $query_tooltip = 'No queries raised';
+                                                                    $click_handler = 'style="cursor: default; opacity: 0.4;"';
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    ?>
                                                   <button type="button" class="btn-icon-sm" title="<?php echo $query_tooltip; ?>" <?php echo (strpos($click_handler, 'onclick') !== false) ? $click_handler : ''; ?> <?php echo (strpos($click_handler, 'style') !== false) ? $click_handler : ''; ?>>
                                                       <span class="material-icons-round" style="color: <?php echo $query_color; ?>; font-size: 1.15rem;">help_outline</span>
                                                       <?php if ($active_query_count > 0): ?>
@@ -860,6 +978,24 @@ $can_edit = hasPermission('enter_data');
                         <?php endif; ?>
                     </div>
                 </div>
+
+                <!-- Unified Form History & Audit Trail Card -->
+                <?php if ($current_form_id): ?>
+                    <div class="crf-card" style="margin-top: 2rem;">
+                        <div class="crf-header" style="background: #f8fafc; padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border-color); cursor: pointer; display: flex; align-items: center; justify-content: space-between;" onclick="toggleAuditTrailAccordion()">
+                            <h3 style="font-size: 1.1rem; margin: 0; display: flex; align-items: center; gap: 0.5rem; color: #1e293b; border-bottom: none; user-select: none;">
+                                <span class="material-icons-round" style="color: #64748b;">history</span>
+                                Form History & Audit Trail
+                            </h3>
+                            <span id="audit-accordion-icon" class="material-icons-round" style="color: #64748b; transition: transform 0.2s; user-select: none;">expand_more</span>
+                        </div>
+                        <div id="audit-accordion-body" class="crf-body" style="padding: 0; overflow-x: auto; display: none;">
+                            <div id="audit-trail-table-container">
+                                <?php echo renderFormAuditTrail($pdo, $study_id, $subject_id, $current_form_id, (int)($current_instance_id ?? 0)); ?>
+                            </div>
+                        </div>
+                    </div>
+                <?php endif; ?>
             <?php endif; ?>
         </main>
     </div>
@@ -867,6 +1003,7 @@ $can_edit = hasPermission('enter_data');
 <!-- Custom Modal for Verification -->
 <style>
     .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; justify-content: center; align-items: center; }
+    .modal-overlay.active { display: flex; }
     .modal-box { background: white; border-radius: 8px; padding: 2rem; max-width: 500px; width: 90%; box-shadow: 0 10px 25px rgba(0,0,0,0.2); text-align: center; }
     .modal-actions { margin-top: 1.5rem; display: flex; justify-content: center; gap: 1rem; }
     .modal-title { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; color: #1e293b; }
@@ -887,7 +1024,77 @@ $can_edit = hasPermission('enter_data');
     </div>
 </div>
 
+<!-- Custom Modal for Workflow Actions -->
+<div id="workflowConfirmModal" class="modal-overlay" onclick="closeWorkflowModal()">
+    <div class="modal-box" onclick="event.stopPropagation()">
+        <div class="modal-title" id="workflowModalTitle">Confirm Action</div>
+        <div class="modal-msg" id="workflowModalMsg">
+            Are you sure you want to perform this action?
+        </div>
+        
+        <!-- Revoke Remarks Container -->
+        <div id="revokeRemarksContainer" style="display: none; margin-top: 1rem; width: 100%; text-align: left;">
+            <label style="display: block; font-weight: 600; font-size: 0.9rem; color: var(--text-dark); margin-bottom: 0.5rem;">Reason for Revoking Review <span style="color: red;">*</span></label>
+            <textarea id="revokeRemarksText" class="form-input" rows="4" style="width: 100%; border: 1px solid var(--border-color); border-radius: 4px; padding: 0.5rem; resize: vertical; box-sizing: border-box;" placeholder="Enter the reason for revoking this review and mention the changes required." maxlength="500" oninput="validateRevokeRemarks()"></textarea>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.25rem;">
+                <span id="revokeRemarksValMsg" style="color: #dc2626; font-size: 0.75rem; font-weight: 500;">Please enter a reason before revoking the review.</span>
+                <span id="revokeRemarksCharCount" style="color: #64748b; font-size: 0.75rem;">0 / 500</span>
+            </div>
+        </div>
+
+        <div class="modal-actions" style="margin-top: 1.5rem;">
+            <button class="btn btn-outline" onclick="closeWorkflowModal()" style="cursor: pointer;">Cancel</button>
+            <button class="btn btn-primary" id="workflowConfirmBtn" style="cursor: pointer;" onclick="executeWorkflowAction()">Confirm</button>
+        </div>
+    </div>
+</div>
+
+<!-- Custom Modal for Adding Repeating Instance -->
+<div id="addInstanceModal" class="modal-overlay" onclick="closeAddInstanceModal()">
+    <div class="modal-box" onclick="event.stopPropagation()" style="max-width: 400px;">
+        <div class="modal-title">Add New Entry</div>
+        <div class="modal-msg" style="text-align: left; margin-bottom: 1rem;">
+            Please enter a label for this new entry (e.g., 'AE-01' or leave empty for automatic labeling).
+        </div>
+        <div style="margin-bottom: 1.5rem; text-align: left;">
+            <input type="text" id="newInstanceLabel" class="crf-input" placeholder="e.g. AE-01" onkeydown="if(event.key === 'Enter') confirmCreateInstance()" style="width: 100%; border: 1px solid var(--border-color); border-radius: 4px; padding: 0.5rem; box-sizing: border-box;">
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-outline" onclick="closeAddInstanceModal()" style="cursor: pointer;">Cancel</button>
+            <button class="btn btn-primary" onclick="confirmCreateInstance()" style="cursor: pointer;">Add Entry</button>
+        </div>
+    </div>
+</div>
+
 <script>
+    function toggleClickTooltip(el, event) {
+        event.stopPropagation();
+        const tooltip = el.querySelector('.click-tooltip-text');
+        const isVisible = tooltip.style.visibility === 'visible';
+        
+        // Close all open click tooltips first
+        document.querySelectorAll('.click-tooltip-text').forEach(t => {
+            t.style.visibility = 'hidden';
+            t.style.opacity = '0';
+            t.style.pointerEvents = 'none';
+        });
+        
+        if (!isVisible) {
+            tooltip.style.visibility = 'visible';
+            tooltip.style.opacity = '1';
+            tooltip.style.pointerEvents = 'auto';
+        }
+    }
+
+    // Global click listener to close tooltips when clicking outside
+    document.addEventListener('click', function() {
+        document.querySelectorAll('.click-tooltip-text').forEach(t => {
+            t.style.visibility = 'hidden';
+            t.style.opacity = '0';
+            t.style.pointerEvents = 'none';
+        });
+    });
+
     function toggleVisit(el) {
         el.classList.toggle('active');
         const next = el.nextElementSibling;
@@ -897,9 +1104,22 @@ $can_edit = hasPermission('enter_data');
     }
 
     // Instance Management
-    async function createInstance() {
-        const label = prompt("Enter label for new entry (e.g. 'AE-01' or leave empty for auto):");
-        if (label === null) return; 
+    function openAddInstanceModal() {
+        const input = document.getElementById('newInstanceLabel');
+        if (input) {
+            input.value = '';
+        }
+        document.getElementById('addInstanceModal').classList.add('active');
+        setTimeout(() => { if (input) input.focus(); }, 100);
+    }
+
+    function closeAddInstanceModal() {
+        document.getElementById('addInstanceModal').classList.remove('active');
+    }
+
+    async function confirmCreateInstance() {
+        const label = document.getElementById('newInstanceLabel').value;
+        closeAddInstanceModal();
         
         const formData = new FormData();
         formData.append('action', 'create_instance');
@@ -918,12 +1138,332 @@ $can_edit = hasPermission('enter_data');
         } catch(e) { console.error(e); alert("Network Error"); }
     }
 
+    window.monitorReviewed = <?php echo $monitor_reviewed ? 'true' : 'false'; ?>;
+    window.managerReviewed = <?php echo $manager_reviewed ? 'true' : 'false'; ?>;
+    const isMonitorRole = <?php echo $is_monitor_role ? 'true' : 'false'; ?>;
+    const isManagerRole = <?php echo $is_manager_role ? 'true' : 'false'; ?>;
+    let pendingWorkflowAction = '';
+
+    function closeWorkflowModal() {
+        document.getElementById('workflowConfirmModal').classList.remove('active');
+    }
+
+    function toggleAuditTrailAccordion() {
+        const body = document.getElementById('audit-accordion-body');
+        const icon = document.getElementById('audit-accordion-icon');
+        if (body.style.display === 'none') {
+            body.style.display = 'block';
+            icon.style.transform = 'rotate(180deg)';
+        } else {
+            body.style.display = 'none';
+            icon.style.transform = 'rotate(0deg)';
+        }
+    }
+
+    function showCenterToast(message) {
+        let toast = document.getElementById('center-toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'center-toast';
+            toast.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #1e293b; color: #ffffff; padding: 1rem 2rem; border-radius: 8px; font-size: 0.95rem; font-weight: 500; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3); z-index: 10001; display: flex; align-items: center; gap: 0.75rem; opacity: 0; transition: opacity 0.3s ease; pointer-events: none;';
+            document.body.appendChild(toast);
+        }
+        toast.innerHTML = '<span class="material-icons-round" style="color: #ef4444; font-size: 1.25rem;">error_outline</span> <span>' + message + '</span>';
+        toast.style.opacity = '1';
+        setTimeout(() => { toast.style.opacity = '0'; }, 4000);
+    }
+
+    function isFieldEmpty(fieldEl) {
+        const radios = fieldEl.querySelectorAll('input[type="radio"]');
+        if (radios.length > 0) return !Array.from(radios).some(r => r.checked);
+        const checkboxes = fieldEl.querySelectorAll('input[type="checkbox"]');
+        if (checkboxes.length > 0) return !Array.from(checkboxes).some(c => c.checked);
+        const select = fieldEl.querySelector('select');
+        if (select) return select.value === '';
+        const inputs = fieldEl.querySelectorAll('input:not([type="radio"]):not([type="checkbox"]), textarea');
+        for (const input of inputs) {
+            if (input.value.trim() === '') return true;
+        }
+        return false;
+    }
+
+    function validateRevokeRemarks() {
+        const text = document.getElementById('revokeRemarksText').value;
+        const valMsg = document.getElementById('revokeRemarksValMsg');
+        const charCount = document.getElementById('revokeRemarksCharCount');
+        const btn = document.getElementById('workflowConfirmBtn');
+        const trimmed = text.trim();
+        charCount.textContent = text.length + ' / 500';
+        if (trimmed.length === 0) {
+            valMsg.textContent = "Please enter a reason before revoking the review.";
+            valMsg.style.display = 'block';
+            btn.disabled = true;
+            btn.style.opacity = '0.6';
+            btn.style.cursor = 'not-allowed';
+        } else if (trimmed.length < 10) {
+            valMsg.textContent = "Remarks must be at least 10 characters.";
+            valMsg.style.display = 'block';
+            btn.disabled = true;
+            btn.style.opacity = '0.6';
+            btn.style.cursor = 'not-allowed';
+        } else {
+            valMsg.style.display = 'none';
+            btn.disabled = false;
+            btn.style.opacity = '1';
+            btn.style.cursor = 'pointer';
+        }
+    }
+
+    function updateReviewStatus(workflowAction) {
+        pendingWorkflowAction = workflowAction;
+        
+        let title = '';
+        let message = '';
+        let btnText = '';
+        let btnBg = '';
+        
+        const confirmBtn = document.getElementById('workflowConfirmBtn');
+        
+        if (workflowAction === 'mark_sdr') {
+            // Validate required fields
+            const requiredFields = document.querySelectorAll('.crf-field[data-required="true"]');
+            let firstMissingField = null;
+            for (const field of requiredFields) {
+                if (isFieldEmpty(field)) {
+                    firstMissingField = field;
+                    break;
+                }
+            }
+            if (firstMissingField) {
+                showCenterToast("Please complete all required fields before marking this record as SDR.");
+                firstMissingField.style.transition = 'border 0.3s ease';
+                firstMissingField.style.border = '2px solid #ef4444';
+                firstMissingField.style.borderRadius = '6px';
+                firstMissingField.style.padding = '0.5rem';
+                firstMissingField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                const firstInput = firstMissingField.querySelector('input, select, textarea');
+                if (firstInput) firstInput.focus();
+                setTimeout(() => {
+                    firstMissingField.style.border = '';
+                    firstMissingField.style.padding = '';
+                }, 3000);
+                return;
+            }
+            title = 'Mark as SDR';
+            message = 'Are you sure you want to mark this form as Source Data Verification (SDR) ready? The form will become read-only and locked for editing.';
+            btnText = 'Yes, Mark as SDR';
+            btnBg = '#1d6f97';
+        } else if (workflowAction === 'revoke_sdr') {
+            title = 'Revoke SDR';
+            message = 'Are you sure you want to revoke the SDR submission? This will return the form to Draft mode and make it editable again.';
+            btnText = 'Yes, Revoke SDR';
+            btnBg = '#dc2626';
+        } else if (workflowAction === 'monitor_review') {
+            title = 'Complete Monitor Review';
+            message = 'Are you sure you want to complete the Monitor review for this form? The review progress will increase to 50%.';
+            btnText = 'Yes, Mark as Reviewed';
+            btnBg = '#ea580c';
+        } else if (workflowAction === 'monitor_revoke') {
+            title = 'Reason for Revoking Review';
+            message = 'Are you sure you want to revoke this review? The SDR status will be reset, and the Data Coordinator will be able to update and resubmit the record.';
+            btnText = 'Confirm Revoke';
+            btnBg = '#ea580c';
+        } else if (workflowAction === 'manager_review') {
+            title = 'Complete Manager Review';
+            message = 'Are you sure you want to complete the Manager review for this form? The review progress will increase to 100% and the form will be SRVed.';
+            btnText = 'Yes, Mark as Reviewed';
+            btnBg = '#0d8e6f';
+        } else if (workflowAction === 'manager_revoke') {
+            title = 'Reason for Revoking Review';
+            message = 'Are you sure you want to revoke this review? The SDR status will be reset, and the Data Coordinator will be able to update and resubmit the record.';
+            btnText = 'Confirm Revoke';
+            btnBg = '#0d8e6f';
+        }
+
+        document.getElementById('workflowModalTitle').textContent = title;
+        document.getElementById('workflowModalMsg').textContent = message;
+        
+        confirmBtn.textContent = btnText;
+        confirmBtn.style.backgroundColor = btnBg;
+        confirmBtn.style.borderColor = btnBg;
+        
+        const isRevoke = (workflowAction === 'monitor_revoke' || workflowAction === 'manager_revoke');
+        const remarksContainer = document.getElementById('revokeRemarksContainer');
+        const remarksText = document.getElementById('revokeRemarksText');
+        
+        if (remarksContainer && remarksText) {
+            if (isRevoke) {
+                remarksContainer.style.display = 'block';
+                remarksText.value = '';
+                validateRevokeRemarks(); // disables by default
+            } else {
+                remarksContainer.style.display = 'none';
+                confirmBtn.disabled = false;
+                confirmBtn.style.opacity = '1';
+                confirmBtn.style.cursor = 'pointer';
+            }
+        }
+        
+        document.getElementById('workflowConfirmModal').classList.add('active');
+    }
+
+    function updateFormStatusUI(data) {
+        // 1. Review Status Banner
+        const statusBadge = document.querySelector('.review-status-banner .status-badge');
+        if (statusBadge) {
+            statusBadge.style.backgroundColor = data.review_bg;
+            statusBadge.style.color = data.review_color;
+            statusBadge.innerHTML = `<span class="material-icons-round" style="font-size: 1rem;">${data.review_icon}</span> ${data.review_text}`;
+        }
+        
+        const reviewTextEl = document.querySelector('.review-status-banner div[style*="align-items: flex-end"] span[style*="font-weight: 700"]');
+        if (reviewTextEl) {
+            reviewTextEl.textContent = data.review_progress + '%';
+        }
+        
+        const reviewBarFill = document.querySelector('.review-status-banner div[style*="width: 100px"] div');
+        if (reviewBarFill) {
+            reviewBarFill.style.width = data.review_progress + '%';
+            reviewBarFill.style.backgroundColor = data.review_bar_color;
+        }
+
+        // 2. Action buttons
+        const btnContainer = document.getElementById('workflow-buttons-container');
+        if (btnContainer && data.buttons_html !== undefined) {
+            btnContainer.innerHTML = data.buttons_html;
+        }
+
+        // 3. Header Actions
+        const headerActions = document.getElementById('header-workflow-actions');
+        if (headerActions && data.header_html !== undefined) {
+            headerActions.innerHTML = data.header_html;
+        }
+
+        // 4. Input field editability (Disable/enable inputs and textareas)
+        const inputs = document.querySelectorAll('.crf-card input, .crf-card select, .crf-card textarea');
+        inputs.forEach(input => {
+            if (data.can_edit) {
+                input.disabled = false;
+                input.removeAttribute('readonly');
+                input.style.background = '';
+                input.style.cursor = '';
+            } else {
+                input.disabled = true;
+                input.style.background = '#f1f5f9';
+                input.style.cursor = 'not-allowed';
+            }
+        });
+        
+        // Hide direct field action buttons if read-only
+        const fieldDirectActions = document.querySelectorAll('.field-direct-actions');
+        fieldDirectActions.forEach(container => {
+            const clearBtn = container.querySelector('[title="Clear Data"]');
+            const missingBtn = container.querySelector('[title="Mark Missing"]');
+            if (clearBtn) clearBtn.style.display = data.can_edit ? '' : 'none';
+            if (missingBtn) missingBtn.style.display = data.can_edit ? '' : 'none';
+        });
+
+        // 5. Form History & Audit Trail
+        const auditContainer = document.getElementById('audit-trail-table-container');
+        if (auditContainer && data.audit_trail_html !== undefined) {
+            auditContainer.innerHTML = data.audit_trail_html;
+        }
+
+        // 6. Global progress and Sidebar Progress
+        if (data.subject_progress !== undefined) {
+            const gpBar = document.getElementById('global-progress-bar');
+            const gpText = document.getElementById('global-progress-text');
+            if (gpBar) gpBar.style.width = data.subject_progress + '%';
+            if (gpText) gpText.innerText = data.subject_progress + '%';
+        }
+        
+        if (data.visit_progress !== undefined) {
+            const vpBar = document.getElementById('visit-progress-bar-<?php echo $current_visit_id; ?>');
+            const vpText = document.getElementById('visit-progress-text-<?php echo $current_visit_id; ?>');
+            if (vpBar) vpBar.style.width = data.visit_progress + '%';
+            if (vpText) vpText.innerText = data.visit_progress + '%';
+        }
+        
+        // 7. Sidebar form icon updates
+        const iconId = 'form-icon-<?php echo $current_form_id; ?>-<?php echo $current_instance_id ?: 0; ?>';
+        const iconEl = document.getElementById(iconId);
+        if (iconEl) {
+            iconEl.style.color = data.review_color;
+            iconEl.innerText = data.review_icon;
+        }
+
+        // 8. Update query buttons dynamically
+        if (data.monitor_reviewed !== undefined) window.monitorReviewed = data.monitor_reviewed;
+        if (data.manager_reviewed !== undefined) window.managerReviewed = data.manager_reviewed;
+
+        const isFormReviewedForRole = (window.monitorReviewed && isMonitorRole) || (window.managerReviewed && isManagerRole);
+        if (isFormReviewedForRole) {
+            const queryButtons = document.querySelectorAll('.field-direct-actions button[title*="Query"], .field-direct-actions button[title*="query"], .field-direct-actions button[title*="add"], .field-direct-actions button[title*="Add"]');
+            queryButtons.forEach(btn => {
+                btn.title = "Cannot Raise Query\nas the form is marked as review";
+                const onclickStr = btn.getAttribute('onclick') || '';
+                if (onclickStr.includes('add_query')) {
+                    btn.removeAttribute('onclick');
+                    btn.style.cursor = 'not-allowed';
+                    btn.style.opacity = '0.5';
+                    const iconEl = btn.querySelector('.material-icons-round');
+                    if (iconEl) iconEl.style.color = '#cbd5e1';
+                }
+            });
+        } else {
+            // If the review is revoked, reload to restore all original click handlers and tooltips easily
+            if (pendingWorkflowAction && pendingWorkflowAction.includes('revoke')) {
+                location.reload();
+            }
+        }
+        
+        if (pendingWorkflowAction === 'mark_sdr') {
+            const alertBtn = document.querySelector('.click-tooltip-container');
+            if (alertBtn) {
+                alertBtn.style.display = 'none';
+            }
+        }
+    }
+
+    async function executeWorkflowAction() {
+        closeWorkflowModal();
+        if (!pendingWorkflowAction) return;
+
+        const formData = new FormData();
+        formData.append('action', 'update_review_status');
+        formData.append('workflow_action', pendingWorkflowAction);
+        formData.append('subject_id', '<?php echo $subject_id; ?>');
+        formData.append('form_id', '<?php echo $current_form_id; ?>');
+        formData.append('visit_id', '<?php echo $current_visit_id ?? 0; ?>');
+        formData.append('repeating_instance_id', '<?php echo $current_instance_id ?? 0; ?>');
+        formData.append('prev_link', '<?php echo $prev_link; ?>');
+        formData.append('next_link', '<?php echo $next_link; ?>');
+        
+        if (pendingWorkflowAction === 'monitor_revoke' || pendingWorkflowAction === 'manager_revoke') {
+            const remarks = document.getElementById('revokeRemarksText').value;
+            formData.append('remarks', remarks);
+        }
+        
+        try {
+            const res = await fetch('ajax_data.php', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (data.success) {
+                updateFormStatusUI(data);
+            } else {
+                alert("Error: " + (data.message || data.error || 'Unknown'));
+            }
+        } catch(e) {
+            console.error(e);
+            alert("Network Error");
+        }
+    }
+
     function verifyForm() {
-        document.getElementById('verifyModal').style.display = 'flex';
+        document.getElementById('verifyModal').classList.add('active');
     }
 
     function closeVerifyModal() {
-        document.getElementById('verifyModal').style.display = 'none';
+        document.getElementById('verifyModal').classList.remove('active');
     }
 
     async function confirmVerify() {
@@ -934,15 +1474,15 @@ $can_edit = hasPermission('enter_data');
         formData.append('form_id', '<?php echo $current_form_id; ?>');
         formData.append('visit_id', '<?php echo $current_visit_id ?? 0; ?>');
         formData.append('repeating_instance_id', '<?php echo $current_instance_id ?? 0; ?>');
+        formData.append('prev_link', '<?php echo $prev_link; ?>');
+        formData.append('next_link', '<?php echo $next_link; ?>');
         
         try {
             const res = await fetch('ajax_data.php', { method: 'POST', body: formData });
             const data = await res.json();
             if(data.success) {
-                alert("Form verified successfully!"); // This simple alert is ok for success feedback? User said "alert modal" disliked.
-                // Let's replace this with a reload, or maybe a toast? 
-                // For now, let's just reload.
-                location.reload();
+                alert("Form verified successfully!"); 
+                updateFormStatusUI(data);
             } else {
                 alert("Error: " + (data.message || data.error || 'Unknown'));
             }
@@ -970,6 +1510,9 @@ $can_edit = hasPermission('enter_data');
 
 
     function saveData(goNext = false) {
+        // Cancel any pending auto-saves to prevent race condition/duplicate saves
+        clearTimeout(saveTimeout);
+        
         // If called from button, give feedback
         const btn = event instanceof PointerEvent ? event.target : null;
         let originalText = '';
@@ -1068,10 +1611,10 @@ $can_edit = hasPermission('enter_data');
                         let icon = 'radio_button_unchecked';
                         
                         if (data.form_status === 'complete' || data.form_progress === 100) {
-                            color = '#10b981';
+                            color = '#0d8e6f';
                             icon = 'check_circle';
                         } else if (data.form_status === 'in_progress' || data.form_progress > 0) {
-                            color = '#3b82f6';
+                            color = '#1d6f97';
                             icon = 'hourglass_top';
                         }
                         
@@ -1173,8 +1716,16 @@ $can_edit = hasPermission('enter_data');
     document.addEventListener('DOMContentLoaded', () => {
          const inputs = document.querySelectorAll('[name^="field_"]');
          inputs.forEach(input => {
-             input.addEventListener('input', debouncedSave);
-             input.addEventListener('change', debouncedSave);
+             const type = input.type || '';
+             const tag = input.tagName.toLowerCase();
+             
+             // For text/numeric fields, calculate progress on keypress (input) but only save on focus loss (change)
+             if (tag === 'textarea' || type === 'text' || type === 'number' || type === 'email' || type === 'tel' || type === 'url' || type === 'password') {
+                 input.addEventListener('input', checkProgress);
+                 input.addEventListener('change', debouncedSave);
+             } else {
+                 input.addEventListener('change', debouncedSave);
+             }
          });
     });
 </script>
@@ -1273,7 +1824,7 @@ $can_edit = hasPermission('enter_data');
             </div>
         </div>
         <div class="modal-footer">
-            <?php if ($can_raise_query): ?>
+            <?php if (hasPermission('raise_query')): ?>
                 <button class="btn btn-outline" id="btnRaiseNewQueryFromModal" style="margin-right: auto; border-color: var(--primary-color); color: var(--primary-color);" onclick="raiseNewQueryFromModal()">Raise New Query</button>
             <?php endif; ?>
             <button class="btn btn-outline" onclick="closeModal('viewQueryModal')">Cancel</button>
@@ -1455,6 +2006,11 @@ $can_edit = hasPermission('enter_data');
         document.querySelectorAll('.dropdown-menu').forEach(m => m.style.display = 'none');
 
         if (action === 'add_query') {
+            const isFormReviewedForRole = (window.monitorReviewed && isMonitorRole) || (window.managerReviewed && isManagerRole);
+            if (isFormReviewedForRole) {
+                alert("Cannot Raise Query\nas the form is marked as review");
+                return;
+            }
             document.getElementById('addQueryFieldId').value = fieldId;
             document.getElementById('addQueryVisitId').value = visitId;
             document.getElementById('addQueryFormId').value = formId;
@@ -1537,10 +2093,10 @@ $can_edit = hasPermission('enter_data');
             let icon = 'radio_button_unchecked';
             
             if (data.form_status === 'complete' || data.form_progress === 100) {
-                color = '#10b981';
+                color = '#0d8e6f';
                 icon = 'check_circle';
             } else if (data.form_status === 'in_progress' || data.form_progress > 0) {
-                color = '#3b82f6';
+                color = '#1d6f97';
                 icon = 'hourglass_top';
             }
             
@@ -1564,6 +2120,11 @@ $can_edit = hasPermission('enter_data');
          document.getElementById('viewQueryFieldId').value = fieldId;
          document.getElementById('viewQueryFieldName').innerText = fieldName;
          
+         const btnRaise = document.getElementById('btnRaiseNewQueryFromModal');
+         if (btnRaise) {
+             btnRaise.style.display = 'inline-flex';
+         }
+
          openModal('viewQueryModal');
          
          // 1. Clone the field input from the page and add to query field edit container
@@ -1634,8 +2195,16 @@ $can_edit = hasPermission('enter_data');
              const res = await fetch('ajax_data.php', { method: 'POST', body: fd });
              const data = await res.json();
              if (data.success) {
-                 currentQueries = data.queries;
-                 fieldAuditHistory = data.history; // Cache field audit logs
+                  currentQueries = data.queries;
+                  fieldAuditHistory = data.history; // Cache field audit logs
+                  
+                  if (btnRaise) {
+                      const isFormReviewed = (window.monitorReviewed && isMonitorRole) || (window.managerReviewed && isManagerRole);
+                      const hasUnresolvedQuery = data.queries.some(q => q.status !== 'closed');
+                      if (isFormReviewed || hasUnresolvedQuery) {
+                          btnRaise.style.display = 'none';
+                      }
+                  }
                  select.innerHTML = '<option value="">Select a query</option>';
                  data.queries.forEach((q, idx) => {
                      const opt = document.createElement('option');
@@ -1700,13 +2269,13 @@ $can_edit = hasPermission('enter_data');
         const statusSpan = document.getElementById('queryCurrentStatus');
         statusSpan.innerText = query.status.charAt(0).toUpperCase() + query.status.slice(1);
         if (query.status === 'new') {
-            statusSpan.style.color = '#2563eb'; // Blue
+            statusSpan.style.color = '#1d6f97'; // Brand Blue
         } else if (query.status === 'open') {
             statusSpan.style.color = '#0284c7'; // Sky Blue
         } else if (query.status === 'answered') {
             statusSpan.style.color = '#ea580c'; // Orange
         } else if (query.status === 'closed') {
-            statusSpan.style.color = '#16a34a'; // Green
+            statusSpan.style.color = '#0d8e6f'; // Brand Green
         } else {
             statusSpan.style.color = 'var(--text-dark)';
         }
@@ -1809,7 +2378,7 @@ $can_edit = hasPermission('enter_data');
                       if (h.old_value !== null && h.new_value !== null) {
                           valueChangeHtml = `
                              <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 4px;">
-                                 Value change: <span style="text-decoration: line-through; color: #ef4444;">${h.old_value || 'Empty'}</span> &rarr; <span style="font-weight: 600; color: #16a34a;">${h.new_value || 'Empty'}</span>
+                                 Value change: <span style="text-decoration: line-through; color: #ef4444;">${h.old_value || 'Empty'}</span> &rarr; <span style="font-weight: 600; color: #0d8e6f;">${h.new_value || 'Empty'}</span>
                              </div>
                           `;
                       }
@@ -2055,7 +2624,7 @@ $can_edit = hasPermission('enter_data');
                         <td style="padding: 0.75rem; white-space: nowrap;">${h.action_at}</td>
                         <td style="padding: 0.75rem; white-space: normal; word-break: break-word;">${h.action_by_name}</td>
                         <td style="padding: 0.75rem; color: #ef4444; white-space: normal; word-break: break-word;">${h.old_value || ''}</td>
-                        <td style="padding: 0.75rem; color: #10b981; white-space: normal; word-break: break-word;">${h.new_value || ''}</td>
+                        <td style="padding: 0.75rem; color: #0d8e6f; white-space: normal; word-break: break-word;">${h.new_value || ''}</td>
                         <td style="padding: 0.75rem; white-space: normal; word-break: break-word;">${h.reason_for_change || h.change_type}</td>
                      `;
                      tbody.appendChild(tr);
@@ -2197,7 +2766,7 @@ function renderFieldInput($field, $saved_value = '', $choices_map = []) {
         case 'upload':
             echo '<input type="file" name="'.$name.'_file" class="crf-input" '.$disabled.'>';
             if ($value) {
-                echo '<div style="margin-top:0.5rem; font-size:0.85rem;"><a href="uploads/'.htmlspecialchars($value).'" target="_blank" style="color:#2563eb;">View Uploaded File</a></div>';
+                echo '<div style="margin-top:0.5rem; font-size:0.85rem;"><a href="uploads/'.htmlspecialchars($value).'" target="_blank" style="color:#1d6f97;">View Uploaded File</a></div>';
             }
             break;
 

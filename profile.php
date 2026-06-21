@@ -45,7 +45,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <div class="app-layout">
     <aside class="sidebar">
         <div class="sidebar-header">
-            <span>Clinformatiq</span>
+            <img src="edc_small_logo.png" class="sidebar-logo logo-small" alt="Logo">
+            <img src="EDC.png" class="sidebar-logo logo-large" alt="Logo">
         </div>
         <nav style="padding: 1.5rem;">
             <a href="dashboard.php" class="btn btn-outline" style="width: 100%; justify-content: flex-start; color: rgba(255,255,255,0.7); border-color: transparent; margin-bottom: 0.5rem;">

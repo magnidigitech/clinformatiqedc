@@ -18,3 +18,11 @@ ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS is_complete BOOLEAN DEF
 
 -- 5. Add progress column to subjects table if it does not exist
 ALTER TABLE subjects ADD COLUMN IF NOT EXISTS progress INT DEFAULT 0;
+
+-- 6. Add workflow status columns to subject_form_status table if they do not exist
+ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS sdr_submitted BOOLEAN DEFAULT FALSE;
+ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS monitor_reviewed BOOLEAN DEFAULT FALSE;
+ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS manager_reviewed BOOLEAN DEFAULT FALSE;
+
+-- 7. Drop NOT NULL constraint from field_id in data_audit_log
+ALTER TABLE data_audit_log ALTER COLUMN field_id DROP NOT NULL;

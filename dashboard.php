@@ -88,7 +88,8 @@ $username = $_SESSION['username'] ?? 'User';
     <!-- Sidebar -->
     <aside class="sidebar">
         <div class="sidebar-header">
-            <span>Clinformatiq</span>
+            <img src="edc_small_logo.png" class="sidebar-logo logo-small" alt="Logo">
+            <img src="EDC.png" class="sidebar-logo logo-large" alt="Logo">
         </div>
         <nav style="padding: 1rem 0;">
             <a href="dashboard.php" class="nav-link active">

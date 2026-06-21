@@ -144,8 +144,8 @@ else $page_title = ucfirst($status_filter) . " Queries";
                 <a href="queries.php?status=all<?php echo $tab_params; ?>" class="query-tab" style="text-decoration: none; color: <?php echo ($status_filter === '' || $status_filter === 'all') ? 'var(--primary-color)' : '#64748b'; ?>; font-weight: 600; padding-bottom: 0.5rem; border-bottom: 2px solid <?php echo ($status_filter === '' || $status_filter === 'all') ? 'var(--primary-color)' : 'transparent'; ?>; margin-bottom: -0.65rem; display: flex; align-items: center; gap: 0.5rem; transition: all 0.2s;">
                     All <span style="font-size: 0.75rem; background: #f1f5f9; color: #475569; padding: 2px 6px; border-radius: 99px; font-weight: 500;"><?php echo $total_count; ?></span>
                 </a>
-                <a href="queries.php?status=new<?php echo $tab_params; ?>" class="query-tab" style="text-decoration: none; color: <?php echo $status_filter === 'new' ? '#2563eb' : '#64748b'; ?>; font-weight: 600; padding-bottom: 0.5rem; border-bottom: 2px solid <?php echo $status_filter === 'new' ? '#2563eb' : 'transparent'; ?>; margin-bottom: -0.65rem; display: flex; align-items: center; gap: 0.5rem; transition: all 0.2s;">
-                    New <span style="font-size: 0.75rem; background: #dbeafe; color: #2563eb; padding: 2px 6px; border-radius: 99px; font-weight: 500;"><?php echo $new_count; ?></span>
+                <a href="queries.php?status=new<?php echo $tab_params; ?>" class="query-tab" style="text-decoration: none; color: <?php echo $status_filter === 'new' ? 'var(--primary-color)' : '#64748b'; ?>; font-weight: 600; padding-bottom: 0.5rem; border-bottom: 2px solid <?php echo $status_filter === 'new' ? 'var(--primary-color)' : 'transparent'; ?>; margin-bottom: -0.65rem; display: flex; align-items: center; gap: 0.5rem; transition: all 0.2s;">
+                    New <span style="font-size: 0.75rem; background: #e0f2fe; color: var(--primary-color); padding: 2px 6px; border-radius: 99px; font-weight: 500;"><?php echo $new_count; ?></span>
                 </a>
                 <a href="queries.php?status=open<?php echo $tab_params; ?>" class="query-tab" style="text-decoration: none; color: <?php echo $status_filter === 'open' ? '#0284c7' : '#64748b'; ?>; font-weight: 600; padding-bottom: 0.5rem; border-bottom: 2px solid <?php echo $status_filter === 'open' ? '#0284c7' : 'transparent'; ?>; margin-bottom: -0.65rem; display: flex; align-items: center; gap: 0.5rem; transition: all 0.2s;">
                     Open <span style="font-size: 0.75rem; background: #e0f2fe; color: #0284c7; padding: 2px 6px; border-radius: 99px; font-weight: 500;"><?php echo $open_count; ?></span>
@@ -211,7 +211,7 @@ else $page_title = ucfirst($status_filter) . " Queries";
                                     <?php 
                                         $sColor = '#64748b'; $sBg = '#f1f5f9';
                                         switch($q['status']) {
-                                            case 'new': $sColor = '#2563eb'; $sBg = '#dbeafe'; break; // Blue
+                                            case 'new': $sColor = 'var(--primary-color)'; $sBg = '#e0f2fe'; break; // Blue
                                             case 'open': $sColor = '#0284c7'; $sBg = '#e0f2fe'; break; // Sky Blue
                                             case 'answered': $sColor = '#ea580c'; $sBg = '#ffedd5'; break; // Orange
                                             case 'closed': $sColor = '#16a34a'; $sBg = '#dcfce7'; break; // Green

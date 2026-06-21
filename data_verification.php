@@ -28,8 +28,8 @@ $subject_filter = $_GET['subject'] ?? '';
 
 $params = [$study_id];
 $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-$is_complete_val = ($driver === 'pgsql') ? 'true' : '1';
-$is_verified_val = ($driver === 'pgsql') ? 'false' : '0';
+$sdr_submitted_val = ($driver === 'pgsql') ? 'true' : '1';
+$manager_reviewed_val = ($driver === 'pgsql') ? 'false' : '0';
 
 $sql = "
     SELECT 
@@ -46,8 +46,8 @@ $sql = "
     LEFT JOIN study_repeating_modules m ON f.repeating_module_id = m.id
     LEFT JOIN subject_repeating_instances sri ON sfs.repeating_instance_id = sri.id
     WHERE s.study_id = ?
-    AND sfs.is_complete = $is_complete_val
-    AND (sfs.is_verified = $is_verified_val OR sfs.is_verified IS NULL)
+    AND sfs.sdr_submitted = $sdr_submitted_val
+    AND (sfs.manager_reviewed = $manager_reviewed_val OR sfs.manager_reviewed IS NULL)
     AND (sfs.repeating_instance_id IS NULL OR sfs.repeating_instance_id = 0 OR sri.status = 'active')
 ";
 
