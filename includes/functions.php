@@ -113,7 +113,7 @@ function getFormReviewStatus($f_stat) {
         }
     } else {
         if ($monitor && $manager) {
-            return ['text' => 'srved', 'color' => '#0d8e6f', 'bg' => '#f0fdf4', 'icon' => 'verified', 'progress' => 100, 'bar_color' => '#0d8e6f'];
+            return ['text' => 'SRVed', 'color' => '#0d8e6f', 'bg' => '#f0fdf4', 'icon' => 'verified', 'progress' => 100, 'bar_color' => '#0d8e6f'];
         } elseif ($monitor || $manager) {
             $reviewer = $monitor ? 'Monitor' : 'Manager';
             return ['text' => $reviewer . ' Reviewed', 'color' => '#ea580c', 'bg' => '#fff7ed', 'icon' => 'rate_review', 'progress' => 50, 'bar_color' => '#f97316'];
@@ -255,7 +255,7 @@ function renderFormAuditTrail($pdo, $study_id, $subject_id, $current_form_id, $r
         } elseif ($change_type === 'manager_revoked') {
             $action_desc = '<span style="color: #0d8e6f; font-weight: 600;">Manager Review Revoked</span><br/><span style="font-size: 0.825rem; color: #475569; font-style: italic;">Remarks: ' . htmlspecialchars($audit['reason_for_change']) . '</span>';
         } elseif ($change_type === 'form_srved') {
-            $action_desc = '<span style="color: #0d8e6f; font-weight: 600;">Form srved</span>';
+            $action_desc = '<span style="color: #0d8e6f; font-weight: 600;">Form SRVed</span>';
         } elseif ($change_type === 'verify') {
             $action_desc = '<span style="color: #0d8e6f; font-weight: 600;">Source Data Verification</span>';
         } else {
