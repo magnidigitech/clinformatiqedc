@@ -3067,6 +3067,59 @@ function escapeHtml(str) {
         .replace(/'/g, '&#039;');
 }
 
+function showToast(message, type = 'success', duration = 3500) {
+    let container = document.getElementById('toastContainer');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toastContainer';
+        container.style.cssText = 'position: fixed; bottom: 20px; right: 20px; z-index: 99999; display: flex; flex-direction: column; gap: 10px; pointer-events: none;';
+        document.body.appendChild(container);
+    }
+    
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+        pointer-events: auto;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 18px;
+        background: #0f172a;
+        color: #ffffff;
+        border-radius: 10px;
+        box-shadow: 0 10px 15px -3px rgba(0,0,0,0.2), 0 4px 6px -2px rgba(0,0,0,0.1);
+        font-size: 0.875rem;
+        font-weight: 500;
+        opacity: 0;
+        transform: translateY(10px);
+        transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        max-width: 380px;
+    `;
+    
+    let icon = 'info';
+    let iconColor = '#3b82f6';
+    if (type === 'success') { icon = 'check_circle'; iconColor = '#10b981'; }
+    else if (type === 'error') { icon = 'error'; iconColor = '#ef4444'; }
+    else if (type === 'warning') { icon = 'warning'; iconColor = '#f59e0b'; }
+
+    toast.innerHTML = `
+        <span class="material-icons-round" style="color: ${iconColor}; font-size: 20px;">${icon}</span>
+        <span style="flex: 1; line-height: 1.4;">${escapeHtml(message)}</span>
+    `;
+
+    container.appendChild(toast);
+    
+    requestAnimationFrame(() => {
+        toast.style.opacity = '1';
+        toast.style.transform = 'translateY(0)';
+    });
+
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(10px)';
+        setTimeout(() => toast.remove(), 300);
+    }, duration);
+}
+
 // =========================================================================
 // SUBJECT COMMON FORMS JS ENGINE (MH, AE, CM)
 // =========================================================================
