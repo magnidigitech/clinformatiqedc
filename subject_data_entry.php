@@ -2107,8 +2107,20 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
 
 <script>
     // --- Modal Helpers ---
-    function openModal(id) { document.getElementById(id).classList.add('active'); }
-    function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+    function openModal(id) {
+        const el = document.getElementById(id);
+        if (el) {
+            el.style.display = 'flex';
+            el.classList.add('active');
+        }
+    }
+    function closeModal(id) {
+        const el = document.getElementById(id);
+        if (el) {
+            el.classList.remove('active');
+            el.style.display = 'none';
+        }
+    }
 
     // --- Dropdown Handler ---
     function toggleMenu(menuId, event) {
@@ -3147,8 +3159,9 @@ function debounceCommonSearch() {
     }, 300);
 }
 
-function loadCommonRecords() {
-    if (!COMMON_FORM_TYPE) return;
+function loadCommonRecords(targetFormType = null) {
+    const typeToLoad = (targetFormType || COMMON_FORM_TYPE || '').toUpperCase();
+    if (!typeToLoad) return;
 
     const search = document.getElementById('commonSearchInput') ? document.getElementById('commonSearchInput').value : '';
     const status = document.getElementById('commonStatusFilter') ? document.getElementById('commonStatusFilter').value : '';
@@ -3158,7 +3171,7 @@ function loadCommonRecords() {
     const fd = new FormData();
     fd.append('action', 'get_records');
     fd.append('subject_id', CURRENT_SUBJECT_ID);
-    fd.append('form_type', COMMON_FORM_TYPE);
+    fd.append('form_type', typeToLoad);
     fd.append('search', search);
     fd.append('status', status);
     fd.append('sdr_status', sdrStatus);
@@ -3174,14 +3187,14 @@ function loadCommonRecords() {
 
         // Update Record Count Badges
         const cntBadge = document.getElementById('commonFormRecordCountBadge');
-        if (cntBadge) cntBadge.textContent = res.records.length;
+        if (cntBadge && (typeToLoad === COMMON_FORM_TYPE)) cntBadge.textContent = res.records.length;
 
-        const sbBadge = document.getElementById('sidebar-count-' + COMMON_FORM_TYPE.toLowerCase());
+        const sbBadge = document.getElementById('sidebar-count-' + typeToLoad.toLowerCase());
         if (sbBadge && res.summary) sbBadge.textContent = res.summary.total;
 
         // Render KPI Badges
         const kpiBox = document.getElementById('commonSummaryKpis');
-        if (kpiBox && res.summary) {
+        if (kpiBox && res.summary && (typeToLoad === COMMON_FORM_TYPE)) {
             kpiBox.innerHTML = `
                 <span style="background: #f1f5f9; color: #475569; padding: 3px 8px; border-radius: 6px;">Total: ${res.summary.total}</span>
                 <span style="background: #ecfdf5; color: #047857; padding: 3px 8px; border-radius: 6px;">Complete: ${res.summary.complete}</span>
@@ -3190,7 +3203,9 @@ function loadCommonRecords() {
             `;
         }
 
-        renderCommonTable(res.records, COMMON_FORM_TYPE);
+        if (typeToLoad === COMMON_FORM_TYPE) {
+            renderCommonTable(res.records, typeToLoad);
+        }
     })
     .catch(err => {
         console.error(err);
@@ -3962,40 +3977,63 @@ function shortcutAddCMFromAE(aeId) {
 // =========================================================================
 function saveCommonRecord(mode) {
     const recordId = parseInt(document.getElementById('cfRecordId').value) || 0;
-    const formType = document.getElementById('cfFormType').value;
+    const formType = (document.getElementById('cfFormType').value || '').toUpperCase();
     const alertBox = document.getElementById('cfValidationAlert');
-    alertBox.style.display = 'none';
+    if (alertBox) alertBox.style.display = 'none';
 
     const data = {};
     const linkedIds = [];
 
     if (formType === 'MH') {
-        data.mh_term = document.getElementById('inp_mh_term').value.trim();
-        data.ongoing = document.getElementById('inp_mh_ongoing').value;
-        data.start_date = document.getElementById('inp_mh_start_date').value;
-        data.end_date = document.getElementById('inp_mh_end_date').value;
-        data.comments = document.getElementById('inp_mh_comments').value.trim();
-        data.medication_given = document.getElementById('inp_mh_medication_given').value;
+        const inpTerm = document.getElementById('inp_mh_term');
+        const inpOngoing = document.getElementById('inp_mh_ongoing');
+        const inpStart = document.getElementById('inp_mh_start_date');
+        const inpEnd = document.getElementById('inp_mh_end_date');
+        const inpComments = document.getElementById('inp_mh_comments');
+        const inpMed = document.getElementById('inp_mh_medication_given');
+
+        data.mh_term = inpTerm ? inpTerm.value.trim() : '';
+        data.ongoing = inpOngoing ? inpOngoing.value : '';
+        data.start_date = inpStart ? inpStart.value : '';
+        data.end_date = inpEnd ? inpEnd.value : '';
+        data.comments = inpComments ? inpComments.value.trim() : '';
+        data.medication_given = inpMed ? inpMed.value : '';
     } else if (formType === 'AE') {
-        data.ae_term = document.getElementById('inp_ae_term').value.trim();
-        data.start_date = document.getElementById('inp_ae_start_date').value;
-        data.end_date = document.getElementById('inp_ae_end_date').value;
-        data.severity = document.getElementById('inp_ae_severity').value;
-        data.seriousness = document.getElementById('inp_ae_seriousness').value;
+        const inpTerm = document.getElementById('inp_ae_term');
+        const inpStart = document.getElementById('inp_ae_start_date');
+        const inpEnd = document.getElementById('inp_ae_end_date');
+        const inpSeverity = document.getElementById('inp_ae_severity');
+        const inpSeriousness = document.getElementById('inp_ae_seriousness');
+        const inpCausality = document.getElementById('inp_ae_causality');
+        const inpAction = document.getElementById('inp_ae_action_taken');
+        const inpOutcome = document.getElementById('inp_ae_outcome');
+        const inpConcomitant = document.getElementById('inp_ae_concomitant_treatment');
+
+        data.ae_term = inpTerm ? inpTerm.value.trim() : '';
+        data.start_date = inpStart ? inpStart.value : '';
+        data.end_date = inpEnd ? inpEnd.value : '';
+        data.severity = inpSeverity ? inpSeverity.value : '';
+        data.seriousness = inpSeriousness ? inpSeriousness.value : '';
         
         const critCbs = document.querySelectorAll('.cb_ae_crit:checked');
         data.seriousness_criteria = Array.from(critCbs).map(cb => cb.value);
 
-        data.causality = document.getElementById('inp_ae_causality').value;
-        data.action_taken = document.getElementById('inp_ae_action_taken').value;
-        data.outcome = document.getElementById('inp_ae_outcome').value;
-        data.concomitant_treatment = document.getElementById('inp_ae_concomitant_treatment').value;
+        data.causality = inpCausality ? inpCausality.value : '';
+        data.action_taken = inpAction ? inpAction.value : '';
+        data.outcome = inpOutcome ? inpOutcome.value : '';
+        data.concomitant_treatment = inpConcomitant ? inpConcomitant.value : '';
     } else if (formType === 'CM') {
-        data.medication_name = document.getElementById('inp_cm_name').value.trim();
-        data.start_date = document.getElementById('inp_cm_start_date').value;
-        data.stop_date = document.getElementById('inp_cm_stop_date').value;
-        data.indication_type = document.getElementById('inp_cm_indication_type').value;
-        data.specify_other = document.getElementById('inp_cm_specify_other') ? document.getElementById('inp_cm_specify_other').value.trim() : '';
+        const inpName = document.getElementById('inp_cm_name');
+        const inpStart = document.getElementById('inp_cm_start_date');
+        const inpStop = document.getElementById('inp_cm_stop_date');
+        const inpIndication = document.getElementById('inp_cm_indication_type');
+        const inpSpecify = document.getElementById('inp_cm_specify_other');
+
+        data.medication_name = inpName ? inpName.value.trim() : '';
+        data.start_date = inpStart ? inpStart.value : '';
+        data.stop_date = inpStop ? inpStop.value : '';
+        data.indication_type = inpIndication ? inpIndication.value : '';
+        data.specify_other = inpSpecify ? inpSpecify.value.trim() : '';
 
         const linkedCbs = document.querySelectorAll('.cb_cm_linked:checked');
         linkedCbs.forEach(cb => linkedIds.push(parseInt(cb.value)));
@@ -4015,15 +4053,26 @@ function saveCommonRecord(mode) {
     .then(r => r.json())
     .then(res => {
         if (!res.success) {
-            alertBox.innerHTML = `<span class="material-icons-round" style="font-size: 1.1rem; vertical-align: middle; margin-right: 4px;">error_outline</span> ${escapeHtml(res.message || 'Validation Error')}`;
-            alertBox.style.display = 'block';
-            document.getElementById('cfEditorBody').scrollTop = 0;
+            if (alertBox) {
+                alertBox.innerHTML = `<span class="material-icons-round" style="font-size: 1.1rem; vertical-align: middle; margin-right: 4px;">error_outline</span> ${escapeHtml(res.message || 'Validation Error')}`;
+                alertBox.style.display = 'block';
+                const bodyEl = document.getElementById('cfEditorBody');
+                if (bodyEl) bodyEl.scrollTop = 0;
+            }
             return;
         }
 
-        showToast(res.message || 'Record saved successfully!', 'success');
+        // 1. Immediately Dismiss Modal
         closeModal('modalCommonFormEditor');
-        loadCommonRecords();
+
+        // 2. Show Toast Notification
+        showToast(res.message || 'Record saved successfully!', 'success');
+
+        // 3. Dynamic Roster & Badge Update
+        loadCommonRecords(formType);
+        if (typeof COMMON_FORM_TYPE !== 'undefined' && COMMON_FORM_TYPE && COMMON_FORM_TYPE.toUpperCase() !== formType) {
+            loadCommonRecords(COMMON_FORM_TYPE);
+        }
     })
     .catch(err => {
         console.error(err);
