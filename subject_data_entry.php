@@ -3071,6 +3071,7 @@ function escapeHtml(str) {
 // =========================================================================
 const COMMON_FORM_TYPE = '<?php echo strtoupper($current_common_form); ?>';
 const CURRENT_SUBJECT_ID = <?php echo (int)$subject_id; ?>;
+const CURRENT_SUBJECT_CODE = '<?php echo htmlspecialchars($subject['subject_code']); ?>';
 const USER_IS_COORDINATOR = <?php echo $is_coordinator ? 'true' : 'false'; ?>;
 const USER_IS_MANAGER = <?php echo $is_manager_role ? 'true' : 'false'; ?>;
 const USER_IS_ADMIN = <?php echo $is_admin ? 'true' : 'false'; ?>;
@@ -3391,7 +3392,16 @@ function openCommonFormModal(recordId, formType, defaultData = null) {
     document.getElementById('cfFormType').value = formType;
     document.getElementById('cfValidationAlert').style.display = 'none';
 
-    document.getElementById('cfEditorSubTitle').textContent = `Subject ${CURRENT_SUBJECT_ID} &bull; ${formType} Form`;
+    const formNames = {
+        'MH': 'Medical History (MH)',
+        'AE': 'Adverse Events (AE)',
+        'CM': 'Concomitant Medications (CM)'
+    };
+    const formNameStr = formNames[formType] || (formType + ' Form');
+    const subTitleEl = document.getElementById('cfEditorSubTitle');
+    if (subTitleEl) {
+        subTitleEl.innerHTML = `SUBJECT <strong>${escapeHtml(CURRENT_SUBJECT_CODE)}</strong> &bull; ${escapeHtml(formNameStr.toUpperCase())}`;
+    }
 
     if (recordId > 0) {
         document.getElementById('cfEditorTitle').innerHTML = `Loading Record...`;
@@ -3432,7 +3442,13 @@ function openCommonFormModal(recordId, formType, defaultData = null) {
 
 function setupEditorForm(rec, formType) {
     const isNew = rec.id === 0;
-    document.getElementById('cfEditorTitle').innerHTML = `${escapeHtml(rec.record_number)}`;
+
+    let iconHtml = '';
+    if (formType === 'MH') iconHtml = '<span class="material-icons-round" style="color: #2563eb; font-size: 1.35rem;">history_edu</span>';
+    else if (formType === 'AE') iconHtml = '<span class="material-icons-round" style="color: #d97706; font-size: 1.35rem;">warning_amber</span>';
+    else if (formType === 'CM') iconHtml = '<span class="material-icons-round" style="color: #059669; font-size: 1.35rem;">medication</span>';
+
+    document.getElementById('cfEditorTitle').innerHTML = `${iconHtml} <span>${escapeHtml(rec.record_number)}</span>`;
 
     // Badges
     const bBox = document.getElementById('cfEditorBadges');
