@@ -1136,7 +1136,8 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
 <style>
     .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; justify-content: center; align-items: center; }
     .modal-overlay.active { display: flex; }
-    .modal-box { background: white; border-radius: 8px; padding: 2rem; max-width: 500px; width: 90%; box-shadow: 0 10px 25px rgba(0,0,0,0.2); text-align: center; }
+    .modal-box, .modal-card { background: #ffffff !important; border-radius: 8px; padding: 2rem; max-width: 500px; width: 90%; box-shadow: 0 10px 25px rgba(0,0,0,0.2); text-align: center; }
+    .modal-card { text-align: left; padding: 0; }
     .modal-actions { margin-top: 1.5rem; display: flex; justify-content: center; gap: 1rem; }
     .modal-title { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; color: #1e293b; }
     .modal-msg { color: #64748b; font-size: 0.95rem; line-height: 1.5; }
@@ -2919,7 +2920,7 @@ function renderFieldInput($field, $saved_value = '', $choices_map = []) {
 
 <!-- 1. COMMON FORM EDITOR MODAL -->
 <div class="modal-overlay" id="modalCommonFormEditor" style="z-index: 10050;">
-    <div class="modal-card" style="max-width: 780px; width: 92%; border-radius: 12px; overflow: hidden; padding: 0; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.15);">
+    <div class="modal-card" style="max-width: 780px; width: 92%; background: #ffffff; border-radius: 12px; overflow: hidden; padding: 0; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.15);">
         <div class="modal-header" style="background: #f8fafc; padding: 1.25rem 1.5rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
             <div>
                 <div style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;" id="cfEditorSubTitle">Subject Common Form</div>
@@ -2935,7 +2936,7 @@ function renderFieldInput($field, $saved_value = '', $choices_map = []) {
             </div>
         </div>
 
-        <div style="padding: 1.5rem; max-height: calc(85vh - 140px); overflow-y: auto;" id="cfEditorBody">
+        <div style="padding: 1.5rem; max-height: calc(85vh - 140px); overflow-y: auto; background: #ffffff;" id="cfEditorBody">
             <input type="hidden" id="cfRecordId" value="0">
             <input type="hidden" id="cfFormType" value="MH">
             
@@ -2984,7 +2985,7 @@ function renderFieldInput($field, $saved_value = '', $choices_map = []) {
 
 <!-- 2. COMMON FORM QUERY MODAL -->
 <div class="modal-overlay" id="modalCommonQuery" style="z-index: 10060;">
-    <div class="modal-card" style="max-width: 600px; width: 92%; border-radius: 12px; overflow: hidden; padding: 0; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.15);">
+    <div class="modal-card" style="max-width: 600px; width: 92%; background: #ffffff; border-radius: 12px; overflow: hidden; padding: 0; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.15);">
         <div class="modal-header" style="background: #f8fafc; padding: 1.25rem 1.5rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
             <div>
                 <div style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Data Review & Queries</div>
@@ -2997,7 +2998,7 @@ function renderFieldInput($field, $saved_value = '', $choices_map = []) {
             </button>
         </div>
 
-        <div style="padding: 1.5rem; max-height: 60vh; overflow-y: auto;" id="cfQueryBody">
+        <div style="padding: 1.5rem; max-height: 60vh; overflow-y: auto; background: #ffffff;" id="cfQueryBody">
             <!-- Rendered by JS -->
         </div>
 
@@ -3009,7 +3010,7 @@ function renderFieldInput($field, $saved_value = '', $choices_map = []) {
 
 <!-- 3. COMMON FORM AUDIT & SDR HISTORY MODAL -->
 <div class="modal-overlay" id="modalCommonAudit" style="z-index: 10060;">
-    <div class="modal-card" style="max-width: 680px; width: 92%; border-radius: 12px; overflow: hidden; padding: 0; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.15);">
+    <div class="modal-card" style="max-width: 680px; width: 92%; background: #ffffff; border-radius: 12px; overflow: hidden; padding: 0; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.15);">
         <div class="modal-header" style="background: #f8fafc; padding: 1.25rem 1.5rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
             <div>
                 <div style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Clinical History & Audit Log</div>
@@ -3022,7 +3023,7 @@ function renderFieldInput($field, $saved_value = '', $choices_map = []) {
             </button>
         </div>
 
-        <div style="padding: 1.5rem; max-height: 65vh; overflow-y: auto;" id="cfAuditBody">
+        <div style="padding: 1.5rem; max-height: 65vh; overflow-y: auto; background: #ffffff;" id="cfAuditBody">
             <!-- Rendered by JS -->
         </div>
 
@@ -3034,8 +3035,8 @@ function renderFieldInput($field, $saved_value = '', $choices_map = []) {
 
 <!-- 4. COMMON FORM VOID MODAL -->
 <div class="modal-overlay" id="modalCommonVoid" style="z-index: 10070;">
-    <div class="modal-card" style="max-width: 440px; width: 90%; border-radius: 12px; overflow: hidden; padding: 0; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2);">
-        <div style="padding: 1.5rem; text-align: center;">
+    <div class="modal-card" style="max-width: 440px; width: 90%; background: #ffffff; border-radius: 12px; overflow: hidden; padding: 0; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2);">
+        <div style="padding: 1.5rem; text-align: center; background: #ffffff;">
             <div style="width: 50px; height: 50px; border-radius: 50%; background: #fef2f2; color: #dc2626; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem auto;">
                 <span class="material-icons-round" style="font-size: 28px;">remove_circle_outline</span>
             </div>
