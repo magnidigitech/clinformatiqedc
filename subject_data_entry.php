@@ -3962,8 +3962,9 @@ function saveCommonRecord(mode) {
     .then(r => r.json())
     .then(res => {
         if (!res.success) {
-            alertBox.textContent = res.message || 'Validation Error';
+            alertBox.innerHTML = `<span class="material-icons-round" style="font-size: 1.1rem; vertical-align: middle; margin-right: 4px;">error_outline</span> ${escapeHtml(res.message || 'Validation Error')}`;
             alertBox.style.display = 'block';
+            document.getElementById('cfEditorBody').scrollTop = 0;
             return;
         }
 

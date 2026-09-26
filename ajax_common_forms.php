@@ -26,7 +26,7 @@ try {
     ensureCommonFormsTables($pdo);
 
     $role_lower = strtolower($_SESSION['active_role_name'] ?? '');
-    $is_coordinator = (strpos($role_lower, 'coordinator') !== false) || (strpos($role_lower, 'admin') !== false);
+    $is_coordinator = (strpos($role_lower, 'coordinator') !== false) || (strpos($role_lower, 'admin') !== false) || (strpos($role_lower, 'entry') !== false) || (strpos($role_lower, 'investigator') !== false);
     $is_manager = (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'admin') !== false) || (strpos($role_lower, 'monitor') !== false);
     $is_admin = (strpos($role_lower, 'admin') !== false);
 
@@ -395,7 +395,7 @@ try {
     // 4. SAVE RECORD (CREATE OR EDIT - SAVE DRAFT / MARK COMPLETE)
     // =========================================================================
     elseif ($action === 'save_record') {
-        if (!hasPermission('enter_data') && !hasPermission('edit')) {
+        if (!$is_coordinator && !$is_admin && !hasPermission('enter_data') && !hasPermission('edit')) {
             throw new Exception("Unauthorized: Enter Data / Edit permission required.");
         }
 
