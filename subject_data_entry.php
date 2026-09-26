@@ -3056,6 +3056,16 @@ function renderFieldInput($field, $saved_value = '', $choices_map = []) {
 </div>
 
 <script>
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 // =========================================================================
 // SUBJECT COMMON FORMS JS ENGINE (MH, AE, CM)
 // =========================================================================
@@ -3370,6 +3380,13 @@ function renderRecordActionButtons(r, formType) {
 // FORM EDITOR MODAL & DYNAMIC FIELDS
 // =========================================================================
 function openCommonFormModal(recordId, formType, defaultData = null) {
+    if (!formType && typeof COMMON_FORM_TYPE !== 'undefined') {
+        formType = COMMON_FORM_TYPE;
+    }
+    if (formType) {
+        formType = String(formType).toUpperCase();
+    }
+
     document.getElementById('cfRecordId').value = recordId;
     document.getElementById('cfFormType').value = formType;
     document.getElementById('cfValidationAlert').style.display = 'none';
