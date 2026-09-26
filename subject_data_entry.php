@@ -732,7 +732,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                         <?php if ($is_coordinator || $is_admin): ?>
                             <button class="btn btn-primary" onclick="openCommonFormModal(0, '<?php echo strtoupper($current_common_form); ?>')" style="display: flex; align-items: center; gap: 0.4rem; padding: 0.6rem 1.25rem; font-weight: 600;">
                                 <span class="material-icons-round" style="font-size: 1.1rem;">add</span>
-                                Add Form +
+                                Add Form
                             </button>
                         <?php endif; ?>
                     </div>
@@ -742,16 +742,16 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                         <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
                             <div style="position: relative; width: 260px;">
                                 <span class="material-icons-round" style="position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 1.1rem;">search</span>
-                                <input type="text" id="commonSearchInput" oninput="debounceCommonSearch()" placeholder="Search record number or term..." class="form-input" style="padding-left: 2.25rem; height: 38px; font-size: 0.875rem;">
+                                <input type="text" id="commonSearchInput" oninput="debounceCommonSearch()" placeholder="Search record number or term..." class="form-input" style="padding-left: 2.25rem; padding-right: 0.75rem; height: 38px; font-size: 0.85rem; box-sizing: border-box;">
                             </div>
 
-                            <select id="commonStatusFilter" onchange="loadCommonRecords()" class="form-input" style="width: 140px; height: 38px; font-size: 0.875rem;">
+                            <select id="commonStatusFilter" onchange="loadCommonRecords()" class="form-input" style="width: 145px; height: 38px; padding: 0 0.75rem; font-size: 0.85rem; line-height: 38px; box-sizing: border-box; vertical-align: middle;">
                                 <option value="">All Statuses</option>
                                 <option value="draft">Draft</option>
                                 <option value="complete">Complete</option>
                             </select>
 
-                            <select id="commonSdrFilter" onchange="loadCommonRecords()" class="form-input" style="width: 150px; height: 38px; font-size: 0.875rem;">
+                            <select id="commonSdrFilter" onchange="loadCommonRecords()" class="form-input" style="width: 165px; height: 38px; padding: 0 0.75rem; font-size: 0.85rem; line-height: 38px; box-sizing: border-box; vertical-align: middle;">
                                 <option value="">All SDR Statuses</option>
                                 <option value="pending">Pending SDR</option>
                                 <option value="reviewed">Reviewed</option>
