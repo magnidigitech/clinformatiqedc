@@ -15,6 +15,14 @@ if (!isset($_SESSION['active_study_id'])) {
 $study_id = $_SESSION['active_study_id'];
 $pdo = getDB();
 
+// Ensure Common Forms Tables Exist
+ensureCommonFormsTables($pdo);
+
+$current_common_form = strtolower(trim($_GET['common_form'] ?? ''));
+if (!in_array($current_common_form, ['mh', 'ae', 'cm'], true)) {
+    $current_common_form = '';
+}
+
 // --- AUTO-FIX SCHEMA (Temporary Migration) ---
 // Ensure the new columns exist on the remote server
 try {
@@ -528,6 +536,22 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
         </div>
     </header>
 
+    <!-- Subject Level Navigation Tabs -->
+    <div style="background: white; border-bottom: 1px solid var(--border-color); padding: 0 1.5rem; display: flex; gap: 1.5rem; align-items: center; height: 46px; z-index: 9; position: relative;">
+        <a href="?subject_id=<?php echo $subject_id; ?>" style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.875rem; font-weight: 600; text-decoration: none; padding: 0.75rem 0; color: <?php echo (!$current_common_form) ? 'var(--primary-color)' : '#64748b'; ?>; border-bottom: 2px solid <?php echo (!$current_common_form) ? 'var(--primary-color)' : 'transparent'; ?>;">
+            <span class="material-icons-round" style="font-size: 1.1rem;">event_note</span> Visits
+        </a>
+        <a href="?subject_id=<?php echo $subject_id; ?>&common_form=mh" style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.875rem; font-weight: 600; text-decoration: none; padding: 0.75rem 0; color: <?php echo ($current_common_form === 'mh') ? 'var(--primary-color)' : '#64748b'; ?>; border-bottom: 2px solid <?php echo ($current_common_form === 'mh') ? 'var(--primary-color)' : 'transparent'; ?>;">
+            <span class="material-icons-round" style="font-size: 1.1rem; color: #2563eb;">history_edu</span> Medical History (MH)
+        </a>
+        <a href="?subject_id=<?php echo $subject_id; ?>&common_form=ae" style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.875rem; font-weight: 600; text-decoration: none; padding: 0.75rem 0; color: <?php echo ($current_common_form === 'ae') ? 'var(--primary-color)' : '#64748b'; ?>; border-bottom: 2px solid <?php echo ($current_common_form === 'ae') ? 'var(--primary-color)' : 'transparent'; ?>;">
+            <span class="material-icons-round" style="font-size: 1.1rem; color: #d97706;">warning_amber</span> Adverse Events (AE)
+        </a>
+        <a href="?subject_id=<?php echo $subject_id; ?>&common_form=cm" style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.875rem; font-weight: 600; text-decoration: none; padding: 0.75rem 0; color: <?php echo ($current_common_form === 'cm') ? 'var(--primary-color)' : '#64748b'; ?>; border-bottom: 2px solid <?php echo ($current_common_form === 'cm') ? 'var(--primary-color)' : 'transparent'; ?>;">
+            <span class="material-icons-round" style="font-size: 1.1rem; color: #059669;">medication</span> Concomitant Medications (CM)
+        </a>
+    </div>
+
     <div class="entry-layout">
         <!-- Sidebar Tree -->
         <aside class="entry-sidebar">
@@ -651,12 +675,120 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                     <?php endforeach; ?>
                  <?php endif; ?>
 
+                 <!-- Common Forms Section -->
+                 <div style="padding: 1rem 1.5rem 0.5rem 1.5rem; font-size: 0.75rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; border-top: 1px solid #f1f5f9; margin-top: 0.5rem;">
+                     Common Forms
+                 </div>
+                 <div class="tree-visit">
+                     <a href="?subject_id=<?php echo $subject_id; ?>&common_form=mh" class="visit-header <?php echo ($current_common_form === 'mh') ? 'active' : ''; ?>" style="display: block; padding: 0.65rem 1rem; text-decoration: none;">
+                         <div style="display: flex; justify-content: space-between; align-items: center;">
+                             <div style="display: flex; align-items: center; gap: 0.5rem; font-weight: 600; color: #334155;">
+                                 <span class="material-icons-round" style="font-size: 1.25rem; color: #2563eb;">history_edu</span> Medical History
+                             </div>
+                             <span class="badge" id="sidebar-count-mh" style="font-size: 0.75rem; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 999px;">0</span>
+                         </div>
+                     </a>
+                     <a href="?subject_id=<?php echo $subject_id; ?>&common_form=ae" class="visit-header <?php echo ($current_common_form === 'ae') ? 'active' : ''; ?>" style="display: block; padding: 0.65rem 1rem; text-decoration: none;">
+                         <div style="display: flex; justify-content: space-between; align-items: center;">
+                             <div style="display: flex; align-items: center; gap: 0.5rem; font-weight: 600; color: #334155;">
+                                 <span class="material-icons-round" style="font-size: 1.25rem; color: #d97706;">warning_amber</span> Adverse Events
+                             </div>
+                             <span class="badge" id="sidebar-count-ae" style="font-size: 0.75rem; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 999px;">0</span>
+                         </div>
+                     </a>
+                     <a href="?subject_id=<?php echo $subject_id; ?>&common_form=cm" class="visit-header <?php echo ($current_common_form === 'cm') ? 'active' : ''; ?>" style="display: block; padding: 0.65rem 1rem; text-decoration: none;">
+                         <div style="display: flex; justify-content: space-between; align-items: center;">
+                             <div style="display: flex; align-items: center; gap: 0.5rem; font-weight: 600; color: #334155;">
+                                 <span class="material-icons-round" style="font-size: 1.25rem; color: #059669;">medication</span> Concomitant Medications
+                             </div>
+                             <span class="badge" id="sidebar-count-cm" style="font-size: 0.75rem; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 999px;">0</span>
+                         </div>
+                     </a>
+                 </div>
+
             </div>
         </aside>
 
         <!-- Main Form Area -->
         <main class="entry-main">
-            <?php if ($current_module_id && !$current_instance_id): ?>
+            <?php if (!empty($current_common_form)): ?>
+                <!-- COMMON FORMS VIEW (MH / AE / CM) -->
+                <div class="crf-card" style="max-width: 1200px;">
+                    <div class="crf-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                        <div>
+                            <div style="font-size: 0.85rem; color: #64748b; margin-bottom: 0.25rem;">
+                                Subject Common Form &bull; Subject <strong style="color: #0f172a;"><?php echo htmlspecialchars($subject['subject_code']); ?></strong>
+                            </div>
+                            <h1 style="font-size: 1.5rem; margin: 0; display: flex; align-items: center; gap: 0.5rem; color: #0f172a;">
+                                <?php 
+                                    if ($current_common_form === 'mh') echo '<span class="material-icons-round" style="color: #2563eb;">history_edu</span> Medical History (MH)';
+                                    elseif ($current_common_form === 'ae') echo '<span class="material-icons-round" style="color: #d97706;">warning_amber</span> Adverse Events (AE)';
+                                    elseif ($current_common_form === 'cm') echo '<span class="material-icons-round" style="color: #059669;">medication</span> Concomitant Medications (CM)';
+                                ?>
+                                <span id="commonFormRecordCountBadge" style="background: #e2e8f0; color: #475569; font-size: 0.8rem; padding: 2px 8px; border-radius: 99px; font-weight: 600;">0</span>
+                            </h1>
+                        </div>
+                        
+                        <?php if ($is_coordinator || $is_admin): ?>
+                            <button class="btn btn-primary" onclick="openCommonFormModal(0, '<?php echo strtoupper($current_common_form); ?>')" style="display: flex; align-items: center; gap: 0.4rem; padding: 0.6rem 1.25rem; font-weight: 600;">
+                                <span class="material-icons-round" style="font-size: 1.1rem;">add</span>
+                                Add Form +
+                            </button>
+                        <?php endif; ?>
+                    </div>
+
+                    <!-- Filter & Search Toolbar -->
+                    <div style="padding: 1rem 1.5rem; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: space-between;">
+                        <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+                            <div style="position: relative; width: 260px;">
+                                <span class="material-icons-round" style="position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 1.1rem;">search</span>
+                                <input type="text" id="commonSearchInput" oninput="debounceCommonSearch()" placeholder="Search record number or term..." class="form-input" style="padding-left: 2.25rem; height: 38px; font-size: 0.875rem;">
+                            </div>
+
+                            <select id="commonStatusFilter" onchange="loadCommonRecords()" class="form-input" style="width: 140px; height: 38px; font-size: 0.875rem;">
+                                <option value="">All Statuses</option>
+                                <option value="draft">Draft</option>
+                                <option value="complete">Complete</option>
+                            </select>
+
+                            <select id="commonSdrFilter" onchange="loadCommonRecords()" class="form-input" style="width: 150px; height: 38px; font-size: 0.875rem;">
+                                <option value="">All SDR Statuses</option>
+                                <option value="pending">Pending SDR</option>
+                                <option value="reviewed">Reviewed</option>
+                                <option value="needs_rereview">Needs Re-review</option>
+                            </select>
+
+                            <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: #475569; cursor: pointer;">
+                                <input type="checkbox" id="commonIncludeVoided" onchange="loadCommonRecords()"> Include Voided
+                            </label>
+                        </div>
+
+                        <!-- Summary KPI Badges -->
+                        <div id="commonSummaryKpis" style="display: flex; gap: 0.5rem; font-size: 0.75rem; font-weight: 600;">
+                            <!-- Populated dynamically via JS -->
+                        </div>
+                    </div>
+
+                    <div class="crf-body" style="padding: 0; overflow-x: auto;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 0.875rem;" id="commonRecordsTable">
+                            <thead style="background: #ffffff; border-bottom: 2px solid #e2e8f0; color: #475569;">
+                                <tr id="commonTableHead">
+                                    <!-- Populated dynamically based on form type -->
+                                </tr>
+                            </thead>
+                            <tbody id="commonTableBody">
+                                <tr>
+                                    <td colspan="10" style="text-align: center; padding: 3rem; color: #94a3b8;">
+                                        <span class="material-icons-round" style="font-size: 2.5rem; display: block; margin-bottom: 0.5rem;">hourglass_empty</span>
+                                        Loading common records...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            <?php elseif ($current_module_id && !$current_instance_id): ?>
                 <!-- Module Instances List View -->
                 <div class="crf-card">
                     <div class="crf-header" style="display: flex; justify-content: space-between; align-items: center;">
@@ -2780,3 +2912,1340 @@ function renderFieldInput($field, $saved_value = '', $choices_map = []) {
     }
 }
 ?>
+
+<!-- ========================================================================= -->
+<!-- COMMON FORM MODALS (MH, AE, CM) -->
+<!-- ========================================================================= -->
+
+<!-- 1. COMMON FORM EDITOR MODAL -->
+<div class="modal-overlay" id="modalCommonFormEditor" style="z-index: 10050;">
+    <div class="modal-card" style="max-width: 780px; width: 92%; border-radius: 12px; overflow: hidden; padding: 0; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.15);">
+        <div class="modal-header" style="background: #f8fafc; padding: 1.25rem 1.5rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <div style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;" id="cfEditorSubTitle">Subject Common Form</div>
+                <h2 style="font-size: 1.25rem; margin: 0.2rem 0 0 0; color: #0f172a; display: flex; align-items: center; gap: 0.5rem;" id="cfEditorTitle">
+                    Record Details
+                </h2>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <div id="cfEditorBadges" style="display: flex; gap: 0.4rem;"></div>
+                <button type="button" onclick="closeModal('modalCommonFormEditor')" style="background: none; border: none; color: #64748b; cursor: pointer; padding: 4px; display: flex; align-items: center;">
+                    <span class="material-icons-round" style="font-size: 1.5rem;">close</span>
+                </button>
+            </div>
+        </div>
+
+        <div style="padding: 1.5rem; max-height: calc(85vh - 140px); overflow-y: auto;" id="cfEditorBody">
+            <input type="hidden" id="cfRecordId" value="0">
+            <input type="hidden" id="cfFormType" value="MH">
+            
+            <div id="cfValidationAlert" style="display: none; padding: 0.85rem 1rem; background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; border-radius: 8px; font-size: 0.875rem; margin-bottom: 1.25rem;"></div>
+
+            <form id="commonFormElement" onsubmit="event.preventDefault();">
+                <div id="cfDynamicFields">
+                    <!-- Fields dynamically injected by JS -->
+                </div>
+            </form>
+        </div>
+
+        <div class="modal-footer" style="background: #f8fafc; padding: 1rem 1.5rem; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+            <div style="display: flex; gap: 0.5rem;">
+                <button type="button" id="btnCfAudit" onclick="openCommonAuditModalFromEditor()" class="btn btn-sm btn-outline" style="display: none; align-items: center; gap: 0.3rem;">
+                    <span class="material-icons-round" style="font-size: 1rem;">history</span> Audit Trail
+                </button>
+                <button type="button" id="btnCfQuery" onclick="openCommonQueryModalFromEditor()" class="btn btn-sm btn-outline" style="display: none; align-items: center; gap: 0.3rem;">
+                    <span class="material-icons-round" style="font-size: 1rem; color: #ef4444;">help_outline</span> Queries
+                </button>
+            </div>
+
+            <div style="display: flex; gap: 0.6rem; align-items: center;">
+                <button type="button" onclick="closeModal('modalCommonFormEditor')" class="btn btn-sm" style="background: white; border: 1px solid #cbd5e1; color: #475569; padding: 0.5rem 1.1rem;">
+                    Cancel
+                </button>
+                
+                <?php if ($is_coordinator || $is_admin): ?>
+                    <button type="button" onclick="saveCommonRecord('draft')" class="btn btn-sm" style="background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-weight: 600; padding: 0.5rem 1.2rem;">
+                        Save Draft
+                    </button>
+                    <button type="button" onclick="saveCommonRecord('complete')" class="btn btn-sm btn-primary" style="font-weight: 600; padding: 0.5rem 1.4rem;">
+                        Mark Complete
+                    </button>
+                <?php endif; ?>
+
+                <?php if ($is_manager_role || $is_admin): ?>
+                    <button type="button" id="btnCfSdr" onclick="markCommonSDRFromEditor()" class="btn btn-sm" style="background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-weight: 600; padding: 0.5rem 1.2rem;">
+                        Mark SDR
+                    </button>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 2. COMMON FORM QUERY MODAL -->
+<div class="modal-overlay" id="modalCommonQuery" style="z-index: 10060;">
+    <div class="modal-card" style="max-width: 600px; width: 92%; border-radius: 12px; overflow: hidden; padding: 0; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.15);">
+        <div class="modal-header" style="background: #f8fafc; padding: 1.25rem 1.5rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <div style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Data Review & Queries</div>
+                <h2 style="font-size: 1.15rem; margin: 0.2rem 0 0 0; color: #0f172a;" id="cfQueryRecordTitle">
+                    Queries for Record
+                </h2>
+            </div>
+            <button type="button" onclick="closeModal('modalCommonQuery')" style="background: none; border: none; color: #64748b; cursor: pointer;">
+                <span class="material-icons-round" style="font-size: 1.5rem;">close</span>
+            </button>
+        </div>
+
+        <div style="padding: 1.5rem; max-height: 60vh; overflow-y: auto;" id="cfQueryBody">
+            <!-- Rendered by JS -->
+        </div>
+
+        <div class="modal-footer" style="background: #f8fafc; padding: 1rem 1.5rem; border-top: 1px solid #e2e8f0; text-align: right;">
+            <button type="button" onclick="closeModal('modalCommonQuery')" class="btn btn-sm btn-outline">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- 3. COMMON FORM AUDIT & SDR HISTORY MODAL -->
+<div class="modal-overlay" id="modalCommonAudit" style="z-index: 10060;">
+    <div class="modal-card" style="max-width: 680px; width: 92%; border-radius: 12px; overflow: hidden; padding: 0; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.15);">
+        <div class="modal-header" style="background: #f8fafc; padding: 1.25rem 1.5rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <div style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Clinical History & Audit Log</div>
+                <h2 style="font-size: 1.15rem; margin: 0.2rem 0 0 0; color: #0f172a;" id="cfAuditRecordTitle">
+                    Audit Trail
+                </h2>
+            </div>
+            <button type="button" onclick="closeModal('modalCommonAudit')" style="background: none; border: none; color: #64748b; cursor: pointer;">
+                <span class="material-icons-round" style="font-size: 1.5rem;">close</span>
+            </button>
+        </div>
+
+        <div style="padding: 1.5rem; max-height: 65vh; overflow-y: auto;" id="cfAuditBody">
+            <!-- Rendered by JS -->
+        </div>
+
+        <div class="modal-footer" style="background: #f8fafc; padding: 1rem 1.5rem; border-top: 1px solid #e2e8f0; text-align: right;">
+            <button type="button" onclick="closeModal('modalCommonAudit')" class="btn btn-sm btn-outline">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- 4. COMMON FORM VOID MODAL -->
+<div class="modal-overlay" id="modalCommonVoid" style="z-index: 10070;">
+    <div class="modal-card" style="max-width: 440px; width: 90%; border-radius: 12px; overflow: hidden; padding: 0; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2);">
+        <div style="padding: 1.5rem; text-align: center;">
+            <div style="width: 50px; height: 50px; border-radius: 50%; background: #fef2f2; color: #dc2626; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem auto;">
+                <span class="material-icons-round" style="font-size: 28px;">remove_circle_outline</span>
+            </div>
+            <h3 style="margin: 0 0 0.5rem 0; font-size: 1.15rem; color: #0f172a;" id="cfVoidTitle">Void Clinical Record</h3>
+            <p style="font-size: 0.875rem; color: #64748b; margin-bottom: 1rem;" id="cfVoidSubtitle">
+                Voided records will be excluded from active selections but preserved for regulatory audit compliance.
+            </p>
+            <input type="hidden" id="cfVoidRecordId" value="0">
+            <textarea id="cfVoidReasonInput" class="form-input" rows="3" placeholder="Enter reason for voiding this record..." style="width: 100%; font-size: 0.875rem; resize: vertical;"></textarea>
+        </div>
+        <div class="modal-footer" style="background: #f8fafc; padding: 0.85rem 1.5rem; display: flex; gap: 0.75rem; justify-content: flex-end; border-top: 1px solid #e2e8f0;">
+            <button type="button" onclick="closeModal('modalCommonVoid')" class="btn btn-sm btn-outline">Cancel</button>
+            <button type="button" onclick="submitCommonVoid()" class="btn btn-sm" style="background: #dc2626; color: white; border: none; font-weight: 600; padding: 0.45rem 1.2rem;">
+                Void Record
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+// =========================================================================
+// SUBJECT COMMON FORMS JS ENGINE (MH, AE, CM)
+// =========================================================================
+const COMMON_FORM_TYPE = '<?php echo strtoupper($current_common_form); ?>';
+const CURRENT_SUBJECT_ID = <?php echo (int)$subject_id; ?>;
+const USER_IS_COORDINATOR = <?php echo $is_coordinator ? 'true' : 'false'; ?>;
+const USER_IS_MANAGER = <?php echo $is_manager_role ? 'true' : 'false'; ?>;
+const USER_IS_ADMIN = <?php echo $is_admin ? 'true' : 'false'; ?>;
+
+let commonSearchTimer = null;
+let currentEditingRecordData = null;
+let currentLinkableRecords = [];
+
+document.addEventListener('DOMContentLoaded', function() {
+    if (COMMON_FORM_TYPE && ['MH', 'AE', 'CM'].includes(COMMON_FORM_TYPE)) {
+        loadCommonRecords();
+    }
+});
+
+function debounceCommonSearch() {
+    clearTimeout(commonSearchTimer);
+    commonSearchTimer = setTimeout(() => {
+        loadCommonRecords();
+    }, 300);
+}
+
+function loadCommonRecords() {
+    if (!COMMON_FORM_TYPE) return;
+
+    const search = document.getElementById('commonSearchInput') ? document.getElementById('commonSearchInput').value : '';
+    const status = document.getElementById('commonStatusFilter') ? document.getElementById('commonStatusFilter').value : '';
+    const sdrStatus = document.getElementById('commonSdrFilter') ? document.getElementById('commonSdrFilter').value : '';
+    const includeVoided = document.getElementById('commonIncludeVoided') ? document.getElementById('commonIncludeVoided').checked : false;
+
+    const fd = new FormData();
+    fd.append('action', 'get_records');
+    fd.append('subject_id', CURRENT_SUBJECT_ID);
+    fd.append('form_type', COMMON_FORM_TYPE);
+    fd.append('search', search);
+    fd.append('status', status);
+    fd.append('sdr_status', sdrStatus);
+    fd.append('include_voided', includeVoided ? 'true' : 'false');
+
+    fetch('ajax_common_forms.php', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(res => {
+        if (!res.success) {
+            showToast(res.message || 'Error loading records', 'error');
+            return;
+        }
+
+        // Update Record Count Badges
+        const cntBadge = document.getElementById('commonFormRecordCountBadge');
+        if (cntBadge) cntBadge.textContent = res.records.length;
+
+        const sbBadge = document.getElementById('sidebar-count-' + COMMON_FORM_TYPE.toLowerCase());
+        if (sbBadge && res.summary) sbBadge.textContent = res.summary.total;
+
+        // Render KPI Badges
+        const kpiBox = document.getElementById('commonSummaryKpis');
+        if (kpiBox && res.summary) {
+            kpiBox.innerHTML = `
+                <span style="background: #f1f5f9; color: #475569; padding: 3px 8px; border-radius: 6px;">Total: ${res.summary.total}</span>
+                <span style="background: #ecfdf5; color: #047857; padding: 3px 8px; border-radius: 6px;">Complete: ${res.summary.complete}</span>
+                <span style="background: #eff6ff; color: #1d4ed8; padding: 3px 8px; border-radius: 6px;">Draft: ${res.summary.draft}</span>
+                <span style="background: #fef3c7; color: #b45309; padding: 3px 8px; border-radius: 6px;">Pending SDR: ${res.summary.sdr_pending}</span>
+            `;
+        }
+
+        renderCommonTable(res.records, COMMON_FORM_TYPE);
+    })
+    .catch(err => {
+        console.error(err);
+        showToast('Network error loading common records', 'error');
+    });
+}
+
+function renderCommonTable(records, formType) {
+    const thead = document.getElementById('commonTableHead');
+    const tbody = document.getElementById('commonTableBody');
+    if (!thead || !tbody) return;
+
+    if (formType === 'MH') {
+        thead.innerHTML = `
+            <th style="padding: 0.85rem 1rem; text-align: left;">MH Number</th>
+            <th style="padding: 0.85rem 1rem; text-align: left;">Condition / Term</th>
+            <th style="padding: 0.85rem 1rem; text-align: center;">Ongoing</th>
+            <th style="padding: 0.85rem 1rem; text-align: left;">Start Date</th>
+            <th style="padding: 0.85rem 1rem; text-align: left;">End Date</th>
+            <th style="padding: 0.85rem 1rem; text-align: center;">Medication Given</th>
+            <th style="padding: 0.85rem 1rem; text-align: center;">Status</th>
+            <th style="padding: 0.85rem 1rem; text-align: center;">SDR</th>
+            <th style="padding: 0.85rem 1rem; text-align: center;">Queries</th>
+            <th style="padding: 0.85rem 1rem; text-align: right;">Actions</th>
+        `;
+    } else if (formType === 'AE') {
+        thead.innerHTML = `
+            <th style="padding: 0.85rem 1rem; text-align: left;">AE Number</th>
+            <th style="padding: 0.85rem 1rem; text-align: left;">AE Term / Verbatim</th>
+            <th style="padding: 0.85rem 1rem; text-align: left;">Start Date</th>
+            <th style="padding: 0.85rem 1rem; text-align: left;">End Date</th>
+            <th style="padding: 0.85rem 1rem; text-align: center;">Severity</th>
+            <th style="padding: 0.85rem 1rem; text-align: center;">Seriousness</th>
+            <th style="padding: 0.85rem 1rem; text-align: left;">Outcome</th>
+            <th style="padding: 0.85rem 1rem; text-align: center;">Status</th>
+            <th style="padding: 0.85rem 1rem; text-align: center;">SDR</th>
+            <th style="padding: 0.85rem 1rem; text-align: center;">Queries</th>
+            <th style="padding: 0.85rem 1rem; text-align: right;">Actions</th>
+        `;
+    } else if (formType === 'CM') {
+        thead.innerHTML = `
+            <th style="padding: 0.85rem 1rem; text-align: left;">CM Number</th>
+            <th style="padding: 0.85rem 1rem; text-align: left;">Medication Name</th>
+            <th style="padding: 0.85rem 1rem; text-align: left;">Start Date</th>
+            <th style="padding: 0.85rem 1rem; text-align: left;">Stop Date</th>
+            <th style="padding: 0.85rem 1rem; text-align: center;">Taken For</th>
+            <th style="padding: 0.85rem 1rem; text-align: left;">Linked Conditions / Events</th>
+            <th style="padding: 0.85rem 1rem; text-align: center;">Status</th>
+            <th style="padding: 0.85rem 1rem; text-align: center;">SDR</th>
+            <th style="padding: 0.85rem 1rem; text-align: center;">Queries</th>
+            <th style="padding: 0.85rem 1rem; text-align: right;">Actions</th>
+        `;
+    }
+
+    if (records.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="11" style="text-align: center; padding: 3.5rem; color: #94a3b8;">
+                    <span class="material-icons-round" style="font-size: 3rem; color: #cbd5e1; display: block; margin-bottom: 0.75rem;">playlist_remove</span>
+                    <p style="font-size: 1rem; font-weight: 500; color: #475569; margin: 0 0 0.5rem 0;">No ${formType} records found for this subject.</p>
+                    ${USER_IS_COORDINATOR || USER_IS_ADMIN ? `<button class="btn btn-sm btn-primary" onclick="openCommonFormModal(0, '${formType}')" style="margin-top: 0.5rem;">+ Add ${formType} Form</button>` : ''}
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    let html = '';
+    records.forEach(r => {
+        const d = r.data || {};
+        const isVoided = r.is_voided;
+        const rowStyle = isVoided ? 'background: #fef2f2; opacity: 0.65;' : 'border-bottom: 1px solid #e2e8f0;';
+
+        // Status Badge
+        let statusBadge = `<span style="background: #eff6ff; color: #1d4ed8; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600;">Draft</span>`;
+        if (r.status === 'complete') {
+            statusBadge = `<span style="background: #ecfdf5; color: #047857; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600;">Complete</span>`;
+        }
+
+        // SDR Badge
+        let sdrBadge = `<span style="background: #f1f5f9; color: #64748b; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 500;">Pending</span>`;
+        if (r.sdr_status === 'reviewed') {
+            sdrBadge = `<span style="background: #ecfdf5; color: #047857; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 2px;"><span class="material-icons-round" style="font-size: 14px;">check_circle</span> Reviewed</span>`;
+        } else if (r.sdr_status === 'needs_rereview') {
+            sdrBadge = `<span style="background: #fff7ed; color: #c2410c; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 2px;"><span class="material-icons-round" style="font-size: 14px;">published_with_changes</span> Re-review</span>`;
+        }
+
+        // Query Badge
+        let queryBadge = `<span style="color: #94a3b8;">-</span>`;
+        if (r.open_queries > 0) {
+            queryBadge = `<span style="background: #ef4444; color: white; padding: 2px 7px; border-radius: 99px; font-size: 0.75rem; font-weight: 700;">${r.open_queries}</span>`;
+        }
+
+        if (formType === 'MH') {
+            let relCmHtml = '';
+            if (r.related_cms && r.related_cms.length > 0) {
+                relCmHtml = `<div style="margin-top: 4px; display: flex; gap: 4px; flex-wrap: wrap;">`;
+                r.related_cms.forEach(cm => {
+                    relCmHtml += `<span onclick="event.stopPropagation(); openCommonFormModal(${cm.id}, 'CM')" class="badge" style="background: #ecfdf5; color: #047857; cursor: pointer; font-size: 0.7rem; border: 1px solid #a7f3d0;" title="Linked CM: ${escapeHtml(cm.medication_name)}"><span class="material-icons-round" style="font-size: 11px;">medication</span> ${escapeHtml(cm.record_number)}</span>`;
+                });
+                relCmHtml += `</div>`;
+            }
+
+            html += `
+                <tr style="${rowStyle}">
+                    <td style="padding: 0.85rem 1rem; font-weight: 700; color: #1e293b;">
+                        ${escapeHtml(r.record_number)}
+                        ${isVoided ? '<span style="background: #dc2626; color: white; font-size: 0.65rem; padding: 1px 5px; border-radius: 4px; margin-left: 4px;">VOIDED</span>' : ''}
+                    </td>
+                    <td style="padding: 0.85rem 1rem; color: #0f172a; font-weight: 600;">
+                        ${escapeHtml(d.mh_term || 'Untitled')}
+                        ${relCmHtml}
+                    </td>
+                    <td style="padding: 0.85rem 1rem; text-align: center;">
+                        <span style="font-weight: 600; color: ${d.ongoing === 'Yes' ? '#2563eb' : '#64748b'};">${escapeHtml(d.ongoing || 'No')}</span>
+                    </td>
+                    <td style="padding: 0.85rem 1rem; color: #475569;">${escapeHtml(d.start_date || '-')}</td>
+                    <td style="padding: 0.85rem 1rem; color: #475569;">${escapeHtml(d.end_date || '-')}</td>
+                    <td style="padding: 0.85rem 1rem; text-align: center;">${escapeHtml(d.medication_given || 'No')}</td>
+                    <td style="padding: 0.85rem 1rem; text-align: center;">${statusBadge}</td>
+                    <td style="padding: 0.85rem 1rem; text-align: center;">${sdrBadge}</td>
+                    <td style="padding: 0.85rem 1rem; text-align: center;">${queryBadge}</td>
+                    <td style="padding: 0.85rem 1rem; text-align: right;">
+                        ${renderRecordActionButtons(r, 'MH')}
+                    </td>
+                </tr>
+            `;
+        } else if (formType === 'AE') {
+            let relCmHtml = '';
+            if (r.related_cms && r.related_cms.length > 0) {
+                relCmHtml = `<div style="margin-top: 4px; display: flex; gap: 4px; flex-wrap: wrap;">`;
+                r.related_cms.forEach(cm => {
+                    relCmHtml += `<span onclick="event.stopPropagation(); openCommonFormModal(${cm.id}, 'CM')" class="badge" style="background: #ecfdf5; color: #047857; cursor: pointer; font-size: 0.7rem; border: 1px solid #a7f3d0;" title="Linked CM: ${escapeHtml(cm.medication_name)}"><span class="material-icons-round" style="font-size: 11px;">medication</span> ${escapeHtml(cm.record_number)}</span>`;
+                });
+                relCmHtml += `</div>`;
+            }
+
+            let sevBg = '#f1f5f9'; let sevColor = '#475569';
+            if (d.severity === 'Severe') { sevBg = '#fef2f2'; sevColor = '#dc2626'; }
+            else if (d.severity === 'Moderate') { sevBg = '#fff7ed'; sevColor = '#c2410c'; }
+
+            html += `
+                <tr style="${rowStyle}">
+                    <td style="padding: 0.85rem 1rem; font-weight: 700; color: #1e293b;">
+                        ${escapeHtml(r.record_number)}
+                        ${isVoided ? '<span style="background: #dc2626; color: white; font-size: 0.65rem; padding: 1px 5px; border-radius: 4px; margin-left: 4px;">VOIDED</span>' : ''}
+                    </td>
+                    <td style="padding: 0.85rem 1rem; color: #0f172a; font-weight: 600;">
+                        ${escapeHtml(d.ae_term || 'Untitled')}
+                        ${relCmHtml}
+                    </td>
+                    <td style="padding: 0.85rem 1rem; color: #475569;">${escapeHtml(d.start_date || '-')}</td>
+                    <td style="padding: 0.85rem 1rem; color: #475569;">${escapeHtml(d.end_date || '-')}</td>
+                    <td style="padding: 0.85rem 1rem; text-align: center;">
+                        <span style="background: ${sevBg}; color: ${sevColor}; padding: 2px 8px; border-radius: 99px; font-weight: 600; font-size: 0.75rem;">${escapeHtml(d.severity || '-')}</span>
+                    </td>
+                    <td style="padding: 0.85rem 1rem; text-align: center;">
+                        <span style="font-weight: 700; color: ${d.seriousness === 'Yes' ? '#dc2626' : '#64748b'};">${escapeHtml(d.seriousness || 'No')}</span>
+                    </td>
+                    <td style="padding: 0.85rem 1rem; color: #475569;">${escapeHtml(d.outcome || '-')}</td>
+                    <td style="padding: 0.85rem 1rem; text-align: center;">${statusBadge}</td>
+                    <td style="padding: 0.85rem 1rem; text-align: center;">${sdrBadge}</td>
+                    <td style="padding: 0.85rem 1rem; text-align: center;">${queryBadge}</td>
+                    <td style="padding: 0.85rem 1rem; text-align: right;">
+                        ${renderRecordActionButtons(r, 'AE')}
+                    </td>
+                </tr>
+            `;
+        } else if (formType === 'CM') {
+            let linksHtml = '<span style="color: #94a3b8;">None</span>';
+            if (d.indication_type === 'Other' && d.specify_other) {
+                linksHtml = `<span style="color: #475569; font-style: italic;">Other: ${escapeHtml(d.specify_other)}</span>`;
+            } else if (r.linked_records && r.linked_records.length > 0) {
+                linksHtml = '<div style="display: flex; gap: 4px; flex-wrap: wrap;">';
+                r.linked_records.forEach(lk => {
+                    const icon = lk.form_type === 'MH' ? 'history_edu' : 'warning_amber';
+                    const color = lk.form_type === 'MH' ? '#2563eb' : '#d97706';
+                    const bg = lk.form_type === 'MH' ? '#eff6ff' : '#fff7ed';
+                    const warningTag = lk.is_voided ? ' <strong style="color: #dc2626;">(Voided)</strong>' : '';
+                    linksHtml += `
+                        <span onclick="event.stopPropagation(); openCommonFormModal(${lk.id}, '${lk.form_type}')" class="badge" style="background: ${bg}; color: ${color}; cursor: pointer; border: 1px solid #e2e8f0; font-size: 0.725rem;" title="${escapeHtml(lk.term)}">
+                            <span class="material-icons-round" style="font-size: 11px;">${icon}</span> ${escapeHtml(lk.record_number)} ${escapeHtml(lk.term)}${warningTag}
+                        </span>
+                    `;
+                });
+                linksHtml += '</div>';
+            }
+
+            html += `
+                <tr style="${rowStyle}">
+                    <td style="padding: 0.85rem 1rem; font-weight: 700; color: #1e293b;">
+                        ${escapeHtml(r.record_number)}
+                        ${isVoided ? '<span style="background: #dc2626; color: white; font-size: 0.65rem; padding: 1px 5px; border-radius: 4px; margin-left: 4px;">VOIDED</span>' : ''}
+                    </td>
+                    <td style="padding: 0.85rem 1rem; color: #0f172a; font-weight: 600;">${escapeHtml(d.medication_name || 'Untitled')}</td>
+                    <td style="padding: 0.85rem 1rem; color: #475569;">${escapeHtml(d.start_date || '-')}</td>
+                    <td style="padding: 0.85rem 1rem; color: #475569;">${escapeHtml(d.stop_date || '-')}</td>
+                    <td style="padding: 0.85rem 1rem; text-align: center;">
+                        <span style="background: #f1f5f9; color: #334155; padding: 2px 8px; border-radius: 6px; font-weight: 600; font-size: 0.75rem;">${escapeHtml(d.indication_type || '-')}</span>
+                    </td>
+                    <td style="padding: 0.85rem 1rem;">${linksHtml}</td>
+                    <td style="padding: 0.85rem 1rem; text-align: center;">${statusBadge}</td>
+                    <td style="padding: 0.85rem 1rem; text-align: center;">${sdrBadge}</td>
+                    <td style="padding: 0.85rem 1rem; text-align: center;">${queryBadge}</td>
+                    <td style="padding: 0.85rem 1rem; text-align: right;">
+                        ${renderRecordActionButtons(r, 'CM')}
+                    </td>
+                </tr>
+            `;
+        }
+    });
+
+    tbody.innerHTML = html;
+}
+
+function renderRecordActionButtons(r, formType) {
+    let btns = '';
+
+    // Open/Edit
+    btns += `<button class="btn btn-sm btn-outline" onclick="openCommonFormModal(${r.id}, '${formType}')" style="padding: 0.25rem 0.6rem; font-size: 0.75rem; margin-right: 4px;">Edit</button>`;
+
+    // Queries
+    btns += `<button class="btn btn-sm btn-outline" onclick="openCommonQueryModal(${r.id})" title="Queries" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; margin-right: 4px; color: ${r.open_queries > 0 ? '#dc2626' : '#475569'};"><span class="material-icons-round" style="font-size: 14px;">help_outline</span></button>`;
+
+    // SDR (Manager / Admin)
+    if (USER_IS_MANAGER || USER_IS_ADMIN) {
+        if (!r.is_voided) {
+            const sdrTitle = r.sdr_status === 'reviewed' ? 'Revoke SDR' : 'Mark SDR Reviewed';
+            btns += `<button class="btn btn-sm" onclick="toggleCommonSDR(${r.id}, '${r.sdr_status}')" title="${sdrTitle}" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; margin-right: 4px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0;"><span class="material-icons-round" style="font-size: 14px;">verified</span></button>`;
+        }
+    }
+
+    // Void (Coordinator / Admin)
+    if ((USER_IS_COORDINATOR || USER_IS_ADMIN) && !r.is_voided) {
+        btns += `<button class="btn btn-sm" onclick="openCommonVoidModal(${r.id})" title="Void Record" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5;"><span class="material-icons-round" style="font-size: 14px;">remove_circle_outline</span></button>`;
+    }
+
+    return btns;
+}
+
+// =========================================================================
+// FORM EDITOR MODAL & DYNAMIC FIELDS
+// =========================================================================
+function openCommonFormModal(recordId, formType, defaultData = null) {
+    document.getElementById('cfRecordId').value = recordId;
+    document.getElementById('cfFormType').value = formType;
+    document.getElementById('cfValidationAlert').style.display = 'none';
+
+    document.getElementById('cfEditorSubTitle').textContent = `Subject ${CURRENT_SUBJECT_ID} &bull; ${formType} Form`;
+
+    if (recordId > 0) {
+        document.getElementById('cfEditorTitle').innerHTML = `Loading Record...`;
+        
+        const fd = new FormData();
+        fd.append('action', 'get_record');
+        fd.append('record_id', recordId);
+
+        fetch('ajax_common_forms.php', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(res => {
+            if (!res.success) {
+                showToast(res.message || 'Failed to load record', 'error');
+                return;
+            }
+            currentEditingRecordData = res.record;
+            setupEditorForm(res.record, formType);
+            openModal('modalCommonFormEditor');
+        })
+        .catch(err => {
+            console.error(err);
+            showToast('Error fetching record details', 'error');
+        });
+    } else {
+        // New Record
+        currentEditingRecordData = {
+            id: 0,
+            record_number: `New ${formType} Record`,
+            status: 'draft',
+            sdr_status: 'pending',
+            revision: 1,
+            data: defaultData || {}
+        };
+        setupEditorForm(currentEditingRecordData, formType);
+        openModal('modalCommonFormEditor');
+    }
+}
+
+function setupEditorForm(rec, formType) {
+    const isNew = rec.id === 0;
+    document.getElementById('cfEditorTitle').innerHTML = `${escapeHtml(rec.record_number)}`;
+
+    // Badges
+    const bBox = document.getElementById('cfEditorBadges');
+    let stBadge = rec.status === 'complete' ? '<span style="background: #ecfdf5; color: #047857; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600;">Complete</span>' : '<span style="background: #eff6ff; color: #1d4ed8; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600;">Draft</span>';
+    let sdrBadge = rec.sdr_status === 'reviewed' ? '<span style="background: #ecfdf5; color: #047857; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600;">Reviewed</span>' : '<span style="background: #f1f5f9; color: #64748b; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 500;">Pending SDR</span>';
+    bBox.innerHTML = `${stBadge} ${sdrBadge} <span style="background: #f8fafc; color: #64748b; border: 1px solid #cbd5e1; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem;">v${rec.revision || 1}</span>`;
+
+    // Audit / Query buttons
+    document.getElementById('btnCfAudit').style.display = isNew ? 'none' : 'inline-flex';
+    document.getElementById('btnCfQuery').style.display = isNew ? 'none' : 'inline-flex';
+
+    const fieldsBox = document.getElementById('cfDynamicFields');
+    const d = rec.data || {};
+
+    if (formType === 'MH') {
+        fieldsBox.innerHTML = `
+            <div style="display: grid; grid-template-columns: 1fr; gap: 1.25rem;">
+                <div>
+                    <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                        1. MH Term / Condition <span style="color: #dc2626;">*</span>
+                    </label>
+                    <input type="text" id="inp_mh_term" class="form-input" value="${escapeHtml(d.mh_term || '')}" placeholder="e.g. Type 2 Diabetes Mellitus" style="width: 100%;">
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+                    <div>
+                        <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                            2. Ongoing / Continuing <span style="color: #dc2626;">*</span>
+                        </label>
+                        <select id="inp_mh_ongoing" onchange="onMHOngoingChange()" class="form-input" style="width: 100%;">
+                            <option value="">-- Select --</option>
+                            <option value="Yes" ${d.ongoing === 'Yes' ? 'selected' : ''}>Yes</option>
+                            <option value="No" ${d.ongoing === 'No' ? 'selected' : ''}>No</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                            3. Start Date
+                        </label>
+                        <input type="date" id="inp_mh_start_date" onchange="onMHDateChange()" class="form-input" value="${escapeHtml(d.start_date || '')}" style="width: 100%;">
+                    </div>
+
+                    <div>
+                        <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;" id="lbl_mh_end_date">
+                            4. End Date
+                        </label>
+                        <input type="date" id="inp_mh_end_date" class="form-input" value="${escapeHtml(d.end_date || '')}" style="width: 100%;">
+                    </div>
+                </div>
+
+                <div>
+                    <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                        5. Comments / Additional Details
+                    </label>
+                    <textarea id="inp_mh_comments" class="form-input" rows="3" placeholder="Enter additional details..." style="width: 100%; resize: vertical;">${escapeHtml(d.comments || '')}</textarea>
+                </div>
+
+                <div>
+                    <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                        6. Medication Given <span style="color: #dc2626;">*</span>
+                    </label>
+                    <select id="inp_mh_medication_given" onchange="onMHMedGivenChange()" class="form-input" style="width: 200px;">
+                        <option value="">-- Select --</option>
+                        <option value="Yes" ${d.medication_given === 'Yes' ? 'selected' : ''}>Yes</option>
+                        <option value="No" ${d.medication_given === 'No' ? 'selected' : ''}>No</option>
+                    </select>
+
+                    <div id="mhCmShortcutBox" style="display: ${d.medication_given === 'Yes' && rec.id > 0 ? 'block' : 'none'}; margin-top: 0.75rem;">
+                        <button type="button" onclick="shortcutAddCMFromMH(${rec.id})" class="btn btn-sm" style="background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-weight: 600;">
+                            <span class="material-icons-round" style="font-size: 1rem; margin-right: 4px;">add</span> Add Concomitant Medication for ${escapeHtml(rec.record_number)}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        onMHOngoingChange();
+
+    } else if (formType === 'AE') {
+        const critList = Array.isArray(d.seriousness_criteria) ? d.seriousness_criteria : (typeof d.seriousness_criteria === 'string' ? d.seriousness_criteria.split(',') : []);
+        const isSerious = d.seriousness === 'Yes';
+
+        fieldsBox.innerHTML = `
+            <div style="display: grid; grid-template-columns: 1fr; gap: 1.25rem;">
+                <div>
+                    <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                        1. AE Term / Verbatim <span style="color: #dc2626;">*</span>
+                    </label>
+                    <input type="text" id="inp_ae_term" class="form-input" value="${escapeHtml(d.ae_term || '')}" placeholder="e.g. Severe Headache" style="width: 100%;">
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 1rem;">
+                    <div>
+                        <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                            2. Start Date
+                        </label>
+                        <input type="date" id="inp_ae_start_date" class="form-input" value="${escapeHtml(d.start_date || '')}" style="width: 100%;">
+                    </div>
+
+                    <div>
+                        <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                            3. End Date
+                        </label>
+                        <input type="date" id="inp_ae_end_date" class="form-input" value="${escapeHtml(d.end_date || '')}" style="width: 100%;">
+                    </div>
+
+                    <div>
+                        <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                            4. Severity / Intensity <span style="color: #dc2626;">*</span>
+                        </label>
+                        <select id="inp_ae_severity" class="form-input" style="width: 100%;">
+                            <option value="">-- Select --</option>
+                            <option value="Mild" ${d.severity === 'Mild' ? 'selected' : ''}>Mild</option>
+                            <option value="Moderate" ${d.severity === 'Moderate' ? 'selected' : ''}>Moderate</option>
+                            <option value="Severe" ${d.severity === 'Severe' ? 'selected' : ''}>Severe</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                            5. Seriousness <span style="color: #dc2626;">*</span>
+                        </label>
+                        <select id="inp_ae_seriousness" onchange="onAESeriousnessChange()" class="form-input" style="width: 100%;">
+                            <option value="">-- Select --</option>
+                            <option value="Yes" ${isSerious ? 'selected' : ''}>Yes</option>
+                            <option value="No" ${!isSerious && d.seriousness === 'No' ? 'selected' : ''}>No</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 6. Seriousness Criteria Multi-select -->
+                <div id="aeSeriousnessCriteriaBox" style="display: ${isSerious ? 'block' : 'none'}; background: #fff7ed; border: 1px solid #fed7aa; padding: 1rem; border-radius: 8px;">
+                    <label style="font-weight: 600; font-size: 0.875rem; color: #9a3412; display: block; margin-bottom: 0.5rem;">
+                        6. Seriousness Criteria (Select all that apply) <span style="color: #dc2626;">*</span>
+                    </label>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                        ${renderAeCritCb('Death', 'Death', critList)}
+                        ${renderAeCritCb('Life-threatening', 'Life-threatening', critList)}
+                        ${renderAeCritCb('Hospitalization / prolongation of hospitalization', 'Hospitalization / prolongation', critList)}
+                        ${renderAeCritCb('Disability / incapacity', 'Disability / incapacity', critList)}
+                        ${renderAeCritCb('Congenital anomaly', 'Congenital anomaly', critList)}
+                        ${renderAeCritCb('Other medically important event', 'Other medically important event', critList)}
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div>
+                        <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                            7. Causality / Relationship to Study Drug <span style="color: #dc2626;">*</span>
+                        </label>
+                        <select id="inp_ae_causality" class="form-input" style="width: 100%;">
+                            <option value="">-- Select --</option>
+                            <option value="Unrelated" ${d.causality === 'Unrelated' ? 'selected' : ''}>Unrelated</option>
+                            <option value="Unlikely" ${d.causality === 'Unlikely' ? 'selected' : ''}>Unlikely</option>
+                            <option value="Possible" ${d.causality === 'Possible' ? 'selected' : ''}>Possible</option>
+                            <option value="Probable" ${d.causality === 'Probable' ? 'selected' : ''}>Probable</option>
+                            <option value="Definite" ${d.causality === 'Definite' ? 'selected' : ''}>Definite</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                            8. Action Taken with Study Treatment <span style="color: #dc2626;">*</span>
+                        </label>
+                        <select id="inp_ae_action_taken" class="form-input" style="width: 100%;">
+                            <option value="">-- Select --</option>
+                            <option value="None" ${d.action_taken === 'None' ? 'selected' : ''}>None</option>
+                            <option value="Dose Reduced" ${d.action_taken === 'Dose Reduced' ? 'selected' : ''}>Dose Reduced</option>
+                            <option value="Dose Interrupted" ${d.action_taken === 'Dose Interrupted' ? 'selected' : ''}>Dose Interrupted</option>
+                            <option value="Drug Withdrawn" ${d.action_taken === 'Drug Withdrawn' ? 'selected' : ''}>Drug Withdrawn</option>
+                            <option value="Not Applicable" ${d.action_taken === 'Not Applicable' ? 'selected' : ''}>Not Applicable</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div>
+                        <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                            9. Outcome <span style="color: #dc2626;">*</span>
+                        </label>
+                        <select id="inp_ae_outcome" onchange="onAEOutcomeChange()" class="form-input" style="width: 100%;">
+                            <option value="">-- Select --</option>
+                            <option value="Recovered / Resolved" ${d.outcome === 'Recovered / Resolved' ? 'selected' : ''}>Recovered / Resolved</option>
+                            <option value="Recovering / Resolving" ${d.outcome === 'Recovering / Resolving' ? 'selected' : ''}>Recovering / Resolving</option>
+                            <option value="Not Recovered / Not Resolved" ${d.outcome === 'Not Recovered / Not Resolved' ? 'selected' : ''}>Not Recovered / Not Resolved</option>
+                            <option value="Recovered with Sequelae" ${d.outcome === 'Recovered with Sequelae' ? 'selected' : ''}>Recovered with Sequelae</option>
+                            <option value="Fatal" ${d.outcome === 'Fatal' ? 'selected' : ''}>Fatal</option>
+                            <option value="Unknown" ${d.outcome === 'Unknown' ? 'selected' : ''}>Unknown</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                            10. Concomitant Treatment Given <span style="color: #dc2626;">*</span>
+                        </label>
+                        <select id="inp_ae_concomitant_treatment" onchange="onAEConcomitantTreatmentChange()" class="form-input" style="width: 100%;">
+                            <option value="">-- Select --</option>
+                            <option value="Yes" ${d.concomitant_treatment === 'Yes' ? 'selected' : ''}>Yes</option>
+                            <option value="No" ${d.concomitant_treatment === 'No' ? 'selected' : ''}>No</option>
+                        </select>
+
+                        <div id="aeCmShortcutBox" style="display: ${d.concomitant_treatment === 'Yes' && rec.id > 0 ? 'block' : 'none'}; margin-top: 0.75rem;">
+                            <button type="button" onclick="shortcutAddCMFromAE(${rec.id})" class="btn btn-sm" style="background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-weight: 600;">
+                                <span class="material-icons-round" style="font-size: 1rem; margin-right: 4px;">add</span> Add Concomitant Medication for ${escapeHtml(rec.record_number)}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        onAEOutcomeChange();
+
+    } else if (formType === 'CM') {
+        const indType = d.indication_type || '';
+        const existingLinks = rec.linked_records || [];
+
+        fieldsBox.innerHTML = `
+            <div style="display: grid; grid-template-columns: 1fr; gap: 1.25rem;">
+                <div>
+                    <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                        1. Medication Name <span style="color: #dc2626;">*</span>
+                    </label>
+                    <input type="text" id="inp_cm_name" class="form-input" value="${escapeHtml(d.medication_name || '')}" placeholder="e.g. Metformin 500mg" style="width: 100%;">
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div>
+                        <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                            2. Start Date
+                        </label>
+                        <input type="date" id="inp_cm_start_date" class="form-input" value="${escapeHtml(d.start_date || '')}" style="width: 100%;">
+                    </div>
+
+                    <div>
+                        <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                            3. Stop Date
+                        </label>
+                        <input type="date" id="inp_cm_stop_date" class="form-input" value="${escapeHtml(d.stop_date || '')}" style="width: 100%;">
+                    </div>
+                </div>
+
+                <div>
+                    <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                        4. Medication Taken For (Indication Type) <span style="color: #dc2626;">*</span>
+                    </label>
+                    <select id="inp_cm_indication_type" onchange="onCMIndicationChange()" class="form-input" style="width: 250px;">
+                        <option value="">-- Select --</option>
+                        <option value="MH" ${indType === 'MH' ? 'selected' : ''}>Medical History (MH)</option>
+                        <option value="AE" ${indType === 'AE' ? 'selected' : ''}>Adverse Event (AE)</option>
+                        <option value="Other" ${indType === 'Other' ? 'selected' : ''}>Other Indication</option>
+                    </select>
+                </div>
+
+                <!-- 5. Linked Condition / Event Selection -->
+                <div id="cmLinkedContainer" style="display: ${indType === 'MH' || indType === 'AE' ? 'block' : 'none'}; background: #f8fafc; border: 1px solid #e2e8f0; padding: 1.25rem; border-radius: 8px;">
+                    <label style="font-weight: 600; font-size: 0.875rem; color: #0f172a; display: block; margin-bottom: 0.5rem;" id="lblCmLinkedTarget">
+                        5. Linked Condition / Event <span style="color: #dc2626;">*</span>
+                    </label>
+                    <div id="cmLinkedRecordsList" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 200px; overflow-y: auto;">
+                        <span style="color: #94a3b8; font-size: 0.875rem;">Loading active records...</span>
+                    </div>
+                </div>
+
+                <!-- 6. Specify Other -->
+                <div id="cmSpecifyOtherContainer" style="display: ${indType === 'Other' ? 'block' : 'none'};">
+                    <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                        6. Specify Other Indication <span style="color: #dc2626;">*</span>
+                    </label>
+                    <input type="text" id="inp_cm_specify_other" class="form-input" value="${escapeHtml(d.specify_other || '')}" placeholder="Enter indication..." style="width: 100%;">
+                </div>
+            </div>
+        `;
+
+        if (indType === 'MH' || indType === 'AE') {
+            loadCMLinkableRecords(indType, existingLinks);
+        }
+    }
+}
+
+function renderAeCritCb(val, label, selectedList) {
+    const isChecked = selectedList.includes(val) ? 'checked' : '';
+    return `
+        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #431407; font-weight: 500; cursor: pointer;">
+            <input type="checkbox" class="cb_ae_crit" value="${escapeHtml(val)}" ${isChecked}>
+            ${escapeHtml(label)}
+        </label>
+    `;
+}
+
+// MH Dynamic Handlers
+function onMHOngoingChange() {
+    const ongoing = document.getElementById('inp_mh_ongoing') ? document.getElementById('inp_mh_ongoing').value : '';
+    const endDateInp = document.getElementById('inp_mh_end_date');
+    const lblEndDate = document.getElementById('lbl_mh_end_date');
+
+    if (!endDateInp) return;
+
+    if (ongoing === 'Yes') {
+        endDateInp.value = '';
+        endDateInp.disabled = true;
+        if (lblEndDate) lblEndDate.innerHTML = `4. End Date <span style="font-size:0.75rem; color:#94a3b8;">(Disabled when Ongoing)</span>`;
+    } else {
+        endDateInp.disabled = false;
+        if (lblEndDate) lblEndDate.innerHTML = `4. End Date <span style="color: #dc2626;">*</span>`;
+    }
+}
+
+function onMHDateChange() {
+    const st = document.getElementById('inp_mh_start_date') ? document.getElementById('inp_mh_start_date').value : '';
+    const et = document.getElementById('inp_mh_end_date') ? document.getElementById('inp_mh_end_date').value : '';
+    if (st && et && et < st) {
+        showToast('End Date cannot precede Start Date.', 'warning');
+    }
+}
+
+function onMHMedGivenChange() {
+    const mg = document.getElementById('inp_mh_medication_given') ? document.getElementById('inp_mh_medication_given').value : '';
+    const box = document.getElementById('mhCmShortcutBox');
+    if (box) box.style.display = (mg === 'Yes' && currentEditingRecordData && currentEditingRecordData.id > 0) ? 'block' : 'none';
+}
+
+// AE Dynamic Handlers
+function onAESeriousnessChange() {
+    const ser = document.getElementById('inp_ae_seriousness') ? document.getElementById('inp_ae_seriousness').value : '';
+    const box = document.getElementById('aeSeriousnessCriteriaBox');
+    if (box) box.style.display = (ser === 'Yes') ? 'block' : 'none';
+}
+
+function onAEOutcomeChange() {
+    const out = document.getElementById('inp_ae_outcome') ? document.getElementById('inp_ae_outcome').value : '';
+    const endDateInp = document.getElementById('inp_ae_end_date');
+
+    if (!endDateInp) return;
+
+    if (out === 'Recovered / Resolved') {
+        endDateInp.disabled = false;
+    } else if (out === 'Recovering / Resolving' || out === 'Not Recovered / Not Resolved') {
+        endDateInp.value = '';
+        endDateInp.disabled = true;
+    } else {
+        endDateInp.disabled = false;
+    }
+}
+
+function onAEConcomitantTreatmentChange() {
+    const ct = document.getElementById('inp_ae_concomitant_treatment') ? document.getElementById('inp_ae_concomitant_treatment').value : '';
+    const box = document.getElementById('aeCmShortcutBox');
+    if (box) box.style.display = (ct === 'Yes' && currentEditingRecordData && currentEditingRecordData.id > 0) ? 'block' : 'none';
+}
+
+// CM Dynamic Handlers
+let previousCmIndicationType = '';
+function onCMIndicationChange() {
+    const selType = document.getElementById('inp_cm_indication_type') ? document.getElementById('inp_cm_indication_type').value : '';
+    const linkedBox = document.getElementById('cmLinkedContainer');
+    const otherBox = document.getElementById('cmSpecifyOtherContainer');
+
+    if (previousCmIndicationType && previousCmIndicationType !== selType) {
+        const checkedCbs = document.querySelectorAll('.cb_cm_linked:checked');
+        if (checkedCbs.length > 0) {
+            if (!confirm(`Changing Medication Taken For from ${previousCmIndicationType} to ${selType || 'Other'} will clear existing linked record selections. Continue?`)) {
+                document.getElementById('inp_cm_indication_type').value = previousCmIndicationType;
+                return;
+            }
+        }
+    }
+    previousCmIndicationType = selType;
+
+    if (selType === 'Other') {
+        if (linkedBox) linkedBox.style.display = 'none';
+        if (otherBox) otherBox.style.display = 'block';
+    } else if (selType === 'MH' || selType === 'AE') {
+        if (otherBox) otherBox.style.display = 'none';
+        if (linkedBox) linkedBox.style.display = 'block';
+        loadCMLinkableRecords(selType, []);
+    } else {
+        if (linkedBox) linkedBox.style.display = 'none';
+        if (otherBox) otherBox.style.display = 'none';
+    }
+}
+
+function loadCMLinkableRecords(targetType, existingLinks = []) {
+    const listEl = document.getElementById('cmLinkedRecordsList');
+    const lblEl = document.getElementById('lblCmLinkedTarget');
+    if (!listEl) return;
+
+    if (lblEl) lblEl.innerHTML = `5. Select Active ${targetType} Records to Link <span style="color: #dc2626;">*</span>`;
+
+    const fd = new FormData();
+    fd.append('action', 'get_linkable_records');
+    fd.append('subject_id', CURRENT_SUBJECT_ID);
+    fd.append('target_type', targetType);
+
+    fetch('ajax_common_forms.php', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(res => {
+        if (!res.success) {
+            listEl.innerHTML = `<span style="color: #ef4444;">Error loading linkable records</span>`;
+            return;
+        }
+
+        currentLinkableRecords = res.linkable || [];
+        if (currentLinkableRecords.length === 0) {
+            listEl.innerHTML = `
+                <div style="padding: 1rem; background: #fff; border: 1px dashed #cbd5e1; border-radius: 6px; text-align: center; color: #64748b;">
+                    <p style="margin: 0 0 0.5rem 0; font-size: 0.875rem;">No active ${targetType} records found for Subject ${CURRENT_SUBJECT_ID}.</p>
+                    ${USER_IS_COORDINATOR || USER_IS_ADMIN ? `<button type="button" class="btn btn-sm btn-outline" onclick="shortcutAddSourceRecord('${targetType}')">+ Add ${targetType} Record Now</button>` : ''}
+                </div>
+            `;
+            return;
+        }
+
+        const selectedIds = existingLinks.map(l => l.id);
+
+        let html = '';
+        currentLinkableRecords.forEach(rec => {
+            const isChecked = selectedIds.includes(rec.id) ? 'checked' : '';
+            html += `
+                <label style="display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.75rem; background: white; border: 1px solid #e2e8f0; border-radius: 6px; cursor: pointer;">
+                    <input type="checkbox" class="cb_cm_linked" value="${rec.id}" ${isChecked}>
+                    <span style="font-weight: 700; color: #1e293b;">${escapeHtml(rec.record_number)}</span>
+                    <span style="color: #475569;">${escapeHtml(rec.term)}</span>
+                </label>
+            `;
+        });
+        listEl.innerHTML = html;
+    })
+    .catch(err => {
+        console.error(err);
+        listEl.innerHTML = `<span style="color: #ef4444;">Error fetching linkable records</span>`;
+    });
+}
+
+function shortcutAddSourceRecord(targetType) {
+    closeModal('modalCommonFormEditor');
+    setTimeout(() => {
+        window.location.href = `subject_data_entry.php?subject_id=${CURRENT_SUBJECT_ID}&common_form=${targetType.toLowerCase()}`;
+    }, 200);
+}
+
+function shortcutAddCMFromMH(mhId) {
+    closeModal('modalCommonFormEditor');
+    setTimeout(() => {
+        openCommonFormModal(0, 'CM', { indication_type: 'MH' });
+    }, 200);
+}
+
+function shortcutAddCMFromAE(aeId) {
+    closeModal('modalCommonFormEditor');
+    setTimeout(() => {
+        openCommonFormModal(0, 'CM', { indication_type: 'AE' });
+    }, 200);
+}
+
+// =========================================================================
+// SAVE RECORD ACTION (SAVE DRAFT / MARK COMPLETE)
+// =========================================================================
+function saveCommonRecord(mode) {
+    const recordId = parseInt(document.getElementById('cfRecordId').value) || 0;
+    const formType = document.getElementById('cfFormType').value;
+    const alertBox = document.getElementById('cfValidationAlert');
+    alertBox.style.display = 'none';
+
+    const data = {};
+    const linkedIds = [];
+
+    if (formType === 'MH') {
+        data.mh_term = document.getElementById('inp_mh_term').value.trim();
+        data.ongoing = document.getElementById('inp_mh_ongoing').value;
+        data.start_date = document.getElementById('inp_mh_start_date').value;
+        data.end_date = document.getElementById('inp_mh_end_date').value;
+        data.comments = document.getElementById('inp_mh_comments').value.trim();
+        data.medication_given = document.getElementById('inp_mh_medication_given').value;
+    } else if (formType === 'AE') {
+        data.ae_term = document.getElementById('inp_ae_term').value.trim();
+        data.start_date = document.getElementById('inp_ae_start_date').value;
+        data.end_date = document.getElementById('inp_ae_end_date').value;
+        data.severity = document.getElementById('inp_ae_severity').value;
+        data.seriousness = document.getElementById('inp_ae_seriousness').value;
+        
+        const critCbs = document.querySelectorAll('.cb_ae_crit:checked');
+        data.seriousness_criteria = Array.from(critCbs).map(cb => cb.value);
+
+        data.causality = document.getElementById('inp_ae_causality').value;
+        data.action_taken = document.getElementById('inp_ae_action_taken').value;
+        data.outcome = document.getElementById('inp_ae_outcome').value;
+        data.concomitant_treatment = document.getElementById('inp_ae_concomitant_treatment').value;
+    } else if (formType === 'CM') {
+        data.medication_name = document.getElementById('inp_cm_name').value.trim();
+        data.start_date = document.getElementById('inp_cm_start_date').value;
+        data.stop_date = document.getElementById('inp_cm_stop_date').value;
+        data.indication_type = document.getElementById('inp_cm_indication_type').value;
+        data.specify_other = document.getElementById('inp_cm_specify_other') ? document.getElementById('inp_cm_specify_other').value.trim() : '';
+
+        const linkedCbs = document.querySelectorAll('.cb_cm_linked:checked');
+        linkedCbs.forEach(cb => linkedIds.push(parseInt(cb.value)));
+    }
+
+    const fd = new FormData();
+    fd.append('action', 'save_record');
+    fd.append('record_id', recordId);
+    fd.append('subject_id', CURRENT_SUBJECT_ID);
+    fd.append('form_type', formType);
+    fd.append('mode', mode);
+    fd.append('data', JSON.stringify(data));
+
+    linkedIds.forEach(id => fd.append('linked_ids[]', id));
+
+    fetch('ajax_common_forms.php', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(res => {
+        if (!res.success) {
+            alertBox.textContent = res.message || 'Validation Error';
+            alertBox.style.display = 'block';
+            return;
+        }
+
+        showToast(res.message || 'Record saved successfully!', 'success');
+        closeModal('modalCommonFormEditor');
+        loadCommonRecords();
+    })
+    .catch(err => {
+        console.error(err);
+        showToast('Network error saving record', 'error');
+    });
+}
+
+// =========================================================================
+// SDR, QUERY, AUDIT & VOID HANDLERS
+// =========================================================================
+function toggleCommonSDR(recordId, currentStatus) {
+    const newStatus = (currentStatus === 'reviewed') ? 'needs_rereview' : 'reviewed';
+    
+    showConfirmModal({
+        title: newStatus === 'reviewed' ? 'Mark SDR Reviewed' : 'Request SDR Re-review',
+        message: `Are you sure you want to update SDR status to <strong>${newStatus.toUpperCase()}</strong> for this record?`,
+        icon: 'verified',
+        iconBg: '#ecfdf5',
+        iconColor: '#047857',
+        btnText: 'Confirm SDR Status',
+        onConfirm: function() {
+            const fd = new FormData();
+            fd.append('action', 'mark_sdr');
+            fd.append('record_id', recordId);
+            fd.append('sdr_action', newStatus);
+
+            fetch('ajax_common_forms.php', { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(res => {
+                if (!res.success) {
+                    showToast(res.message || 'Error updating SDR', 'error');
+                    return;
+                }
+                showToast(res.message, 'success');
+                loadCommonRecords();
+            });
+        }
+    });
+}
+
+function markCommonSDRFromEditor() {
+    const recId = parseInt(document.getElementById('cfRecordId').value);
+    if (recId > 0 && currentEditingRecordData) {
+        toggleCommonSDR(recId, currentEditingRecordData.sdr_status);
+        closeModal('modalCommonFormEditor');
+    }
+}
+
+function openCommonVoidModal(recordId) {
+    document.getElementById('cfVoidRecordId').value = recordId;
+    document.getElementById('cfVoidReasonInput').value = '';
+    openModal('modalCommonVoid');
+}
+
+function submitCommonVoid() {
+    const recId = parseInt(document.getElementById('cfVoidRecordId').value);
+    const reason = document.getElementById('cfVoidReasonInput').value.trim();
+
+    if (reason === '') {
+        showToast('Please enter a reason for voiding this record.', 'warning');
+        return;
+    }
+
+    const fd = new FormData();
+    fd.append('action', 'void_record');
+    fd.append('record_id', recId);
+    fd.append('reason', reason);
+
+    fetch('ajax_common_forms.php', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(res => {
+        if (!res.success) {
+            showToast(res.message || 'Error voiding record', 'error');
+            return;
+        }
+        showToast(res.message, 'success');
+        closeModal('modalCommonVoid');
+        loadCommonRecords();
+    });
+}
+
+// Queries Modal
+function openCommonQueryModal(recordId) {
+    const fd = new FormData();
+    fd.append('action', 'get_record');
+    fd.append('record_id', recordId);
+
+    fetch('ajax_common_forms.php', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(res => {
+        if (!res.success) {
+            showToast('Error loading queries', 'error');
+            return;
+        }
+
+        const rec = res.record;
+        document.getElementById('cfQueryRecordTitle').textContent = `Queries for ${rec.record_number}`;
+        const qBody = document.getElementById('cfQueryBody');
+
+        let html = '';
+
+        if (USER_IS_MANAGER || USER_IS_ADMIN) {
+            html += `
+                <div style="background: #eff6ff; border: 1px solid #bfdbfe; padding: 1rem; border-radius: 8px; margin-bottom: 1.25rem;">
+                    <label style="font-weight: 600; font-size: 0.875rem; color: #1e40af; display: block; margin-bottom: 0.35rem;">
+                        Raise New Query on ${rec.record_number}
+                    </label>
+                    <textarea id="inp_new_query_text" class="form-input" rows="2" placeholder="Enter query details for investigator/coordinator..." style="width: 100%; font-size: 0.875rem; resize: vertical; margin-bottom: 0.5rem;"></textarea>
+                    <button type="button" onclick="submitNewCommonQuery(${rec.id})" class="btn btn-sm btn-primary" style="font-weight: 600;">Submit Query</button>
+                </div>
+            `;
+        }
+
+        if (rec.queries.length === 0) {
+            html += `<p style="text-align: center; color: #94a3b8; padding: 1.5rem;">No queries raised for this record.</p>`;
+        } else {
+            rec.queries.forEach(q => {
+                const isClosed = q.status === 'closed';
+                const statusColor = isClosed ? '#64748b' : (q.status === 'answered' ? '#047857' : '#dc2626');
+                const statusBg = isClosed ? '#f1f5f9' : (q.status === 'answered' ? '#ecfdf5' : '#fef2f2');
+
+                html += `
+                    <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: white;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                            <span style="font-weight: 600; color: #1e293b; font-size: 0.875rem;">Query #${q.id}</span>
+                            <span style="background: ${statusBg}; color: ${statusColor}; padding: 2px 8px; border-radius: 99px; font-weight: 600; font-size: 0.75rem;">${q.status.toUpperCase()}</span>
+                        </div>
+                        <p style="margin: 0 0 0.5rem 0; color: #334155; font-size: 0.9rem;">${escapeHtml(q.query_text)}</p>
+                        <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.75rem;">Raised by ${escapeHtml(q.created_by)} on ${q.created_at}</div>
+
+                        <!-- Thread history -->
+                        <div style="padding-left: 1rem; border-left: 2px solid #e2e8f0; display: flex; flex-direction: column; gap: 0.5rem;">
+                `;
+
+                q.history.forEach(h => {
+                    html += `
+                        <div style="font-size: 0.8rem; background: #f8fafc; padding: 0.5rem; border-radius: 6px;">
+                            <strong>${escapeHtml(h.user)}</strong> [${h.action_type.toUpperCase()}]: ${escapeHtml(h.remark)} <span style="color: #94a3b8; font-size: 0.7rem;">(${h.created_at})</span>
+                        </div>
+                    `;
+                });
+
+                html += `</div>`;
+
+                // Response / Close controls
+                if (q.status !== 'closed' && (USER_IS_COORDINATOR || USER_IS_ADMIN)) {
+                    html += `
+                        <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem;">
+                            <input type="text" id="inp_ans_query_${q.id}" class="form-input" placeholder="Type response remark..." style="flex: 1; font-size: 0.8rem;">
+                            <button type="button" onclick="submitCommonQueryAnswer(${q.id}, ${rec.id})" class="btn btn-sm btn-primary">Respond</button>
+                        </div>
+                    `;
+                }
+
+                if (USER_IS_MANAGER || USER_IS_ADMIN) {
+                    html += `<div style="margin-top: 0.75rem; display: flex; gap: 0.5rem;">`;
+                    if (q.status !== 'closed') {
+                        html += `<button type="button" onclick="updateCommonQueryStatus(${q.id}, 'close', ${rec.id})" class="btn btn-sm btn-outline" style="font-size: 0.75rem;">Close Query</button>`;
+                    } else {
+                        html += `<button type="button" onclick="updateCommonQueryStatus(${q.id}, 'reopen', ${rec.id})" class="btn btn-sm btn-outline" style="font-size: 0.75rem;">Re-open Query</button>`;
+                    }
+                    html += `</div>`;
+                }
+
+                html += `</div>`;
+            });
+        }
+
+        qBody.innerHTML = html;
+        openModal('modalCommonQuery');
+    });
+}
+
+function openCommonQueryModalFromEditor() {
+    const recId = parseInt(document.getElementById('cfRecordId').value);
+    if (recId > 0) {
+        openCommonQueryModal(recId);
+    }
+}
+
+function submitNewCommonQuery(recordId) {
+    const text = document.getElementById('inp_new_query_text') ? document.getElementById('inp_new_query_text').value.trim() : '';
+    if (text === '') {
+        showToast('Query text cannot be empty', 'warning');
+        return;
+    }
+
+    const fd = new FormData();
+    fd.append('action', 'raise_query');
+    fd.append('record_id', recordId);
+    fd.append('query_text', text);
+
+    fetch('ajax_common_forms.php', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(res => {
+        if (!res.success) {
+            showToast(res.message || 'Error raising query', 'error');
+            return;
+        }
+        showToast(res.message, 'success');
+        openCommonQueryModal(recordId);
+        loadCommonRecords();
+    });
+}
+
+function submitCommonQueryAnswer(queryId, recordId) {
+    const remark = document.getElementById('inp_ans_query_' + queryId) ? document.getElementById('inp_ans_query_' + queryId).value.trim() : '';
+    if (remark === '') {
+        showToast('Please enter a response remark', 'warning');
+        return;
+    }
+
+    const fd = new FormData();
+    fd.append('action', 'answer_query');
+    fd.append('query_id', queryId);
+    fd.append('remark', remark);
+
+    fetch('ajax_common_forms.php', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(res => {
+        if (!res.success) {
+            showToast(res.message || 'Error answering query', 'error');
+            return;
+        }
+        showToast(res.message, 'success');
+        openCommonQueryModal(recordId);
+        loadCommonRecords();
+    });
+}
+
+function updateCommonQueryStatus(queryId, action, recordId) {
+    const fd = new FormData();
+    fd.append('action', 'close_query');
+    fd.append('query_id', queryId);
+    fd.append('query_action', action);
+
+    fetch('ajax_common_forms.php', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(res => {
+        if (!res.success) {
+            showToast(res.message || 'Error updating query status', 'error');
+            return;
+        }
+        showToast(res.message, 'success');
+        openCommonQueryModal(recordId);
+        loadCommonRecords();
+    });
+}
+
+// Audit Trail Modal
+function openCommonAuditModal(recordId) {
+    const fd = new FormData();
+    fd.append('action', 'get_record');
+    fd.append('record_id', recordId);
+
+    fetch('ajax_common_forms.php', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(res => {
+        if (!res.success) {
+            showToast('Error loading audit trail', 'error');
+            return;
+        }
+
+        const rec = res.record;
+        document.getElementById('cfAuditRecordTitle').textContent = `Audit Trail for ${rec.record_number}`;
+        const aBody = document.getElementById('cfAuditBody');
+
+        let html = '';
+
+        if (rec.audit_trail.length === 0) {
+            html += `<p style="text-align: center; color: #94a3b8; padding: 1.5rem;">No audit records found.</p>`;
+        } else {
+            html += `<table style="width: 100%; border-collapse: collapse; font-size: 0.825rem;">
+                <thead style="background: #f8fafc; border-bottom: 1px solid #e2e8f0; color: #475569;">
+                    <tr>
+                        <th style="padding: 0.6rem; text-align: left;">Timestamp</th>
+                        <th style="padding: 0.6rem; text-align: left;">Field</th>
+                        <th style="padding: 0.6rem; text-align: left;">Previous Value</th>
+                        <th style="padding: 0.6rem; text-align: left;">New Value</th>
+                        <th style="padding: 0.6rem; text-align: left;">Actor</th>
+                    </tr>
+                </thead>
+                <tbody>
+            `;
+
+            rec.audit_trail.forEach(aud => {
+                html += `
+                    <tr style="border-bottom: 1px solid #f1f5f9;">
+                        <td style="padding: 0.6rem; color: #64748b;">${aud.action_at}</td>
+                        <td style="padding: 0.6rem; font-weight: 600; color: #0f172a;">${escapeHtml(aud.field_name)}</td>
+                        <td style="padding: 0.6rem; color: #ef4444; max-width: 140px; word-break: break-word;">${escapeHtml(aud.old_value || '(empty)')}</td>
+                        <td style="padding: 0.6rem; color: #047857; max-width: 140px; word-break: break-word;">${escapeHtml(aud.new_value || '(empty)')}</td>
+                        <td style="padding: 0.6rem; color: #475569;">${escapeHtml(aud.user)}</td>
+                    </tr>
+                `;
+            });
+
+            html += `</tbody></table>`;
+        }
+
+        aBody.innerHTML = html;
+        openModal('modalCommonAudit');
+    });
+}
+
+function openCommonAuditModalFromEditor() {
+    const recId = parseInt(document.getElementById('cfRecordId').value);
+    if (recId > 0) {
+        openCommonAuditModal(recId);
+    }
+}
+</script>
+

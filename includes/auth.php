@@ -22,6 +22,9 @@ function loginUser($identity, $password) {
     $user = $stmt->fetch();
 
     if ($user && password_verify($password, $user['password_hash'])) {
+        if (isset($user['status']) && $user['status'] === 'inactive') {
+            return false; // Account is inactive
+        }
         // regenerate session id to prevent fixation
         session_regenerate_id(true);
         
@@ -59,7 +62,14 @@ function initializeUserRoles($user_id) {
     
     // Set default active context (first assignment)
     if (!empty($assignments)) {
-        setActiveContext($assignments[0]['id']);
+        $default_id = $assignments[0]['id'];
+        foreach ($assignments as $a) {
+            if (strtolower($a['role_name'] ?? '') === 'admin') {
+                $default_id = $a['id'];
+                break;
+            }
+        }
+        setActiveContext($default_id);
     } else {
         // User has no studies assigned
         $_SESSION['active_assignment_id'] = null;
@@ -213,7 +223,21 @@ function requireLogin() {
         header("Location: index.php");
         exit();
     }
-    // Refresh assignments dynamically to pull in any database updates (e.g. Data Manager role)
+    
+    // Check if account has been deactivated
+    try {
+        $pdo = getDB();
+        $stmt = $pdo->prepare("SELECT status FROM users WHERE id = ?");
+        $stmt->execute([$_SESSION['user_id']]);
+        $user_status = $stmt->fetchColumn();
+        if ($user_status === 'inactive') {
+            logoutUser();
+        }
+    } catch (Exception $e) {
+        // Ignore DB connection hiccups
+    }
+
+    // Refresh assignments dynamically to pull in any database updates
     refreshUserAssignments($_SESSION['user_id']);
     
     // Prevent caching of protected pages
