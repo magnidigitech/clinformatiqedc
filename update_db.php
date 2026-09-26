@@ -4,6 +4,8 @@ require_once 'config/db.php';
 // Verify DB connection
 try {
     $pdo = getDB();
+    require_once 'includes/functions.php';
+    ensureCommonFormsTables($pdo);
 } catch (Exception $e) {
     die("Database connection failed: " . $e->getMessage());
 }
