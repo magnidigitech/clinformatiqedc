@@ -714,8 +714,8 @@ try {
     // 5. MARK SDR STATUS (DATA MANAGER / ADMIN ONLY)
     // =========================================================================
     elseif ($action === 'mark_sdr') {
-        if (!$is_manager) {
-            throw new Exception("Unauthorized: SDR marking is restricted to Data Managers and Administrators.");
+        if (!$is_manager && !$is_coordinator && !$is_admin && !hasPermission('verify') && !hasPermission('enter_data')) {
+            throw new Exception("Unauthorized: SDR marking permission required.");
         }
 
         $record_id = (int)($_POST['record_id'] ?? 0);
@@ -757,7 +757,12 @@ try {
             $pdo->commit();
 
             ob_clean();
-            echo json_encode(['success' => true, 'sdr_status' => $sdr_action, 'message' => "SDR status updated to " . ucfirst($sdr_action)]);
+            echo json_encode([
+                'success' => true,
+                'sdr_status' => $sdr_action,
+                'form_type' => $rec['form_type'],
+                'message' => "SDR status updated to " . ucfirst(str_replace('_', ' ', $sdr_action))
+            ]);
             exit();
 
         } catch (Exception $e) {

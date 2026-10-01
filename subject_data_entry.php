@@ -2985,9 +2985,9 @@ function renderFieldInput($field, $saved_value = '', $choices_map = []) {
                     </button>
                 <?php endif; ?>
 
-                <?php if ($is_manager_role || $is_admin): ?>
-                    <button type="button" id="btnCfSdr" onclick="markCommonSDRFromEditor()" class="btn btn-sm" style="background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-weight: 600; padding: 0.5rem 1.2rem;">
-                        Mark SDR
+                <?php if ($is_manager_role || $is_admin || $is_monitor_role || $is_coordinator): ?>
+                    <button type="button" id="btnCfSdr" onclick="markCommonSDRFromEditor()" class="btn btn-sm" style="display: none; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-weight: 600; padding: 0.5rem 1.2rem; align-items: center; gap: 4px;">
+                        <span class="material-icons-round" style="font-size: 1rem;">verified</span> Mark SDR
                     </button>
                 <?php endif; ?>
             </div>
@@ -3141,6 +3141,7 @@ const CURRENT_SUBJECT_CODE = '<?php echo htmlspecialchars($subject['subject_code
 const USER_IS_COORDINATOR = <?php echo $is_coordinator ? 'true' : 'false'; ?>;
 const USER_IS_MANAGER = <?php echo $is_manager_role ? 'true' : 'false'; ?>;
 const USER_IS_ADMIN = <?php echo $is_admin ? 'true' : 'false'; ?>;
+const USER_IS_MONITOR = <?php echo $is_monitor_role ? 'true' : 'false'; ?>;
 
 let commonSearchTimer = null;
 let currentEditingRecordData = null;
@@ -3430,11 +3431,16 @@ function renderRecordActionButtons(r, formType) {
     // Queries
     btns += `<button class="btn btn-sm btn-outline" onclick="openCommonQueryModal(${r.id})" title="Queries" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; margin-right: 4px; color: ${r.open_queries > 0 ? '#dc2626' : '#475569'};"><span class="material-icons-round" style="font-size: 14px;">help_outline</span></button>`;
 
-    // SDR (Manager / Admin)
-    if (USER_IS_MANAGER || USER_IS_ADMIN) {
+    // SDR (Manager / Admin / Monitor / Coordinator)
+    if (USER_IS_MANAGER || USER_IS_ADMIN || USER_IS_MONITOR || USER_IS_COORDINATOR) {
         if (!r.is_voided) {
-            const sdrTitle = r.sdr_status === 'reviewed' ? 'Revoke SDR' : 'Mark SDR Reviewed';
-            btns += `<button class="btn btn-sm" onclick="toggleCommonSDR(${r.id}, '${r.sdr_status}')" title="${sdrTitle}" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; margin-right: 4px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0;"><span class="material-icons-round" style="font-size: 14px;">verified</span></button>`;
+            const isRev = r.sdr_status === 'reviewed';
+            const sdrTitle = isRev ? 'Request SDR Re-review' : 'Mark SDR Reviewed';
+            const sdrBg = isRev ? '#fff7ed' : '#ecfdf5';
+            const sdrColor = isRev ? '#c2410c' : '#047857';
+            const sdrBorder = isRev ? '#fed7aa' : '#a7f3d0';
+            const sdrIcon = isRev ? 'published_with_changes' : 'verified';
+            btns += `<button class="btn btn-sm" onclick="toggleCommonSDR(${r.id}, '${r.sdr_status}', '${formType}')" title="${sdrTitle}" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; margin-right: 4px; background: ${sdrBg}; color: ${sdrColor}; border: 1px solid ${sdrBorder};"><span class="material-icons-round" style="font-size: 14px;">${sdrIcon}</span></button>`;
         }
     }
 
@@ -3525,9 +3531,29 @@ function setupEditorForm(rec, formType) {
     let sdrBadge = rec.sdr_status === 'reviewed' ? '<span style="background: #ecfdf5; color: #047857; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600;">Reviewed</span>' : '<span style="background: #f1f5f9; color: #64748b; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 500;">Pending SDR</span>';
     bBox.innerHTML = `${stBadge} ${sdrBadge} <span style="background: #f8fafc; color: #64748b; border: 1px solid #cbd5e1; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem;">v${rec.revision || 1}</span>`;
 
-    // Audit / Query buttons
+    // Audit / Query / SDR buttons
     document.getElementById('btnCfAudit').style.display = isNew ? 'none' : 'inline-flex';
     document.getElementById('btnCfQuery').style.display = isNew ? 'none' : 'inline-flex';
+
+    const btnSdr = document.getElementById('btnCfSdr');
+    if (btnSdr) {
+        if (isNew || rec.is_voided) {
+            btnSdr.style.display = 'none';
+        } else {
+            btnSdr.style.display = 'inline-flex';
+            if (rec.sdr_status === 'reviewed') {
+                btnSdr.innerHTML = '<span class="material-icons-round" style="font-size: 1rem; margin-right: 4px;">published_with_changes</span> Re-review SDR';
+                btnSdr.style.background = '#fff7ed';
+                btnSdr.style.color = '#c2410c';
+                btnSdr.style.border = '1px solid #fed7aa';
+            } else {
+                btnSdr.innerHTML = '<span class="material-icons-round" style="font-size: 1rem; margin-right: 4px;">verified</span> Mark SDR Reviewed';
+                btnSdr.style.background = '#ecfdf5';
+                btnSdr.style.color = '#047857';
+                btnSdr.style.border = '1px solid #a7f3d0';
+            }
+        }
+    }
 
     const fieldsBox = document.getElementById('cfDynamicFields');
     const d = rec.data || {};
@@ -4083,16 +4109,18 @@ function saveCommonRecord(mode) {
 // =========================================================================
 // SDR, QUERY, AUDIT & VOID HANDLERS
 // =========================================================================
-function toggleCommonSDR(recordId, currentStatus) {
-    const newStatus = (currentStatus === 'reviewed') ? 'needs_rereview' : 'reviewed';
+function toggleCommonSDR(recordId, currentStatus, formType = null) {
+    const targetType = (formType || (typeof COMMON_FORM_TYPE !== 'undefined' ? COMMON_FORM_TYPE : '') || '').toUpperCase();
+    const isCurrentlyReviewed = (currentStatus === 'reviewed');
+    const newStatus = isCurrentlyReviewed ? 'needs_rereview' : 'reviewed';
     
     showConfirmModal({
-        title: newStatus === 'reviewed' ? 'Mark SDR Reviewed' : 'Request SDR Re-review',
-        message: `Are you sure you want to update SDR status to <strong>${newStatus.toUpperCase()}</strong> for this record?`,
+        title: isCurrentlyReviewed ? 'Request SDR Re-review' : 'Mark SDR Reviewed',
+        message: `Are you sure you want to update SDR status to <strong>${newStatus.toUpperCase().replace('_', ' ')}</strong> for this record?`,
         icon: 'verified',
-        iconBg: '#ecfdf5',
-        iconColor: '#047857',
-        btnText: 'Confirm SDR Status',
+        iconBg: isCurrentlyReviewed ? '#fff7ed' : '#ecfdf5',
+        iconColor: isCurrentlyReviewed ? '#c2410c' : '#047857',
+        btnText: isCurrentlyReviewed ? 'Confirm Re-review Request' : 'Confirm Mark SDR',
         onConfirm: function() {
             const fd = new FormData();
             fd.append('action', 'mark_sdr');
@@ -4107,17 +4135,29 @@ function toggleCommonSDR(recordId, currentStatus) {
                     return;
                 }
                 showToast(res.message, 'success');
-                loadCommonRecords();
+                const reloadType = res.form_type || targetType;
+                loadCommonRecords(reloadType);
+                if (typeof COMMON_FORM_TYPE !== 'undefined' && COMMON_FORM_TYPE && COMMON_FORM_TYPE.toUpperCase() !== reloadType.toUpperCase()) {
+                    loadCommonRecords(COMMON_FORM_TYPE);
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                showToast('Network error updating SDR status', 'error');
             });
         }
     });
 }
 
 function markCommonSDRFromEditor() {
-    const recId = parseInt(document.getElementById('cfRecordId').value);
+    const recId = parseInt(document.getElementById('cfRecordId').value) || 0;
+    const formType = (document.getElementById('cfFormType').value || '').toUpperCase();
     if (recId > 0 && currentEditingRecordData) {
-        toggleCommonSDR(recId, currentEditingRecordData.sdr_status);
+        const currStatus = currentEditingRecordData.sdr_status || 'pending';
         closeModal('modalCommonFormEditor');
+        toggleCommonSDR(recId, currStatus, formType);
+    } else {
+        showToast('Please save the record first before marking SDR.', 'warning');
     }
 }
 
