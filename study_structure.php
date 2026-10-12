@@ -188,7 +188,6 @@ foreach ($rep_data as $row) {
                 <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-bottom: 1rem;">
                      <button class="btn btn-outline" onclick="toggleAll(false)">Collapse all</button>
                      <button class="btn btn-outline" onclick="toggleAll(true)">Expand all</button>
-                     <button class="btn btn-outline" style="border-color: #0284c7; color: #0284c7; background: #f0f9ff; display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 500;" onclick="openImportTemplateModal()"><span class="material-icons-round" style="font-size: 1.15rem;">auto_stories</span> Import Protocol Template</button>
                      <button class="btn btn-primary" onclick="openVisitModal()">Add Visit</button>
                 </div>
 
@@ -198,13 +197,10 @@ foreach ($rep_data as $row) {
                             <span class="material-icons-round" style="font-size: 3rem; color: #94a3b8; margin-bottom: 1rem; display: block;">clinical_notes</span>
                             <h3 style="color: #1e293b; margin-bottom: 0.5rem; font-size: 1.25rem;">No visits defined yet</h3>
                             <p style="max-width: 520px; margin: 0 auto 1.5rem auto; font-size: 0.9rem; line-height: 1.5; color: #64748b;">
-                                Automatically generate the standard 3-visit clinical oncology protocol (Screening, Day 1, End of Treatment) complete with 8 structured forms, RECIST 1.1, lab panels, and skip logic, or create visits manually.
+                                Define visits and forms for this study.
                             </p>
                             <div style="display: flex; justify-content: center; gap: 0.75rem;">
-                                <button class="btn btn-primary" onclick="openImportTemplateModal()" style="display: inline-flex; align-items: center; gap: 0.5rem;">
-                                    <span class="material-icons-round" style="font-size: 1.1rem;">auto_stories</span> Import Protocol Template
-                                </button>
-                                <button class="btn btn-outline" onclick="openVisitModal()">Add Custom Visit</button>
+                                <button class="btn btn-primary" onclick="openVisitModal()">Add Custom Visit</button>
                             </div>
                         </div>
                     <?php else: ?>
@@ -390,71 +386,7 @@ foreach ($rep_data as $row) {
     </div>
 </div>
 
-<!-- Import Protocol Template Modal -->
-<div id="importTemplateModal" class="modal-overlay" style="z-index: 10000; display: none;">
-    <div class="modal-content" style="max-width: 650px; width: 92%; max-height: 90vh; overflow-y: auto;">
-        <div class="modal-header">
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
-                <span class="material-icons-round" style="color: #0284c7; font-size: 1.5rem;">auto_stories</span>
-                <h3 style="margin: 0; font-size: 1.2rem;">Import Standard Protocol Template</h3>
-            </div>
-            <button class="btn-icon" onclick="closeImportTemplateModal()"><span class="material-icons-round">close</span></button>
-        </div>
-        <div class="modal-body" style="padding: 1.5rem;">
-            <p style="color: #475569; font-size: 0.9rem; margin-top: 0; margin-bottom: 1.25rem;">
-                This will automatically import the <strong>Standard Oncology Clinical Protocol</strong> into your study, generating the visits, forms, option groups, and skip-logic rules in the database:
-            </p>
 
-            <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1.5rem;">
-                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.85rem 1rem;">
-                    <div style="display: flex; align-items: center; gap: 0.5rem; font-weight: 600; color: #1e293b; margin-bottom: 0.25rem;">
-                        <span class="material-icons-round" style="color: #0284c7; font-size: 1.1rem;">event</span>
-                        Visit 1: Screening
-                    </div>
-                    <div style="font-size: 0.825rem; color: #64748b; line-height: 1.4;">
-                        Visit Details &rarr; Demographics &rarr; Vital Signs &rarr; Laboratory Assessments
-                    </div>
-                </div>
-
-                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.85rem 1rem;">
-                    <div style="display: flex; align-items: center; gap: 0.5rem; font-weight: 600; color: #1e293b; margin-bottom: 0.25rem;">
-                        <span class="material-icons-round" style="color: #0284c7; font-size: 1.1rem;">medication</span>
-                        Visit 2: Day 1
-                    </div>
-                    <div style="font-size: 0.825rem; color: #64748b; line-height: 1.4;">
-                        Visit Details &rarr; Pre-dose Vital Signs &rarr; Pre-dose Laboratory Assessments &rarr; Study Drug Administration &rarr; Tumor Assessment (RECIST 1.1)
-                    </div>
-                </div>
-
-                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.85rem 1rem;">
-                    <div style="display: flex; align-items: center; gap: 0.5rem; font-weight: 600; color: #1e293b; margin-bottom: 0.25rem;">
-                        <span class="material-icons-round" style="color: #0284c7; font-size: 1.1rem;">fact_check</span>
-                        Visit 3: End of Treatment / End of Study
-                    </div>
-                    <div style="font-size: 0.825rem; color: #64748b; line-height: 1.4;">
-                        Visit Details &rarr; Treatment Status (Form A) &rarr; Further Study Participation (Form B) &rarr; Study Completion / Withdrawal Details
-                    </div>
-                </div>
-            </div>
-
-            <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 0.85rem 1rem; font-size: 0.825rem; color: #1e40af; line-height: 1.5;">
-                <strong>Key System Rules Included:</strong>
-                <ul style="margin: 0.4rem 0 0 1.2rem; padding: 0;">
-                    <li>Selecting "No" skips only related follow-up fields — subsequent forms remain accessible.</li>
-                    <li>Date format MM/DD/YYYY, 24-hr Time format HH:MM.</li>
-                    <li>Common read-only header fields (Study ID, Site ID, Subject ID, Visit Name, Form Name) displayed automatically.</li>
-                    <li>Complete RECIST 1.1 lesion measurement tables and laboratory reference flags.</li>
-                </ul>
-            </div>
-        </div>
-        <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.5rem; padding: 1rem 1.5rem; background: #f8fafc; border-top: 1px solid #e2e8f0;">
-            <button class="btn btn-outline" onclick="closeImportTemplateModal()">Cancel</button>
-            <button class="btn btn-primary" id="btnConfirmImportTemplate" onclick="confirmImportTemplate()" style="display: inline-flex; align-items: center; gap: 0.4rem;">
-                <span class="material-icons-round" style="font-size: 1.1rem;">file_download</span> Import Template Now
-            </button>
-        </div>
-    </div>
-</div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -872,55 +804,7 @@ async function createForm() {
     }
 }
 
-// Template Import Modal Functions
-function openImportTemplateModal() {
-    const modal = document.getElementById('importTemplateModal');
-    if (modal) {
-        modal.style.display = 'flex';
-        modal.classList.add('active');
-    }
-}
 
-function closeImportTemplateModal() {
-    const modal = document.getElementById('importTemplateModal');
-    if (modal) {
-        modal.style.display = 'none';
-        modal.classList.remove('active');
-    }
-}
-
-async function confirmImportTemplate() {
-    const btn = document.getElementById('btnConfirmImportTemplate');
-    if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<span class="material-icons-round" style="font-size: 1.1rem; animation: spin 1s linear infinite;">sync</span> Importing Template...';
-    }
-
-    const formData = new FormData();
-    formData.append('action', 'import_protocol_template');
-
-    try {
-        const res = await fetch('ajax_structure.php', { method: 'POST', body: formData });
-        const data = await res.json();
-        if (data.success) {
-            alert("Success! " + data.message);
-            location.reload();
-        } else {
-            alert("Error: " + (data.message || data.error || 'Failed to import template'));
-            if (btn) {
-                btn.disabled = false;
-                btn.innerHTML = '<span class="material-icons-round" style="font-size: 1.1rem;">file_download</span> Import Template Now';
-            }
-        }
-    } catch(err) {
-        console.error(err);
-        alert("Network or Server error while importing template.");
-        if (btn) {
-            btn.disabled = false;
-            btn.innerHTML = '<span class="material-icons-round" style="font-size: 1.1rem;">file_download</span> Import Template Now';
-        }
-    }
-}
 </script>
 
 </body>

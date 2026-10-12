@@ -113,10 +113,11 @@ function getFormReviewStatus($f_stat) {
         }
     } else {
         if ($monitor && $manager) {
-            return ['text' => 'SRVed', 'color' => '#0d8e6f', 'bg' => '#f0fdf4', 'icon' => 'verified', 'progress' => 100, 'bar_color' => '#0d8e6f'];
-        } elseif ($monitor || $manager) {
-            $reviewer = $monitor ? 'Monitor' : 'Manager';
-            return ['text' => $reviewer . ' Reviewed', 'color' => '#ea580c', 'bg' => '#fff7ed', 'icon' => 'rate_review', 'progress' => 50, 'bar_color' => '#f97316'];
+            return ['text' => 'SDVed & Approved', 'color' => '#0d8e6f', 'bg' => '#f0fdf4', 'icon' => 'verified', 'progress' => 100, 'bar_color' => '#0d8e6f'];
+        } elseif ($monitor) {
+            return ['text' => 'SDVed', 'color' => '#059669', 'bg' => '#ecfdf5', 'icon' => 'verified', 'progress' => 50, 'bar_color' => '#059669'];
+        } elseif ($manager) {
+            return ['text' => 'Manager Reviewed', 'color' => '#ea580c', 'bg' => '#fff7ed', 'icon' => 'rate_review', 'progress' => 50, 'bar_color' => '#f97316'];
         } else {
             return ['text' => 'SDR Submitted', 'color' => '#1d6f97', 'bg' => '#eef7fa', 'icon' => 'send', 'progress' => 0, 'bar_color' => '#1d6f97'];
         }
@@ -143,14 +144,14 @@ function renderWorkflowButtons($is_coordinator, $is_monitor_role, $is_manager_ro
     }
     if ($is_monitor_role && $sdr_submitted) {
         if (!$monitor_reviewed) {
-            $html .= '<button type="button" class="btn btn-primary" style="background-color: #ea580c; border-color: #ea580c; display: inline-flex; align-items: center; gap: 0.25rem;" onclick="updateReviewStatus(\'monitor_review\')">
-                        <span class="material-icons-round" style="font-size: 1.1rem;">rate_review</span>
-                        Mark as Reviewed
+            $html .= '<button type="button" class="btn btn-primary" style="background-color: #059669; border-color: #059669; display: inline-flex; align-items: center; gap: 0.25rem;" onclick="updateReviewStatus(\'monitor_review\')">
+                        <span class="material-icons-round" style="font-size: 1.1rem;">verified</span>
+                        Mark as SDVed
                       </button>';
         } else {
-            $html .= '<button type="button" class="btn btn-outline" style="color: #ea580c; border-color: #ea580c; display: inline-flex; align-items: center; gap: 0.25rem;" onclick="updateReviewStatus(\'monitor_revoke\')">
+            $html .= '<button type="button" class="btn btn-outline" style="color: #059669; border-color: #059669; display: inline-flex; align-items: center; gap: 0.25rem;" onclick="updateReviewStatus(\'monitor_revoke\')">
                         <span class="material-icons-round" style="font-size: 1.1rem;">undo</span>
-                        Revoke Review
+                        Revoke SDV
                       </button>';
         }
     }
@@ -577,6 +578,202 @@ function isFieldApplicable($field, $valuesByVar = [], $valuesById = [], $fieldsB
     }
 
     return (string)$parentVal === (string)$targetValue || in_array((string)$targetValue, $parentValArray);
+}
+
+/**
+ * Checks whether all applicable mandatory fields for a form have been completed.
+ * Uses isFieldApplicable() so conditionally skipped fields do not block SDR or progress.
+ */
+function areAllMandatoryFieldsCompleted($pdo, $subject_id, $form_id, $repeating_instance_id) {
+    $stmt = $pdo->prepare("SELECT id, variable_name, is_required, validation_rules FROM form_fields WHERE form_id = ? ORDER BY order_index");
+    $stmt->execute([$form_id]);
+    $fields = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    if (empty($fields)) return true;
+
+    // Fetch existing values
+    $stmt_vals = $pdo->prepare("SELECT field_id, value FROM subject_data WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
+    $stmt_vals->execute([$subject_id, $form_id, $repeating_instance_id, $repeating_instance_id]);
+    $saved_rows = $stmt_vals->fetchAll(PDO::FETCH_ASSOC);
+    $valuesById = [];
+    foreach ($saved_rows as $sr) {
+        $valuesById[$sr['field_id']] = $sr['value'];
+    }
+    $valuesByVar = [];
+    $fieldsByVar = [];
+    foreach ($fields as $f) {
+        $fieldsByVar[$f['variable_name']] = $f;
+        if (isset($valuesById[$f['id']])) {
+            $valuesByVar[$f['variable_name']] = $valuesById[$f['id']];
+        }
+    }
+
+    foreach ($fields as $f) {
+        if ($f['is_required']) {
+            if (isFieldApplicable($f, $valuesByVar, $valuesById, $fieldsByVar)) {
+                $val = $valuesById[$f['id']] ?? '';
+                if ($val === '' || $val === null) {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+/**
+ * Standard CRF Field Input Renderer
+ * Renders HTML input elements matching field data types and option groups
+ */
+function renderFieldInput($field, $saved_value = '', $choices_map = []) {
+    $type = $field['type'] ?? 'text';
+    $var = $field['variable_name'] ?? ('var_' . ($field['id'] ?? '0'));
+    $name = "field_" . ($field['id'] ?? '0');
+    $val_rules = json_decode($field['validation_rules'] ?? '{}', true);
+    
+    // Auto-populate default values if empty
+    if (($saved_value === '' || $saved_value === null) && isset($val_rules['default'])) {
+        $saved_value = $val_rules['default'];
+    }
+    
+    // RECIST method is read-only RECIST 1.1 per protocol specification
+    if ($var === 'recist_method') {
+        $saved_value = 'RECIST 1.1';
+    }
+
+    $value = htmlspecialchars((string)$saved_value); 
+    
+    // Check Global Edit Permission
+    global $can_edit;
+    $disabled = (isset($can_edit) && !$can_edit) ? 'disabled style="background:#f1f5f9; cursor:not-allowed;"' : '';
+
+    // Helper for Option Groups
+    $gid = $field['option_group_id'] ?? null;
+    $options = ($gid && isset($choices_map[$gid])) ? $choices_map[$gid] : [];
+
+    // Custom Readonly for RECIST method
+    if ($var === 'recist_method') {
+        echo '<input type="text" name="'.$name.'" data-var="'.$var.'" class="crf-input" value="RECIST 1.1" readonly style="background:#f8fafc; font-weight:600; color:#1e293b; cursor:default;">';
+        return;
+    }
+
+    switch ($type) {
+        case 'text':
+        case 'email':
+        case 'calculation':
+        case 'link':
+            echo '<input type="text" name="'.$name.'" data-var="'.$var.'" class="crf-input" value="'.$value.'" '.$disabled.'>';
+            break;
+
+        case 'number':
+        case 'year':
+            echo '<input type="number" name="'.$name.'" data-var="'.$var.'" class="crf-input" value="'.$value.'" '.$disabled.'>';
+            break;
+
+        case 'date':
+            echo '<input type="date" name="'.$name.'" data-var="'.$var.'" class="crf-input" value="'.$value.'" placeholder="MM/DD/YYYY" '.$disabled.'>';
+            break;
+
+        case 'datetime':
+            echo '<input type="datetime-local" name="'.$name.'" data-var="'.$var.'" class="crf-input" value="'.$value.'" '.$disabled.'>';
+            break;
+
+        case 'time':
+            echo '<input type="time" name="'.$name.'" data-var="'.$var.'" class="crf-input" value="'.$value.'" placeholder="HH:MM" '.$disabled.'>';
+            break;
+            
+        case 'textarea':
+        case 'remark':
+            echo '<textarea name="'.$name.'" data-var="'.$var.'" class="crf-input" rows="3" '.$disabled.'>'.$value.'</textarea>';
+            break;
+
+        case 'slider':
+            $min = $val_rules['min'] ?? 0;
+            $max = $val_rules['max'] ?? 100;
+            echo '<div style="display:flex; align-items:center; gap:1rem;">';
+            echo '<input type="range" name="'.$name.'" data-var="'.$var.'" min="'.$min.'" max="'.$max.'" value="'.($value !== '' ? $value : $min).'" oninput="this.nextElementSibling.innerText = this.value" '.$disabled.' style="flex:1;">';
+            echo '<span style="font-weight:600; min-width:30px; text-align:right;">'.($value !== '' ? $value : $min).'</span>';
+            echo '</div>';
+            break;
+            
+        case 'dropdown':
+             echo '<select name="'.$name.'" data-var="'.$var.'" class="crf-input" '.$disabled.'>';
+             echo '<option value="">Select option</option>';
+             if (!empty($options)) {
+                 foreach ($options as $opt) {
+                     $sel = ($value == $opt['value']) ? 'selected' : '';
+                     echo '<option value="'.htmlspecialchars($opt['value']).'" '.$sel.'>'.htmlspecialchars($opt['label']).'</option>';
+                 }
+             } else {
+                 if ($value !== '' && $value !== null) echo '<option value="'.$value.'" selected>'.$value.'</option>'; 
+             }
+             echo '</select>';
+             break;
+             
+        case 'radio':
+            echo '<div style="display:flex; flex-direction:column; gap:0.5rem;">';
+            if (!empty($options)) {
+                foreach ($options as $opt) {
+                    $checked = (trim((string)$value) === trim((string)$opt['value'])) ? 'checked' : '';
+                    echo '<label style="display:flex; align-items:center; gap:0.5rem; font-weight:normal;">';
+                    echo '<input type="radio" name="'.$name.'" data-var="'.$var.'" value="'.htmlspecialchars($opt['value']).'" '.$checked.' '.$disabled.'> ';
+                    echo htmlspecialchars($opt['label']);
+                    echo '</label>';
+                }
+            } else {
+                $checkedYes = ($value == 'Yes' || $value == '1') ? 'checked' : '';
+                $checkedNo = ($value == 'No' || $value == '0') ? 'checked' : '';
+                echo '<label><input type="radio" name="'.$name.'" data-var="'.$var.'" value="Yes" '.$checkedYes.' '.$disabled.'> Yes</label>';
+                echo '<label><input type="radio" name="'.$name.'" data-var="'.$var.'" value="No" '.$checkedNo.' '.$disabled.'> No</label>';
+            }
+            echo '</div>';
+            break;
+
+        case 'checkbox':
+            $saved_vals = [];
+            if (($value !== '' && $value !== null) && strpos($value, '[') === 0) {
+                 $saved_vals = json_decode(htmlspecialchars_decode($value), true) ?? [];
+            } elseif ($value !== '' && $value !== null) {
+                 $saved_vals = explode(',', $value);
+            }
+
+            echo '<div style="display:flex; flex-direction:column; gap:0.5rem;">';
+            if (!empty($options)) {
+                foreach ($options as $opt) {
+                    $opt_val = trim((string)$opt['value']);
+                    $checked = false;
+                    foreach($saved_vals as $sv) {
+                        if (trim((string)$sv) === $opt_val) {
+                            $checked = true;
+                            break;
+                        }
+                    }
+                    $checked_str = $checked ? 'checked' : '';
+                    echo '<label style="display:flex; align-items:center; gap:0.5rem; font-weight:normal;">';
+                    echo '<input type="checkbox" name="'.$name.'[]" data-var="'.$var.'" value="'.htmlspecialchars($opt['value']).'" '.$checked_str.' '.$disabled.'> ';
+                    echo htmlspecialchars($opt['label']);
+                    echo '</label>';
+                }
+            } else {
+                $checked = ($value == '1') ? 'checked' : '';
+                echo '<label><input type="checkbox" name="'.$name.'[]" value="1" '.$checked.' '.$disabled.'> Checked</label>';
+            }
+            echo '</div>';
+            break;
+
+        case 'upload':
+            echo '<input type="file" name="'.$name.'_file" class="crf-input" '.$disabled.'>';
+            if ($value) {
+                echo '<div style="margin-top:0.5rem; font-size:0.85rem;"><a href="uploads/'.htmlspecialchars($value).'" target="_blank" style="color:#1d6f97;">View Uploaded File</a></div>';
+            }
+            break;
+
+        case 'image':
+             echo '<div style="padding:1rem; border:1px dashed #cbd5e1; text-align:center; color:#94a3b8;">Image Placeholder</div>';
+             break;
+             
+        default:
+            echo '<input type="text" name="'.$name.'" data-var="'.$var.'" class="crf-input" value="'.$value.'" '.$disabled.'>';
+    }
 }
 
 

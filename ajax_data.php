@@ -717,8 +717,15 @@ try {
                      throw new Exception("Form is already reviewed by Monitor.");
                  }
                  
+                 // Check if there are unresolved queries on this form
+                 $stmt_open_q = $pdo->prepare("SELECT COUNT(*) FROM data_queries WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL)) AND status != 'closed'");
+                 $stmt_open_q->execute([$subject_id, $form_id, $repeating_instance_id, $repeating_instance_id]);
+                 if ((int)$stmt_open_q->fetchColumn() > 0) {
+                     throw new Exception("Cannot mark as SDVed: All open queries on this form must be answered and closed before SDV verification.");
+                 }
+
                  $monitor_reviewed = true;
-                 $audit_logs[] = ['monitor_reviewed', 'Reviewed by Monitor'];
+                 $audit_logs[] = ['monitor_reviewed', 'Source Data Verification (SDV) completed by Monitor'];
                  
               } elseif ($workflow_action === 'monitor_revoke') {
                   if (!$is_monitor) {
@@ -833,19 +840,21 @@ try {
              
              $is_complete_val = ($status_text === 'complete' || $status_text === 'verified') ? 1 : 0;
              
+             $is_verified_val = ($monitor_reviewed || $manager_reviewed) ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
              if ($status_row) {
                  $sql_upd = "UPDATE subject_form_status 
                              SET sdr_submitted = $sdr_val, 
                                  monitor_reviewed = $mon_val, 
                                  manager_reviewed = $mgr_val, 
+                                 is_verified = $is_verified_val, 
                                  status = ?, 
                                  is_complete = ?,
                                  updated_at = NOW() 
                              WHERE id = ?";
                  $pdo->prepare($sql_upd)->execute([$status_text, $is_complete_val, $status_row['id']]);
              } else {
-                 $sql_ins = "INSERT INTO subject_form_status (study_id, subject_id, visit_id, form_id, repeating_instance_id, sdr_submitted, monitor_reviewed, manager_reviewed, status, is_complete, progress_percent, updated_at) 
-                             VALUES (?, ?, ?, ?, ?, $sdr_val, $mon_val, $mgr_val, ?, ?, 0, NOW())";
+                 $sql_ins = "INSERT INTO subject_form_status (study_id, subject_id, visit_id, form_id, repeating_instance_id, sdr_submitted, monitor_reviewed, manager_reviewed, is_verified, status, is_complete, progress_percent, updated_at) 
+                             VALUES (?, ?, ?, ?, ?, $sdr_val, $mon_val, $mgr_val, $is_verified_val, ?, ?, 0, NOW())";
                  $pdo->prepare($sql_ins)->execute([$study_id, $subject_id, $visit_id, $form_id, $repeating_instance_id, $status_text, $is_complete_val]);
              }
              
@@ -1222,6 +1231,7 @@ function calculateAndSaveProgress($pdo, $study_id, $subject_id, $visit_id, $form
     ];
 }
 
+if (!function_exists('areAllMandatoryFieldsCompleted')) {
 function areAllMandatoryFieldsCompleted($pdo, $subject_id, $form_id, $repeating_instance_id) {
     // Get all mandatory field IDs for this form
     $stmt = $pdo->prepare("SELECT id FROM form_fields WHERE form_id = ? AND is_required = TRUE");
@@ -1245,5 +1255,6 @@ function areAllMandatoryFieldsCompleted($pdo, $subject_id, $form_id, $repeating_
     $filled_count = (int)$stmt_filled->fetchColumn();
     
     return $filled_count === count($mandatory_ids);
+}
 }
 ?>

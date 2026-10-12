@@ -4,15 +4,16 @@ require_once 'includes/auth.php';
 
 requireLogin();
 
-// Only allow Admins to create studies (or maybe all users can create, depending on policy.
-// For now, let's assume any logged-in user can create a study and becomes its Admin).
-// If stricly Admin role (System Admin), check here. 
-// But in this system, 'Admin' is a role WITHIN a study. 
-// So who can create a NEW study? Probably anyone, and they become Admin of it.
-// Or there is a Super Admin.
-// Let's assume global permission isn't strictly enforced for "creating" yet, 
-// or check if user has *some* admin privileges. 
-// For simplicity, we allow any logged-in user to start a new study.
+// Check if user is in Admin role
+$is_admin = (strtolower($_SESSION['active_role_name'] ?? '') === 'admin');
+if (!$is_admin && !empty($_SESSION['assignments'])) {
+    foreach ($_SESSION['assignments'] as $assign) {
+        if (strtolower($assign['role_name'] ?? '') === 'admin') {
+            $is_admin = true;
+            break;
+        }
+    }
+}
 
 $error = '';
 $success = '';
@@ -23,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $site_name = trim($_POST['site_name'] ?? '');
     $abbreviation = trim($_POST['abbreviation'] ?? '');
     $country = trim($_POST['country'] ?? '');
-    $template = $_POST['template'] ?? 'none';
+    $template = $is_admin ? ($_POST['template'] ?? 'none') : 'none';
     $type = $_POST['type'] ?? 'test';
 
     // Basic Validation
@@ -210,7 +211,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
 
-            <!-- Templates -->
+            <!-- Templates (Admin Only) -->
+            <?php if ($is_admin): ?>
             <div class="form-section">
                 <label class="form-label">Study Protocol Template</label>
                 <div style="margin-bottom: 0.75rem; color: var(--text-light); font-size: 0.85rem;">
@@ -221,8 +223,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <label class="radio-item" style="padding: 0.5rem; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; cursor: pointer;">
                         <input type="radio" name="template" value="oncology_protocol" checked>
                         <span>
-                            <strong style="color: #166534;">Standard Oncology Protocol (Recommended)</strong>
-                            <div style="font-size: 0.75rem; color: #15803d;">Includes Screening, Day 1, End of Treatment / Study with 8 structured forms & skip logic</div>
+                            <strong style="color: #166534;">Standard Protocol (Visits & Forms Specification)</strong>
+                            <div style="font-size: 0.75rem; color: #15803d;">Includes Screening, Day 1, End of Treatment / Study with structured forms & skip logic</div>
                         </span>
                     </label>
                     <label class="radio-item" style="padding: 0.5rem; border-radius: 6px; cursor: pointer;">
@@ -234,6 +236,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </label>
                 </div>
             </div>
+            <?php else: ?>
+            <input type="hidden" name="template" value="none">
+            <?php endif; ?>
 
             <!-- Study Type (Hidden - Default: Test)
             <div class="form-section">

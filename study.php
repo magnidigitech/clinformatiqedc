@@ -323,9 +323,6 @@ if (isApiRequest() || isset($_GET['ajax_search'])) {
                     <h3 style="font-size: 1.125rem; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
                         <span class="material-icons-round" style="color: var(--accent-color);">dashboard</span> Study Dashboard
                     </h3>
-                    <a href="study_structure.php" class="btn btn-outline" style="border-color: #0284c7; color: #0284c7; background: #f0f9ff; display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.825rem; padding: 0.35rem 0.75rem;" title="View or Import Protocol Template">
-                        <span class="material-icons-round" style="font-size: 1rem;">auto_stories</span> Protocol Template
-                    </a>
                 </div>
                 <form method="GET" style="display: flex; align-items: center; gap: 0.75rem;">
                     <label style="font-size: 0.875rem; font-weight: 500; color: var(--text-light);">Filter by Site:</label>
