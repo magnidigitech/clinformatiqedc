@@ -767,7 +767,8 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                             <select id="commonSdrFilter" onchange="loadCommonRecords()" class="form-input" style="width: 165px; height: 38px; padding: 0 0.75rem; font-size: 0.85rem; line-height: 38px; box-sizing: border-box; vertical-align: middle;">
                                 <option value="">All SDR Statuses</option>
                                 <option value="pending">Pending SDR</option>
-                                <option value="reviewed">Reviewed</option>
+                                <option value="under_review">Under Review</option>
+                                <option value="sdved">SDVed</option>
                                 <option value="needs_rereview">Needs Re-review</option>
                             </select>
 
@@ -1426,7 +1427,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                 return;
             }
             title = 'Mark as SDR';
-            message = 'Are you sure you want to mark this form as Source Data Review (SDR) ready? The form will become read-only and locked for editing.';
+            message = 'Are you sure you want to mark this form as Source Data Review (SDR)? The form will show as Under Review and will be locked for editing.';
             btnText = 'Yes, Mark as SDR';
             btnBg = '#1d6f97';
         } else if (workflowAction === 'revoke_sdr') {
@@ -1445,15 +1446,15 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
             btnText = 'Confirm Revoke SDV';
             btnBg = '#059669';
         } else if (workflowAction === 'manager_review') {
-            title = 'Complete Manager Review';
-            message = 'Are you sure you want to complete the Manager review for this form? The review progress will increase to 100% and the form will be SRVed.';
-            btnText = 'Yes, Mark as Reviewed';
-            btnBg = '#0d8e6f';
+            title = 'Complete SDV (Source Data Verification)';
+            message = 'Are you sure you want to verify this form? The form will be marked as SDVed.';
+            btnText = 'Yes, Mark as SDVed';
+            btnBg = '#059669';
         } else if (workflowAction === 'manager_revoke') {
-            title = 'Reason for Revoking Review';
+            title = 'Reason for Revoking SDV';
             message = 'Are you sure you want to revoke this review? The SDR status will be reset, and the Data Coordinator will be able to update and resubmit the record.';
-            btnText = 'Confirm Revoke';
-            btnBg = '#0d8e6f';
+            btnText = 'Confirm Revoke SDV';
+            btnBg = '#059669';
         }
 
         document.getElementById('workflowModalTitle').textContent = title;
@@ -3340,7 +3341,9 @@ function loadCommonRecords(targetFormType = null) {
                 <span style="background: #f1f5f9; color: #475569; padding: 3px 8px; border-radius: 6px;">Total: ${res.summary.total}</span>
                 <span style="background: #ecfdf5; color: #047857; padding: 3px 8px; border-radius: 6px;">Complete: ${res.summary.complete}</span>
                 <span style="background: #eff6ff; color: #1d4ed8; padding: 3px 8px; border-radius: 6px;">Draft: ${res.summary.draft}</span>
-                <span style="background: #fef3c7; color: #b45309; padding: 3px 8px; border-radius: 6px;">Pending SDR: ${res.summary.sdr_pending}</span>
+                <span style="background: #f8fafc; color: #64748b; border: 1px solid #cbd5e1; padding: 3px 8px; border-radius: 6px;">Pending SDR: ${res.summary.sdr_pending || 0}</span>
+                <span style="background: #fef3c7; color: #b45309; padding: 3px 8px; border-radius: 6px;">Under Review: ${res.summary.sdr_under_review || 0}</span>
+                <span style="background: #ecfdf5; color: #047857; padding: 3px 8px; border-radius: 6px;">SDVed: ${res.summary.sdr_sdved || 0}</span>
             `;
         }
 
@@ -3428,10 +3431,12 @@ function renderCommonTable(records, formType) {
 
         // SDR Badge
         let sdrBadge = `<span style="background: #f1f5f9; color: #64748b; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 500;">Pending</span>`;
-        if (r.sdr_status === 'reviewed') {
-            sdrBadge = `<span style="background: #ecfdf5; color: #047857; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 2px;"><span class="material-icons-round" style="font-size: 14px;">check_circle</span> Reviewed</span>`;
+        if (r.sdr_status === 'under_review') {
+            sdrBadge = `<span style="background: #fef3c7; color: #b45309; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;"><span class="material-icons-round" style="font-size: 13px;">pending_actions</span> Under Review</span>`;
+        } else if (r.sdr_status === 'sdved' || r.sdr_status === 'reviewed') {
+            sdrBadge = `<span style="background: #ecfdf5; color: #047857; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;"><span class="material-icons-round" style="font-size: 14px;">check_circle</span> SDVed</span>`;
         } else if (r.sdr_status === 'needs_rereview') {
-            sdrBadge = `<span style="background: #fff7ed; color: #c2410c; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 2px;"><span class="material-icons-round" style="font-size: 14px;">published_with_changes</span> Re-review</span>`;
+            sdrBadge = `<span style="background: #fff7ed; color: #c2410c; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;"><span class="material-icons-round" style="font-size: 13px;">published_with_changes</span> Re-review</span>`;
         }
 
         // Query Badge
@@ -3571,16 +3576,35 @@ function renderRecordActionButtons(r, formType) {
     // Queries
     btns += `<button class="btn btn-sm btn-outline" onclick="openCommonQueryModal(${r.id})" title="Queries" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; margin-right: 4px; color: ${r.open_queries > 0 ? '#dc2626' : '#475569'};"><span class="material-icons-round" style="font-size: 14px;">help_outline</span></button>`;
 
-    // SDR (Manager / Admin / Monitor / Coordinator)
-    if (USER_IS_MANAGER || USER_IS_ADMIN || USER_IS_MONITOR || USER_IS_COORDINATOR) {
-        if (!r.is_voided) {
-            const isRev = r.sdr_status === 'reviewed';
-            const sdrTitle = isRev ? 'Request SDR Re-review' : 'Mark SDR Reviewed';
-            const sdrBg = isRev ? '#fff7ed' : '#ecfdf5';
-            const sdrColor = isRev ? '#c2410c' : '#047857';
-            const sdrBorder = isRev ? '#fed7aa' : '#a7f3d0';
-            const sdrIcon = isRev ? 'published_with_changes' : 'verified';
-            btns += `<button class="btn btn-sm" onclick="toggleCommonSDR(${r.id}, '${r.sdr_status || 'pending'}', '${formType}')" title="${sdrTitle}" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; margin-right: 4px; background: ${sdrBg}; color: ${sdrColor}; border: 1px solid ${sdrBorder};"><span class="material-icons-round" style="font-size: 14px;">${sdrIcon}</span></button>`;
+    // SDR & SDV Workflow Actions (Role-governed)
+    if (!r.is_voided) {
+        const sdrSt = r.sdr_status || 'pending';
+        const isMonitorOrManager = USER_IS_MANAGER || USER_IS_MONITOR || USER_IS_ADMIN;
+        const isCoordOrAdmin = USER_IS_COORDINATOR || USER_IS_ADMIN;
+
+        if (sdrSt === 'under_review') {
+            // Under Review: Data Manager / Data Monitor can click "SDVed"
+            if (isMonitorOrManager) {
+                btns += `<button class="btn btn-sm" onclick="triggerSDVAction(${r.id}, 'sdved', '${formType}')" title="Mark as SDVed" style="padding: 0.25rem 0.55rem; font-size: 0.75rem; margin-right: 4px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-weight: 600;"><span class="material-icons-round" style="font-size: 14px; vertical-align: middle; margin-right: 2px;">verified</span> SDVed</button>`;
+            }
+            // Coordinator can revoke SDR back to pending if needed
+            if (isCoordOrAdmin && !isMonitorOrManager) {
+                btns += `<button class="btn btn-sm" onclick="triggerSDVAction(${r.id}, 'pending', '${formType}')" title="Revoke SDR Submission" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; margin-right: 4px; background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa;"><span class="material-icons-round" style="font-size: 14px; vertical-align: middle;">undo</span></button>`;
+            }
+        } else if (sdrSt === 'sdved' || sdrSt === 'reviewed') {
+            // Already SDVed: Data Manager / Data Monitor can revoke or request re-review
+            if (isMonitorOrManager) {
+                btns += `<button class="btn btn-sm" onclick="triggerSDVAction(${r.id}, 'under_review', '${formType}')" title="Revoke SDV / Re-review" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; margin-right: 4px; background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa;"><span class="material-icons-round" style="font-size: 14px; vertical-align: middle;">published_with_changes</span></button>`;
+            }
+        } else {
+            // Pending: Data Coordinator can Mark as SDR (changes to Under Review)
+            if (isCoordOrAdmin) {
+                btns += `<button class="btn btn-sm" onclick="triggerSDVAction(${r.id}, 'under_review', '${formType}')" title="Mark as SDR (Submit Under Review)" style="padding: 0.25rem 0.55rem; font-size: 0.75rem; margin-right: 4px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-weight: 600;"><span class="material-icons-round" style="font-size: 14px; vertical-align: middle; margin-right: 2px;">send</span> SDR</button>`;
+            }
+            // If Monitor/Manager wants to verify directly
+            if (isMonitorOrManager && !isCoordOrAdmin) {
+                btns += `<button class="btn btn-sm" onclick="triggerSDVAction(${r.id}, 'sdved', '${formType}')" title="Mark as SDVed" style="padding: 0.25rem 0.55rem; font-size: 0.75rem; margin-right: 4px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-weight: 600;"><span class="material-icons-round" style="font-size: 14px; vertical-align: middle; margin-right: 2px;">verified</span> SDVed</button>`;
+            }
         }
     }
 
@@ -3668,7 +3692,14 @@ function setupEditorForm(rec, formType) {
     // Badges
     const bBox = document.getElementById('cfEditorBadges');
     let stBadge = rec.status === 'complete' ? '<span style="background: #ecfdf5; color: #047857; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600;">Complete</span>' : '<span style="background: #eff6ff; color: #1d4ed8; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600;">Draft</span>';
-    let sdrBadge = rec.sdr_status === 'reviewed' ? '<span style="background: #ecfdf5; color: #047857; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600;">Reviewed</span>' : '<span style="background: #f1f5f9; color: #64748b; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 500;">Pending SDR</span>';
+    let sdrBadge = '<span style="background: #f1f5f9; color: #64748b; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 500;">Pending SDR</span>';
+    if (rec.sdr_status === 'under_review') {
+        sdrBadge = '<span style="background: #fef3c7; color: #b45309; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600;"><span class="material-icons-round" style="font-size: 12px; vertical-align: middle;">pending_actions</span> Under Review</span>';
+    } else if (rec.sdr_status === 'sdved' || rec.sdr_status === 'reviewed') {
+        sdrBadge = '<span style="background: #ecfdf5; color: #047857; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600;"><span class="material-icons-round" style="font-size: 12px; vertical-align: middle;">check_circle</span> SDVed</span>';
+    } else if (rec.sdr_status === 'needs_rereview') {
+        sdrBadge = '<span style="background: #fff7ed; color: #c2410c; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600;"><span class="material-icons-round" style="font-size: 12px; vertical-align: middle;">published_with_changes</span> Re-review</span>';
+    }
     bBox.innerHTML = `${stBadge} ${sdrBadge} <span style="background: #f8fafc; color: #64748b; border: 1px solid #cbd5e1; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem;">v${rec.revision || 1}</span>`;
 
     // Audit / Query / SDR buttons
@@ -3681,16 +3712,52 @@ function setupEditorForm(rec, formType) {
             btnSdr.style.display = 'none';
         } else {
             btnSdr.style.display = 'inline-flex';
-            if (rec.sdr_status === 'reviewed') {
-                btnSdr.innerHTML = '<span class="material-icons-round" style="font-size: 1rem; margin-right: 4px;">published_with_changes</span> Re-review SDR';
-                btnSdr.style.background = '#fff7ed';
-                btnSdr.style.color = '#c2410c';
-                btnSdr.style.border = '1px solid #fed7aa';
+            const sdrSt = rec.sdr_status || 'pending';
+            const isMonitorOrManager = USER_IS_MANAGER || USER_IS_MONITOR || USER_IS_ADMIN;
+            const isCoordOrAdmin = USER_IS_COORDINATOR || USER_IS_ADMIN;
+
+            if (sdrSt === 'under_review') {
+                if (isMonitorOrManager) {
+                    btnSdr.innerHTML = '<span class="material-icons-round" style="font-size: 1rem; margin-right: 4px;">verified</span> Mark as SDVed';
+                    btnSdr.style.background = '#ecfdf5';
+                    btnSdr.style.color = '#047857';
+                    btnSdr.style.border = '1px solid #a7f3d0';
+                    btnSdr.setAttribute('data-target-action', 'sdved');
+                } else {
+                    btnSdr.innerHTML = '<span class="material-icons-round" style="font-size: 1rem; margin-right: 4px;">undo</span> Revoke SDR';
+                    btnSdr.style.background = '#fff7ed';
+                    btnSdr.style.color = '#c2410c';
+                    btnSdr.style.border = '1px solid #fed7aa';
+                    btnSdr.setAttribute('data-target-action', 'pending');
+                }
+            } else if (sdrSt === 'sdved' || sdrSt === 'reviewed') {
+                if (isMonitorOrManager) {
+                    btnSdr.innerHTML = '<span class="material-icons-round" style="font-size: 1rem; margin-right: 4px;">published_with_changes</span> Revoke SDV';
+                    btnSdr.style.background = '#fff7ed';
+                    btnSdr.style.color = '#c2410c';
+                    btnSdr.style.border = '1px solid #fed7aa';
+                    btnSdr.setAttribute('data-target-action', 'under_review');
+                } else {
+                    btnSdr.innerHTML = '<span class="material-icons-round" style="font-size: 1rem; margin-right: 4px;">check_circle</span> SDVed';
+                    btnSdr.style.background = '#ecfdf5';
+                    btnSdr.style.color = '#047857';
+                    btnSdr.style.border = '1px solid #a7f3d0';
+                    btnSdr.setAttribute('data-target-action', '');
+                }
             } else {
-                btnSdr.innerHTML = '<span class="material-icons-round" style="font-size: 1rem; margin-right: 4px;">verified</span> Mark SDR Reviewed';
-                btnSdr.style.background = '#ecfdf5';
-                btnSdr.style.color = '#047857';
-                btnSdr.style.border = '1px solid #a7f3d0';
+                if (isCoordOrAdmin) {
+                    btnSdr.innerHTML = '<span class="material-icons-round" style="font-size: 1rem; margin-right: 4px;">send</span> Mark as SDR';
+                    btnSdr.style.background = '#eff6ff';
+                    btnSdr.style.color = '#1d4ed8';
+                    btnSdr.style.border = '1px solid #bfdbfe';
+                    btnSdr.setAttribute('data-target-action', 'under_review');
+                } else if (isMonitorOrManager) {
+                    btnSdr.innerHTML = '<span class="material-icons-round" style="font-size: 1rem; margin-right: 4px;">verified</span> Mark as SDVed';
+                    btnSdr.style.background = '#ecfdf5';
+                    btnSdr.style.color = '#047857';
+                    btnSdr.style.border = '1px solid #a7f3d0';
+                    btnSdr.setAttribute('data-target-action', 'sdved');
+                }
             }
         }
     }
@@ -4247,33 +4314,64 @@ function saveCommonRecord(mode) {
 }
 
 // =========================================================================
-// SDR, QUERY, AUDIT & VOID HANDLERS
+// SDR, SDV, QUERY, AUDIT & VOID HANDLERS
 // =========================================================================
-function toggleCommonSDR(recordId, currentStatus, formType = null) {
+function triggerSDVAction(recordId, targetAction, formType = null) {
     const targetType = (formType || (typeof COMMON_FORM_TYPE !== 'undefined' ? COMMON_FORM_TYPE : '') || '').toUpperCase();
-    const isCurrentlyReviewed = (currentStatus === 'reviewed');
-    const newStatus = isCurrentlyReviewed ? 'needs_rereview' : 'reviewed';
-    
+
+    let modalTitle = 'Confirm Action';
+    let modalMsg = 'Are you sure you want to proceed?';
+    let icon = 'help';
+    let iconBg = '#eff6ff';
+    let iconColor = '#1d4ed8';
+    let btnText = 'Confirm';
+    let btnStyle = 'background: #1d4ed8; border: none; color: #fff; font-weight: 600;';
+
+    if (targetAction === 'under_review') {
+        modalTitle = 'Mark as SDR';
+        modalMsg = 'Are you sure you want to mark this record as Source Data Review (SDR)? The record status will be updated to <strong>UNDER REVIEW</strong> for Data Manager / Data Monitor verification.';
+        icon = 'send';
+        iconBg = '#eff6ff';
+        iconColor = '#1d4ed8';
+        btnText = 'Confirm Mark as SDR';
+        btnStyle = 'background: #1d4ed8; border: none; color: #fff; font-weight: 600;';
+    } else if (targetAction === 'sdved') {
+        modalTitle = 'Mark Record as SDVed';
+        modalMsg = 'Are you sure you want to complete Source Data Verification (SDV) for this record? The status will be updated to <strong>SDVED</strong>.';
+        icon = 'verified';
+        iconBg = '#ecfdf5';
+        iconColor = '#047857';
+        btnText = 'Confirm Mark SDVed';
+        btnStyle = 'background: #059669; border: none; color: #fff; font-weight: 600;';
+    } else if (targetAction === 'pending') {
+        modalTitle = 'Revoke SDR Submission';
+        modalMsg = 'Are you sure you want to revoke SDR submission and return this record to <strong>PENDING</strong>?';
+        icon = 'undo';
+        iconBg = '#fff7ed';
+        iconColor = '#c2410c';
+        btnText = 'Confirm Revocation';
+        btnStyle = 'background: #ea580c; border: none; color: #fff; font-weight: 600;';
+    }
+
     showConfirmModal({
-        title: isCurrentlyReviewed ? 'Request SDR Re-review' : 'Mark SDR Reviewed',
-        message: `Are you sure you want to update SDR status to <strong>${newStatus.toUpperCase().replace('_', ' ')}</strong> for this record?`,
-        icon: isCurrentlyReviewed ? 'published_with_changes' : 'verified',
-        iconBg: isCurrentlyReviewed ? '#fff7ed' : '#ecfdf5',
-        iconColor: isCurrentlyReviewed ? '#c2410c' : '#047857',
-        btnText: isCurrentlyReviewed ? 'Confirm Re-review Request' : 'Confirm Mark SDR',
-        btnClass: isCurrentlyReviewed ? 'btn-warning' : 'btn-primary',
-        btnStyle: isCurrentlyReviewed ? 'background: #ea580c; border: none; color: #fff; font-weight: 600;' : 'background: #059669; border: none; color: #fff; font-weight: 600;',
+        title: modalTitle,
+        message: modalMsg,
+        icon: icon,
+        iconBg: iconBg,
+        iconColor: iconColor,
+        btnText: btnText,
+        btnStyle: btnStyle,
         onConfirm: function() {
             const fd = new FormData();
             fd.append('action', 'mark_sdr');
             fd.append('record_id', recordId);
-            fd.append('sdr_action', newStatus);
+            fd.append('sdr_action', targetAction);
 
             fetch('ajax_common_forms.php', { method: 'POST', body: fd })
             .then(r => r.json())
             .then(res => {
                 if (!res.success) {
-                    showToast(res.message || 'Error updating SDR', 'error');
+                    showToast(res.message || 'Error updating status', 'error');
                     return;
                 }
                 showToast(res.message, 'success');
@@ -4285,21 +4383,43 @@ function toggleCommonSDR(recordId, currentStatus, formType = null) {
             })
             .catch(err => {
                 console.error(err);
-                showToast('Network error updating SDR status', 'error');
+                showToast('Network error updating status', 'error');
             });
         }
     });
 }
 
+function toggleCommonSDR(recordId, currentStatus, formType = null) {
+    const isMonitorOrManager = USER_IS_MANAGER || USER_IS_MONITOR || USER_IS_ADMIN;
+    if (currentStatus === 'under_review') {
+        if (isMonitorOrManager) {
+            triggerSDVAction(recordId, 'sdved', formType);
+        } else {
+            triggerSDVAction(recordId, 'pending', formType);
+        }
+    } else if (currentStatus === 'sdved' || currentStatus === 'reviewed') {
+        triggerSDVAction(recordId, 'under_review', formType);
+    } else {
+        if (isMonitorOrManager && !USER_IS_COORDINATOR) {
+            triggerSDVAction(recordId, 'sdved', formType);
+        } else {
+            triggerSDVAction(recordId, 'under_review', formType);
+        }
+    }
+}
+
 function markCommonSDRFromEditor() {
     const recId = parseInt(document.getElementById('cfRecordId').value) || 0;
     const formType = (document.getElementById('cfFormType').value || '').toUpperCase();
+    const btnSdr = document.getElementById('btnCfSdr');
+    const targetAction = btnSdr ? btnSdr.getAttribute('data-target-action') : '';
+    if (!targetAction) return;
+
     if (recId > 0 && currentEditingRecordData) {
-        const currStatus = currentEditingRecordData.sdr_status || 'pending';
         closeModal('modalCommonFormEditor');
-        toggleCommonSDR(recId, currStatus, formType);
+        triggerSDVAction(recId, targetAction, formType);
     } else {
-        showToast('Please save the record first before marking SDR.', 'warning');
+        showToast('Please save the record first before marking SDR/SDV.', 'warning');
     }
 }
 

@@ -114,12 +114,10 @@ function getFormReviewStatus($f_stat) {
     } else {
         if ($monitor && $manager) {
             return ['text' => 'SDVed & Approved', 'color' => '#0d8e6f', 'bg' => '#f0fdf4', 'icon' => 'verified', 'progress' => 100, 'bar_color' => '#0d8e6f'];
-        } elseif ($monitor) {
-            return ['text' => 'SDVed', 'color' => '#059669', 'bg' => '#ecfdf5', 'icon' => 'verified', 'progress' => 50, 'bar_color' => '#059669'];
-        } elseif ($manager) {
-            return ['text' => 'Manager Reviewed', 'color' => '#ea580c', 'bg' => '#fff7ed', 'icon' => 'rate_review', 'progress' => 50, 'bar_color' => '#f97316'];
+        } elseif ($monitor || $manager) {
+            return ['text' => 'SDVed', 'color' => '#059669', 'bg' => '#ecfdf5', 'icon' => 'verified', 'progress' => 100, 'bar_color' => '#059669'];
         } else {
-            return ['text' => 'SDR Submitted', 'color' => '#1d6f97', 'bg' => '#eef7fa', 'icon' => 'send', 'progress' => 0, 'bar_color' => '#1d6f97'];
+            return ['text' => 'Under Review', 'color' => '#b45309', 'bg' => '#fef3c7', 'icon' => 'pending_actions', 'progress' => 50, 'bar_color' => '#f59e0b'];
         }
     }
 }
@@ -157,14 +155,14 @@ function renderWorkflowButtons($is_coordinator, $is_monitor_role, $is_manager_ro
     }
     if ($is_manager_role && $sdr_submitted) {
         if (!$manager_reviewed) {
-            $html .= '<button type="button" class="btn btn-primary" style="background-color: #0d8e6f; border-color: #0d8e6f; display: inline-flex; align-items: center; gap: 0.25rem;" onclick="updateReviewStatus(\'manager_review\')">
+            $html .= '<button type="button" class="btn btn-primary" style="background-color: #059669; border-color: #059669; display: inline-flex; align-items: center; gap: 0.25rem;" onclick="updateReviewStatus(\'manager_review\')">
                         <span class="material-icons-round" style="font-size: 1.1rem;">verified</span>
-                        Mark as Reviewed
+                        Mark as SDVed
                       </button>';
         } else {
-            $html .= '<button type="button" class="btn btn-outline" style="color: #0d8e6f; border-color: #0d8e6f; display: inline-flex; align-items: center; gap: 0.25rem;" onclick="updateReviewStatus(\'manager_revoke\')">
+            $html .= '<button type="button" class="btn btn-outline" style="color: #059669; border-color: #059669; display: inline-flex; align-items: center; gap: 0.25rem;" onclick="updateReviewStatus(\'manager_revoke\')">
                         <span class="material-icons-round" style="font-size: 1.1rem;">undo</span>
-                        Revoke Review
+                        Revoke SDV
                       </button>';
         }
     }
@@ -421,19 +419,15 @@ function getSubjectReviewStatus($pdo, $subject_id) {
     }
     
     if ($all_monitor && $all_manager && $all_sdr) {
-        return ['text' => 'SRVed', 'color' => '#0d8e6f', 'bg' => '#f0fdf4'];
+        return ['text' => 'SDVed & Approved', 'color' => '#0d8e6f', 'bg' => '#f0fdf4'];
     }
     
-    if ($all_manager && $all_sdr) {
-        return ['text' => 'Manager Reviewed', 'color' => '#0d8e6f', 'bg' => '#f0fdf4'];
-    }
-    
-    if ($all_monitor && $all_sdr) {
-        return ['text' => 'Monitor Reviewed', 'color' => '#ea580c', 'bg' => '#fff7ed'];
+    if ($all_monitor || $all_manager) {
+        return ['text' => 'SDVed', 'color' => '#059669', 'bg' => '#ecfdf5'];
     }
     
     if ($all_sdr) {
-        return ['text' => 'SDR Submitted', 'color' => '#1d6f97', 'bg' => '#eef7fa'];
+        return ['text' => 'Under Review', 'color' => '#b45309', 'bg' => '#fef3c7'];
     }
     
     return ['text' => 'Draft', 'color' => '#64748b', 'bg' => '#f1f5f9'];

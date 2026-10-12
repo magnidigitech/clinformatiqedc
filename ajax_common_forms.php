@@ -72,9 +72,16 @@ try {
             $sql .= " AND r.status = :st";
             $params['st'] = $status_filter;
         }
-        if ($sdr_filter && in_array($sdr_filter, ['pending', 'reviewed', 'needs_rereview'], true)) {
-            $sql .= " AND r.sdr_status = :sdrst";
-            $params['sdrst'] = $sdr_filter;
+        if ($sdr_filter) {
+            if ($sdr_filter === 'pending') {
+                $sql .= " AND (r.sdr_status = 'pending' OR r.sdr_status IS NULL OR r.sdr_status = '')";
+            } elseif ($sdr_filter === 'under_review') {
+                $sql .= " AND r.sdr_status = 'under_review'";
+            } elseif ($sdr_filter === 'sdved' || $sdr_filter === 'reviewed') {
+                $sql .= " AND (r.sdr_status = 'sdved' OR r.sdr_status = 'reviewed')";
+            } elseif ($sdr_filter === 'needs_rereview') {
+                $sql .= " AND r.sdr_status = 'needs_rereview'";
+            }
         }
 
         $sql .= " ORDER BY r.seq_number ASC, r.id ASC";
@@ -172,8 +179,9 @@ try {
                 COUNT(*) as total_count,
                 SUM(CASE WHEN status = 'complete' THEN 1 ELSE 0 END) as complete_count,
                 SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END) as draft_count,
-                SUM(CASE WHEN sdr_status = 'pending' THEN 1 ELSE 0 END) as sdr_pending_count,
-                SUM(CASE WHEN sdr_status = 'reviewed' THEN 1 ELSE 0 END) as sdr_reviewed_count,
+                SUM(CASE WHEN sdr_status = 'pending' OR sdr_status IS NULL OR sdr_status = '' THEN 1 ELSE 0 END) as sdr_pending_count,
+                SUM(CASE WHEN sdr_status = 'under_review' THEN 1 ELSE 0 END) as sdr_under_review_count,
+                SUM(CASE WHEN sdr_status = 'sdved' OR sdr_status = 'reviewed' THEN 1 ELSE 0 END) as sdr_sdved_count,
                 SUM(CASE WHEN sdr_status = 'needs_rereview' THEN 1 ELSE 0 END) as sdr_needs_rereview_count
             FROM subject_common_records
             WHERE study_id = ? AND subject_id = ? AND form_type = ? AND is_voided = FALSE
@@ -191,7 +199,9 @@ try {
                 'complete' => (int)($summary['complete_count'] ?? 0),
                 'draft' => (int)($summary['draft_count'] ?? 0),
                 'sdr_pending' => (int)($summary['sdr_pending_count'] ?? 0),
-                'sdr_reviewed' => (int)($summary['sdr_reviewed_count'] ?? 0),
+                'sdr_under_review' => (int)($summary['sdr_under_review_count'] ?? 0),
+                'sdr_sdved' => (int)($summary['sdr_sdved_count'] ?? 0),
+                'sdr_reviewed' => (int)($summary['sdr_sdved_count'] ?? 0),
                 'sdr_needs_rereview' => (int)($summary['sdr_needs_rereview_count'] ?? 0),
             ]
         ]);
@@ -712,19 +722,37 @@ try {
     }
 
     // =========================================================================
-    // 5. MARK SDR STATUS (DATA MANAGER / ADMIN ONLY)
+    // 5. MARK SDR / SDV STATUS
     // =========================================================================
     elseif ($action === 'mark_sdr') {
-        if (!$is_manager && !$is_coordinator && !$is_admin && !$is_monitor && !hasPermission('verify') && !hasPermission('enter_data')) {
-            throw new Exception("Unauthorized: SDR marking permission required.");
-        }
-
         $record_id = (int)($_POST['record_id'] ?? 0);
-        $sdr_action = trim($_POST['sdr_action'] ?? 'reviewed'); // 'reviewed' or 'needs_rereview'
+        $sdr_action = trim($_POST['sdr_action'] ?? '');
 
         if ($record_id <= 0) throw new Exception("Invalid record ID");
-        if (!in_array($sdr_action, ['reviewed', 'needs_rereview', 'pending'], true)) {
-            $sdr_action = 'reviewed';
+
+        // Normalize 'reviewed' to 'sdved'
+        if ($sdr_action === 'reviewed') {
+            $sdr_action = 'sdved';
+        }
+
+        if (!in_array($sdr_action, ['under_review', 'sdved', 'pending', 'needs_rereview'], true)) {
+            throw new Exception("Invalid SDR/SDV action: " . htmlspecialchars($sdr_action));
+        }
+
+        // Role-based permission validation
+        if ($sdr_action === 'sdved') {
+            if (!$is_manager && !$is_monitor && !$is_admin && !hasPermission('verify')) {
+                throw new Exception("Unauthorized: Only Data Manager or Data Monitor can mark as SDVed.");
+            }
+        } elseif ($sdr_action === 'under_review') {
+            if (!$is_coordinator && !$is_manager && !$is_monitor && !$is_admin && !hasPermission('enter_data')) {
+                throw new Exception("Unauthorized: Permission required to mark as SDR.");
+            }
+        } else {
+            // Pending / Revoke / Needs Re-review
+            if (!$is_coordinator && !$is_manager && !$is_monitor && !$is_admin) {
+                throw new Exception("Unauthorized action.");
+            }
         }
 
         $stmt = $pdo->prepare("SELECT * FROM subject_common_records WHERE id = ?");
@@ -734,7 +762,7 @@ try {
         if ($study_id > 0 && (int)$rec['study_id'] !== (int)$study_id) {
             throw new Exception("Unauthorized: Record belongs to another study.");
         }
-        if (!empty($rec['is_voided'])) throw new Exception("Cannot mark SDR on a voided record.");
+        if (!empty($rec['is_voided'])) throw new Exception("Cannot update SDR status on a voided record.");
 
         $curr_revision = (int)($rec['revision'] ?? 1);
         $curr_user_id = $user_id > 0 ? $user_id : (int)($_SESSION['user_id'] ?? $_SESSION['id'] ?? 1);
@@ -762,7 +790,7 @@ try {
             // Regulatory Audit Trail
             $stmt_aud = $pdo->prepare("
                 INSERT INTO common_form_audit_log (study_id, subject_id, record_id, field_name, old_value, new_value, reason_for_change, action_by)
-                VALUES (?, ?, ?, 'sdr_status', ?, ?, 'SDR Review Status Changed', ?)
+                VALUES (?, ?, ?, 'sdr_status', ?, ?, 'SDR / SDV Status Changed', ?)
             ");
             $stmt_aud->execute([
                 $rec['study_id'],
@@ -775,12 +803,18 @@ try {
 
             $pdo->commit();
 
+            $msg = "SDR status updated";
+            if ($sdr_action === 'under_review') $msg = "Record marked as SDR (Under Review)";
+            elseif ($sdr_action === 'sdved') $msg = "Record marked as SDVed successfully";
+            elseif ($sdr_action === 'pending') $msg = "Status reset to Pending";
+            elseif ($sdr_action === 'needs_rereview') $msg = "Status updated to Needs Re-review";
+
             ob_clean();
             echo json_encode([
                 'success' => true,
                 'sdr_status' => $sdr_action,
                 'form_type' => $rec['form_type'],
-                'message' => "SDR status updated to " . ucfirst(str_replace('_', ' ', $sdr_action))
+                'message' => $msg
             ]);
             exit();
 
