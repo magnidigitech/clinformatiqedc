@@ -46,8 +46,8 @@ $is_admin = (strpos($current_role, 'admin') !== false);
 $can_edit = ($current_role === 'data_entry' || strpos($current_role, 'entry') !== false || $current_role === 'investigator' || $is_manager || (strpos($current_role, 'manager') !== false));
 
 // Specific precise roles for workflow
-$is_coordinator = (strpos($current_role, 'coordinator') !== false) || (strpos($current_role, 'admin') !== false);
-$is_monitor_role = (strpos($current_role, 'monitor') !== false) || (strpos($current_role, 'admin') !== false);
+$is_coordinator = (strpos($current_role, 'coordinator') !== false) || (strpos($current_role, 'investigator') !== false) || (strpos($current_role, 'admin') !== false);
+$is_monitor_role = (strpos($current_role, 'monitor') !== false) || (strpos($current_role, 'cra') !== false) || (strpos($current_role, 'admin') !== false);
 $is_manager_role = (strpos($current_role, 'manager') !== false) || (strpos($current_role, 'admin') !== false);
 
 // Review status resolver is now defined in includes/functions.php
@@ -3135,6 +3135,29 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
     </div>
 </div>
 
+<!-- 5. REUSABLE CONFIRMATION MODAL (FOR SDR & RECORD ACTIONS) -->
+<div class="modal-overlay" id="modalConfirmAction" style="z-index: 10080;" onclick="closeConfirmModal()">
+    <div class="modal-card" onclick="event.stopPropagation()" style="max-width: 440px; width: 90%; background: #ffffff; border-radius: 12px; overflow: hidden; padding: 0; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2);">
+        <div style="padding: 1.75rem 1.5rem; text-align: center; background: #ffffff;">
+            <div id="confirmIconContainer" style="width: 56px; height: 56px; border-radius: 50%; background: #ecfdf5; color: #047857; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem auto;">
+                <span class="material-icons-round" id="confirmIcon" style="font-size: 30px;">verified</span>
+            </div>
+            <h3 id="confirmTitle" style="margin: 0 0 0.5rem 0; font-size: 1.15rem; color: #0f172a; font-weight: 700;">Confirm Action</h3>
+            <div id="confirmMessage" style="font-size: 0.875rem; color: #475569; line-height: 1.5;">
+                Are you sure you want to proceed with this action?
+            </div>
+        </div>
+        <div class="modal-footer" style="background: #f8fafc; padding: 0.85rem 1.5rem; display: flex; gap: 0.75rem; justify-content: flex-end; border-top: 1px solid #e2e8f0;">
+            <button type="button" onclick="closeConfirmModal()" class="btn btn-sm btn-outline" style="background: #ffffff; border: 1px solid #cbd5e1; color: #475569; padding: 0.45rem 1rem;">
+                Cancel
+            </button>
+            <button type="button" id="confirmSubmitBtn" class="btn btn-sm btn-primary" style="padding: 0.45rem 1.25rem;">
+                Confirm
+            </button>
+        </div>
+    </div>
+</div>
+
 <script>
 function escapeHtml(str) {
     if (str === null || str === undefined) return '';
@@ -3144,6 +3167,56 @@ function escapeHtml(str) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
+}
+
+let pendingConfirmCallback = null;
+
+function closeConfirmModal() {
+    pendingConfirmCallback = null;
+    closeModal('modalConfirmAction');
+}
+
+function showConfirmModal(options) {
+    const title = options.title || 'Confirm Action';
+    const message = options.message || 'Are you sure you want to proceed?';
+    const icon = options.icon || 'warning';
+    const iconBg = options.iconBg || '#fef3c7';
+    const iconColor = options.iconColor || '#d97706';
+    const btnText = options.btnText || 'Confirm';
+    const btnClass = options.btnClass || 'btn-primary';
+    const btnStyle = options.btnStyle || '';
+
+    const titleEl = document.getElementById('confirmTitle');
+    if (titleEl) titleEl.textContent = title;
+    const msgEl = document.getElementById('confirmMessage');
+    if (msgEl) msgEl.innerHTML = message;
+    
+    const iconEl = document.getElementById('confirmIcon');
+    if (iconEl) iconEl.textContent = icon;
+    
+    const iconBox = document.getElementById('confirmIconContainer');
+    if (iconBox) {
+        iconBox.style.background = iconBg;
+        iconBox.style.color = iconColor;
+    }
+
+    const confirmBtn = document.getElementById('confirmSubmitBtn');
+    if (confirmBtn) {
+        confirmBtn.textContent = btnText;
+        confirmBtn.className = 'btn btn-sm ' + btnClass;
+        confirmBtn.style.cssText = btnStyle || '';
+        confirmBtn.onclick = function() {
+            closeModal('modalConfirmAction');
+            if (typeof pendingConfirmCallback === 'function') {
+                const cb = pendingConfirmCallback;
+                pendingConfirmCallback = null;
+                cb();
+            }
+        };
+    }
+
+    pendingConfirmCallback = options.onConfirm || null;
+    openModal('modalConfirmAction');
 }
 
 function showToast(message, type = 'success', duration = 3500) {
@@ -3507,7 +3580,7 @@ function renderRecordActionButtons(r, formType) {
             const sdrColor = isRev ? '#c2410c' : '#047857';
             const sdrBorder = isRev ? '#fed7aa' : '#a7f3d0';
             const sdrIcon = isRev ? 'published_with_changes' : 'verified';
-            btns += `<button class="btn btn-sm" onclick="toggleCommonSDR(${r.id}, '${r.sdr_status}', '${formType}')" title="${sdrTitle}" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; margin-right: 4px; background: ${sdrBg}; color: ${sdrColor}; border: 1px solid ${sdrBorder};"><span class="material-icons-round" style="font-size: 14px;">${sdrIcon}</span></button>`;
+            btns += `<button class="btn btn-sm" onclick="toggleCommonSDR(${r.id}, '${r.sdr_status || 'pending'}', '${formType}')" title="${sdrTitle}" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; margin-right: 4px; background: ${sdrBg}; color: ${sdrColor}; border: 1px solid ${sdrBorder};"><span class="material-icons-round" style="font-size: 14px;">${sdrIcon}</span></button>`;
         }
     }
 
@@ -3604,7 +3677,7 @@ function setupEditorForm(rec, formType) {
 
     const btnSdr = document.getElementById('btnCfSdr');
     if (btnSdr) {
-        if (isNew || rec.is_voided) {
+        if (isNew || rec.is_voided || !(USER_IS_MANAGER || USER_IS_ADMIN || USER_IS_MONITOR || USER_IS_COORDINATOR)) {
             btnSdr.style.display = 'none';
         } else {
             btnSdr.style.display = 'inline-flex';
@@ -4184,10 +4257,12 @@ function toggleCommonSDR(recordId, currentStatus, formType = null) {
     showConfirmModal({
         title: isCurrentlyReviewed ? 'Request SDR Re-review' : 'Mark SDR Reviewed',
         message: `Are you sure you want to update SDR status to <strong>${newStatus.toUpperCase().replace('_', ' ')}</strong> for this record?`,
-        icon: 'verified',
+        icon: isCurrentlyReviewed ? 'published_with_changes' : 'verified',
         iconBg: isCurrentlyReviewed ? '#fff7ed' : '#ecfdf5',
         iconColor: isCurrentlyReviewed ? '#c2410c' : '#047857',
         btnText: isCurrentlyReviewed ? 'Confirm Re-review Request' : 'Confirm Mark SDR',
+        btnClass: isCurrentlyReviewed ? 'btn-warning' : 'btn-primary',
+        btnStyle: isCurrentlyReviewed ? 'background: #ea580c; border: none; color: #fff; font-weight: 600;' : 'background: #059669; border: none; color: #fff; font-weight: 600;',
         onConfirm: function() {
             const fd = new FormData();
             fd.append('action', 'mark_sdr');

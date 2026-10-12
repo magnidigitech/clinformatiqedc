@@ -29,6 +29,7 @@ try {
     $is_coordinator = (strpos($role_lower, 'coordinator') !== false) || (strpos($role_lower, 'admin') !== false) || (strpos($role_lower, 'entry') !== false) || (strpos($role_lower, 'investigator') !== false);
     $is_manager = (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'admin') !== false) || (strpos($role_lower, 'monitor') !== false);
     $is_admin = (strpos($role_lower, 'admin') !== false);
+    $is_monitor = (strpos($role_lower, 'monitor') !== false) || (strpos($role_lower, 'cra') !== false);
 
     // =========================================================================
     // 1. GET ALL RECORDS FOR A SUBJECT & FORM TYPE
@@ -714,7 +715,7 @@ try {
     // 5. MARK SDR STATUS (DATA MANAGER / ADMIN ONLY)
     // =========================================================================
     elseif ($action === 'mark_sdr') {
-        if (!$is_manager && !$is_coordinator && !$is_admin && !hasPermission('verify') && !hasPermission('enter_data')) {
+        if (!$is_manager && !$is_coordinator && !$is_admin && !$is_monitor && !hasPermission('verify') && !hasPermission('enter_data')) {
             throw new Exception("Unauthorized: SDR marking permission required.");
         }
 
@@ -726,13 +727,17 @@ try {
             $sdr_action = 'reviewed';
         }
 
-        $stmt = $pdo->prepare("SELECT * FROM subject_common_records WHERE id = ? AND study_id = ?");
-        $stmt->execute([$record_id, $study_id]);
+        $stmt = $pdo->prepare("SELECT * FROM subject_common_records WHERE id = ?");
+        $stmt->execute([$record_id]);
         $rec = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$rec) throw new Exception("Record not found");
-        if ($rec['is_voided']) throw new Exception("Cannot mark SDR on a voided record.");
+        if ($study_id > 0 && (int)$rec['study_id'] !== (int)$study_id) {
+            throw new Exception("Unauthorized: Record belongs to another study.");
+        }
+        if (!empty($rec['is_voided'])) throw new Exception("Cannot mark SDR on a voided record.");
 
-        $curr_revision = (int)$rec['revision'];
+        $curr_revision = (int)($rec['revision'] ?? 1);
+        $curr_user_id = $user_id > 0 ? $user_id : (int)($_SESSION['user_id'] ?? $_SESSION['id'] ?? 1);
 
         $pdo->beginTransaction();
         try {
@@ -743,7 +748,7 @@ try {
             ");
             $stmt_upd->execute([
                 'sdrst' => $sdr_action,
-                'uid' => $user_id,
+                'uid' => $curr_user_id,
                 'rev' => $curr_revision,
                 'id' => $record_id
             ]);
@@ -752,7 +757,21 @@ try {
                 INSERT INTO common_form_sdr_history (record_id, action, reviewed_revision, action_by)
                 VALUES (?, ?, ?, ?)
             ");
-            $stmt_hist->execute([$record_id, $sdr_action, $curr_revision, $user_id]);
+            $stmt_hist->execute([$record_id, $sdr_action, $curr_revision, $curr_user_id]);
+
+            // Regulatory Audit Trail
+            $stmt_aud = $pdo->prepare("
+                INSERT INTO common_form_audit_log (study_id, subject_id, record_id, field_name, old_value, new_value, reason_for_change, action_by)
+                VALUES (?, ?, ?, 'sdr_status', ?, ?, 'SDR Review Status Changed', ?)
+            ");
+            $stmt_aud->execute([
+                $rec['study_id'],
+                $rec['subject_id'],
+                $record_id,
+                $rec['sdr_status'] ?? 'pending',
+                $sdr_action,
+                $curr_user_id
+            ]);
 
             $pdo->commit();
 
