@@ -1101,24 +1101,50 @@ function ensureSubjectColumn($pdo) {
  */
 function calculateAndSaveProgress($pdo, $study_id, $subject_id, $visit_id, $form_id, $repeating_instance_id) {
     // --- 1. Calculate Form Status & Progress ---
-    $stmt_count_fields = $pdo->prepare("SELECT COUNT(*) FROM form_fields WHERE form_id = ?");
-    $stmt_count_fields->execute([$form_id]);
-    $total_fields = (int)$stmt_count_fields->fetchColumn(); 
+    $stmt_fields = $pdo->prepare("SELECT id, variable_name, is_required, validation_rules FROM form_fields WHERE form_id = ?");
+    $stmt_fields->execute([$form_id]);
+    $all_fields = $stmt_fields->fetchAll(PDO::FETCH_ASSOC);
 
-    // Get Filled Fields (handle instance robustly)
-    // Using CHAR_LENGTH(value) > 0 to ensure "0" is counted
-    $stmt_count_filled = $pdo->prepare("SELECT COUNT(DISTINCT field_id) FROM subject_data WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL)) AND value IS NOT NULL AND CHAR_LENGTH(value) > 0");
-    $stmt_count_filled->execute([$subject_id, $form_id, $repeating_instance_id, $repeating_instance_id]);
-    $filled_fields = (int)$stmt_count_filled->fetchColumn();
+    // Fetch existing values
+    $stmt_vals = $pdo->prepare("SELECT field_id, value FROM subject_data WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
+    $stmt_vals->execute([$subject_id, $form_id, $repeating_instance_id, $repeating_instance_id]);
+    $saved_rows = $stmt_vals->fetchAll(PDO::FETCH_ASSOC);
+    $valuesById = [];
+    foreach ($saved_rows as $sr) {
+        $valuesById[$sr['field_id']] = $sr['value'];
+    }
+    $valuesByVar = [];
+    foreach ($all_fields as $f) {
+        if (isset($valuesById[$f['id']])) {
+            $valuesByVar[$f['variable_name']] = $valuesById[$f['id']];
+        }
+    }
+
+    $fieldsByVar = [];
+    foreach ($all_fields as $f) {
+        $fieldsByVar[$f['variable_name']] = $f;
+    }
+
+    $applicable_fields = 0;
+    $filled_fields = 0;
+    foreach ($all_fields as $f) {
+        if (isFieldApplicable($f, $valuesByVar, $valuesById, $fieldsByVar)) {
+            $applicable_fields++;
+            $val = $valuesById[$f['id']] ?? '';
+            if ($val !== '' && $val !== null) {
+                $filled_fields++;
+            }
+        }
+    }
 
     $progress = 0;
-    if ($total_fields > 0) {
-        $progress = round(($filled_fields / $total_fields) * 100);
+    if ($applicable_fields > 0) {
+        $progress = round(($filled_fields / $applicable_fields) * 100);
     } else {
         $progress = 100;
     }
     if ($progress > 100) $progress = 100;
-    $status = ($progress == 100) ? 'complete' : 'in_progress';
+    $status = ($progress == 100) ? 'complete' : ($progress > 0 ? 'in_progress' : 'empty');
 
     // Update Status (handle unique constraint updates)
     $stmt_stat_chk = $pdo->prepare("SELECT id, status, sdr_submitted, monitor_reviewed, manager_reviewed FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");

@@ -99,6 +99,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
             }
 
+            // 3. Auto-import Protocol Template if selected
+            if ($template === 'oncology_protocol' || $template === 'standard' || $template === 'all') {
+                require_once __DIR__ . '/includes/protocol_template.php';
+                importProtocolTemplate($pdo, $new_study_id);
+            }
+
             $pdo->commit();
             
             // Refresh session assignments
@@ -204,23 +210,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
 
-            <!-- Templates (Hidden)
+            <!-- Templates -->
             <div class="form-section">
-                <label class="form-label">Templates <span class="required">*</span></label>
-                <div style="margin-bottom: 1rem; color: var(--text-main); font-size: 0.875rem;">
-                    These are pre-made forms that help you design your study faster. They generate example content and enable relevant features (e.g. randomisation).
+                <label class="form-label">Study Protocol Template</label>
+                <div style="margin-bottom: 0.75rem; color: var(--text-light); font-size: 0.85rem;">
+                    Pre-configures clinical visits (Screening, Day 1, End of Treatment), standard forms, RECIST 1.1, lab panels, and skip logic.
                 </div>
                 
                 <div class="radio-group">
-                    <label class="radio-item"><input type="radio" name="template" value="randomized"> Randomized trial</label>
-                    <label class="radio-item"><input type="radio" name="template" value="observational"> Observational study</label>
-                    <label class="radio-item"><input type="radio" name="template" value="registry"> Registry / Biobank</label>
-                    <label class="radio-item"><input type="radio" name="template" value="survey"> Survey study</label>
-                    <label class="radio-item"><input type="radio" name="template" value="all"> All forms</label>
-                    <label class="radio-item"><input type="radio" name="template" value="none" checked> No template</label>
+                    <label class="radio-item" style="padding: 0.5rem; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; cursor: pointer;">
+                        <input type="radio" name="template" value="oncology_protocol" checked>
+                        <span>
+                            <strong style="color: #166534;">Standard Oncology Protocol (Recommended)</strong>
+                            <div style="font-size: 0.75rem; color: #15803d;">Includes Screening, Day 1, End of Treatment / Study with 8 structured forms & skip logic</div>
+                        </span>
+                    </label>
+                    <label class="radio-item" style="padding: 0.5rem; border-radius: 6px; cursor: pointer;">
+                        <input type="radio" name="template" value="none">
+                        <span>
+                            <strong>Blank Study</strong>
+                            <div style="font-size: 0.75rem; color: var(--text-light);">Start with empty visits and build forms manually</div>
+                        </span>
+                    </label>
                 </div>
             </div>
-        -->
 
             <!-- Study Type (Hidden - Default: Test)
             <div class="form-section">

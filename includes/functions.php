@@ -531,4 +531,53 @@ function ensureCommonFormsTables($pdo) {
     }
 }
 
+/**
+ * Evaluates whether a CRF field is applicable based on skip-logic conditions
+ * and current form responses, handling cascading dependencies.
+ */
+function isFieldApplicable($field, $valuesByVar = [], $valuesById = [], $fieldsByVar = []) {
+    $val_rules = json_decode($field['validation_rules'] ?? '{}', true);
+    if (empty($val_rules['condition'])) {
+        return true;
+    }
+
+    $cond = $val_rules['condition'];
+    $parentField = $cond['field'] ?? '';
+    $operator = $cond['operator'] ?? '==';
+    $targetValue = $cond['value'] ?? '';
+
+    // If parent field itself is defined and has conditions, check if parent is applicable
+    if (!empty($fieldsByVar[$parentField])) {
+        if (!isFieldApplicable($fieldsByVar[$parentField], $valuesByVar, $valuesById, $fieldsByVar)) {
+            return false;
+        }
+    }
+
+    // Look up parent value by variable name or field id
+    $parentVal = $valuesByVar[$parentField] ?? ($valuesById[$parentField] ?? null);
+    if ($parentVal === null) {
+        return false;
+    }
+
+    $parentValArray = is_array($parentVal) ? $parentVal : explode(',', (string)$parentVal);
+    $parentValArray = array_map('trim', $parentValArray);
+
+    if (is_array($targetValue) || $operator === 'in') {
+        $targets = is_array($targetValue) ? $targetValue : [$targetValue];
+        foreach ($targets as $t) {
+            if (in_array((string)$t, $parentValArray)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    if ($operator === '!=') {
+        return (string)$parentVal !== (string)$targetValue && !in_array((string)$targetValue, $parentValArray);
+    }
+
+    return (string)$parentVal === (string)$targetValue || in_array((string)$targetValue, $parentValArray);
+}
+
+
 

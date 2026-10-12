@@ -24,7 +24,23 @@ try {
     $pdo = getDB();
     $action = $_POST['action'] ?? '';
 
-    if ($action === 'create_visit') {
+    if ($action === 'import_protocol_template') {
+        if (!hasPermission('manage_structure') && !hasPermission('all')) {
+            throw new Exception("Unauthorized: Manage Structure or Admin permission required");
+        }
+        require_once __DIR__ . '/includes/protocol_template.php';
+        $res = importProtocolTemplate($pdo, $study_id);
+        if (!$res['success']) {
+            throw new Exception($res['error'] ?? 'Failed to import protocol template');
+        }
+        echo json_encode([
+            'success' => true,
+            'message' => 'Standard Oncology Protocol Template imported successfully!',
+            'stats' => $res
+        ]);
+        exit;
+    }
+    elseif ($action === 'create_visit') {
         if (!hasPermission('manage_structure') && !hasPermission('all')) {
             throw new Exception("Unauthorized: Manage Structure permission required");
         }

@@ -319,9 +319,14 @@ if (isApiRequest() || isset($_GET['ajax_search'])) {
             
             <!-- Site Filter Dashboard Bar -->
             <div style="background: white; padding: 1rem 1.5rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); margin-bottom: 2rem; display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; flex-wrap: wrap; box-shadow: var(--shadow-sm);">
-                <h3 style="font-size: 1.125rem; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
-                    <span class="material-icons-round" style="color: var(--accent-color);">dashboard</span> Study Dashboard
-                </h3>
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <h3 style="font-size: 1.125rem; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                        <span class="material-icons-round" style="color: var(--accent-color);">dashboard</span> Study Dashboard
+                    </h3>
+                    <a href="study_structure.php" class="btn btn-outline" style="border-color: #0284c7; color: #0284c7; background: #f0f9ff; display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.825rem; padding: 0.35rem 0.75rem;" title="View or Import Protocol Template">
+                        <span class="material-icons-round" style="font-size: 1rem;">auto_stories</span> Protocol Template
+                    </a>
+                </div>
                 <form method="GET" style="display: flex; align-items: center; gap: 0.75rem;">
                     <label style="font-size: 0.875rem; font-weight: 500; color: var(--text-light);">Filter by Site:</label>
                     <select name="site_filter" class="form-input" onchange="this.form.submit()" style="width: 220px; padding: 0.375rem 0.75rem; font-size: 0.875rem; height: auto;">

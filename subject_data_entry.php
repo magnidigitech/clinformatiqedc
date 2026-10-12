@@ -53,29 +53,42 @@ $is_manager_role = (strpos($current_role, 'manager') !== false) || (strpos($curr
 // Review status resolver is now defined in includes/functions.php
 
 // Helper to check mandatory fields completion
+if (!function_exists('areAllMandatoryFieldsCompletedPHP')) {
 function areAllMandatoryFieldsCompletedPHP($pdo, $subject_id, $form_id, $repeating_instance_id) {
-    // Get all mandatory field IDs for this form
-    $stmt = $pdo->prepare("SELECT id FROM form_fields WHERE form_id = ? AND is_required = TRUE");
+    $stmt = $pdo->prepare("SELECT id, variable_name, is_required, validation_rules FROM form_fields WHERE form_id = ? ORDER BY order_index");
     $stmt->execute([$form_id]);
-    $mandatory_ids = $stmt->fetchAll(PDO::FETCH_COLUMN);
-    
-    if (empty($mandatory_ids)) {
-        return true;
+    $fields = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    if (empty($fields)) return true;
+
+    // Fetch existing values
+    $stmt_vals = $pdo->prepare("SELECT field_id, value FROM subject_data WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
+    $stmt_vals->execute([$subject_id, $form_id, $repeating_instance_id, $repeating_instance_id]);
+    $saved_rows = $stmt_vals->fetchAll(PDO::FETCH_ASSOC);
+    $valuesById = [];
+    foreach ($saved_rows as $sr) {
+        $valuesById[$sr['field_id']] = $sr['value'];
     }
-    
-    // Check how many of these mandatory fields have a filled value in subject_data
-    $placeholders = implode(',', array_fill(0, count($mandatory_ids), '?'));
-    $sql = "SELECT COUNT(DISTINCT field_id) FROM subject_data 
-            WHERE subject_id = ? AND form_id = ? AND field_id IN ($placeholders) 
-            AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL)) 
-            AND value IS NOT NULL AND CHAR_LENGTH(value) > 0";
-    
-    $params = array_merge([$subject_id, $form_id], $mandatory_ids, [$repeating_instance_id, $repeating_instance_id]);
-    $stmt_filled = $pdo->prepare($sql);
-    $stmt_filled->execute($params);
-    $filled_count = (int)$stmt_filled->fetchColumn();
-    
-    return $filled_count === count($mandatory_ids);
+    $valuesByVar = [];
+    $fieldsByVar = [];
+    foreach ($fields as $f) {
+        $fieldsByVar[$f['variable_name']] = $f;
+        if (isset($valuesById[$f['id']])) {
+            $valuesByVar[$f['variable_name']] = $valuesById[$f['id']];
+        }
+    }
+
+    foreach ($fields as $f) {
+        if ($f['is_required']) {
+            if (isFieldApplicable($f, $valuesByVar, $valuesById, $fieldsByVar)) {
+                $val = $valuesById[$f['id']] ?? '';
+                if ($val === '' || $val === null) {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
 }
 
 // Mock Subject ID for now if not passed (or handle error)
@@ -956,6 +969,30 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                     </div>
                     
                     <div class="crf-body">
+                        <!-- Common Fields Displayed on Every Form -->
+                        <div class="crf-common-meta-header" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.85rem 1.25rem; margin-bottom: 1.5rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 1rem; box-shadow: 0 1px 2px rgba(0,0,0,0.03);">
+                            <div>
+                                <div style="font-size: 0.7rem; color: #64748b; text-transform: uppercase; font-weight: 600; letter-spacing: 0.03em;">Study ID</div>
+                                <div style="font-size: 0.95rem; font-weight: 700; color: #1e293b; margin-top: 2px;"><?php echo htmlspecialchars($_SESSION['active_study_code'] ?? 'N/A'); ?></div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.7rem; color: #64748b; text-transform: uppercase; font-weight: 600; letter-spacing: 0.03em;">Site ID</div>
+                                <div style="font-size: 0.95rem; font-weight: 700; color: #1e293b; margin-top: 2px;"><?php echo htmlspecialchars($subject['site_name'] ?? '01'); ?></div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.7rem; color: #64748b; text-transform: uppercase; font-weight: 600; letter-spacing: 0.03em;">Subject ID</div>
+                                <div style="font-size: 0.95rem; font-weight: 700; color: #0284c7; margin-top: 2px;"><?php echo htmlspecialchars($subject['subject_code']); ?></div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.7rem; color: #64748b; text-transform: uppercase; font-weight: 600; letter-spacing: 0.03em;">Visit Name</div>
+                                <div style="font-size: 0.95rem; font-weight: 600; color: #1e293b; margin-top: 2px;"><?php echo htmlspecialchars($current_visit_name ?: 'General Visit'); ?></div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.7rem; color: #64748b; text-transform: uppercase; font-weight: 600; letter-spacing: 0.03em;">Form Name</div>
+                                <div style="font-size: 0.95rem; font-weight: 600; color: #1e293b; margin-top: 2px;"><?php echo htmlspecialchars($current_form_name ?: 'General Form'); ?></div>
+                            </div>
+                        </div>
+
                         <?php if (empty($fields)): ?>
                             <div style="padding: 3rem; text-align: center; color: var(--text-light);">
                                 <?php echo $current_form_id ? 'No fields defined for this form.' : 'Please select a form.'; ?>
@@ -979,6 +1016,9 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                                 $f_val = $existing_data[$field['id']] ?? '';
                                 $is_f = ($f_val !== '' && $f_val !== null);
                                 
+                                $f_rules = json_decode($field['validation_rules'] ?? '{}', true);
+                                $f_condition = !empty($f_rules['condition']) ? json_encode($f_rules['condition']) : '';
+
                                  // Query Logic
                                  $field_queries = $q_map[$field['id']] ?? [];
                                  $query_count = count($field_queries);
@@ -1002,7 +1042,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                                      }
                                  }
                             ?>
-                                <div class="crf-field" data-field-id="<?php echo $field['id']; ?>" <?php if ($field['is_required']) echo 'data-required="true"'; ?>>
+                                <div class="crf-field" data-field-id="<?php echo $field['id']; ?>" data-variable-name="<?php echo htmlspecialchars($field['variable_name']); ?>" data-field-type="<?php echo htmlspecialchars($field['type']); ?>" <?php if ($field['is_required']) echo 'data-required="true"'; ?> <?php if ($f_condition) echo 'data-condition="'.htmlspecialchars($f_condition).'"'; ?>>
                                     <div class="field-label-row">
                                         <!-- Field Status Icon -->
                                         <span class="material-icons-round status-icon" style="color: <?php echo $is_f ? 'var(--accent-color)' : '#94a3b8'; ?>">
@@ -1845,20 +1885,186 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
         }, 800); // 1.5 second delay after last input
     }
     
+    // Skip Logic & Conditional Questions Engine
+    function getFieldValueByVar(varName) {
+        // 1. Radio buttons
+        const radios = document.querySelectorAll(`input[type="radio"][data-var="${varName}"]`);
+        if (radios.length > 0) {
+            for (const r of radios) {
+                if (r.checked) return r.value;
+            }
+            return '';
+        }
+        // 2. Checkboxes
+        const checkboxes = document.querySelectorAll(`input[type="checkbox"][data-var="${varName}"]`);
+        if (checkboxes.length > 0) {
+            const vals = [];
+            for (const cb of checkboxes) {
+                if (cb.checked) vals.push(cb.value);
+            }
+            return vals;
+        }
+        // 3. Select / Text / Number / Date / Time
+        const el = document.querySelector(`[data-var="${varName}"]`);
+        if (el) return el.value;
+        return '';
+    }
+
+    function evaluateSkipLogic() {
+        const fields = document.querySelectorAll('.crf-field');
+        
+        fields.forEach(fieldEl => {
+            const condAttr = fieldEl.getAttribute('data-condition');
+            if (!condAttr) return;
+
+            try {
+                const cond = JSON.parse(condAttr);
+                if (!cond || !cond.field) return;
+
+                const parentVal = getFieldValueByVar(cond.field);
+                let isVisible = false;
+                const op = cond.operator || '==';
+                const targetVal = cond.value;
+
+                if (op === '==' || op === 'equals') {
+                    isVisible = (String(parentVal).trim() === String(targetVal).trim());
+                } else if (op === '!=' || op === 'not_equals') {
+                    isVisible = (String(parentVal).trim() !== String(targetVal).trim() && parentVal !== '');
+                } else if (op === 'in') {
+                    const arr = Array.isArray(targetVal) ? targetVal : [targetVal];
+                    isVisible = arr.map(v => String(v).trim()).includes(String(parentVal).trim());
+                }
+
+                // If parent field itself is currently skipped/hidden, cascade hide child
+                const parentFieldEl = document.querySelector(`.crf-field[data-variable-name="${cond.field}"]`);
+                if (parentFieldEl && parentFieldEl.classList.contains('skipped-field')) {
+                    isVisible = false;
+                }
+
+                const inputs = fieldEl.querySelectorAll('input, select, textarea');
+                if (isVisible) {
+                    fieldEl.style.display = 'block';
+                    fieldEl.classList.remove('skipped-field');
+                    if (fieldEl.getAttribute('data-required') === 'true') {
+                        inputs.forEach(inp => {
+                            if (inp.type !== 'radio' && inp.type !== 'checkbox') {
+                                inp.required = true;
+                            }
+                        });
+                    }
+                } else {
+                    fieldEl.style.display = 'none';
+                    fieldEl.classList.add('skipped-field');
+                    inputs.forEach(inp => inp.required = false);
+                }
+            } catch(e) {
+                console.error('Error evaluating condition:', e);
+            }
+        });
+
+        handleCalculationsAndFlags();
+    }
+
+    function handleCalculationsAndFlags() {
+        // 1. Age Calculation from DOB
+        const dobEl = document.querySelector('input[data-var="date_of_birth"]');
+        const ageEl = document.querySelector('input[data-var="age_at_screening"]');
+        if (dobEl && ageEl && dobEl.value) {
+            try {
+                const dob = new Date(dobEl.value);
+                const today = new Date();
+                let age = today.getFullYear() - dob.getFullYear();
+                const m = today.getMonth() - dob.getMonth();
+                if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
+                    age--;
+                }
+                if (age >= 0 && (!ageEl.value || ageEl.getAttribute('data-auto') === 'true')) {
+                    ageEl.value = age;
+                    ageEl.setAttribute('data-auto', 'true');
+                }
+            } catch(e) {}
+        }
+
+        // 2. RECIST Target Lesions Sums
+        let baseSum = 0;
+        let currSum = 0;
+        let hasBase = false;
+        let hasCurr = false;
+
+        for (let i = 1; i <= 5; i++) {
+            const bEl = document.querySelector(`input[data-var="tl${i}_baseline_diam"]`);
+            const cEl = document.querySelector(`input[data-var="tl${i}_current_diam"]`);
+            if (bEl && bEl.value !== '' && !isNaN(parseFloat(bEl.value))) {
+                baseSum += parseFloat(bEl.value);
+                hasBase = true;
+            }
+            if (cEl && cEl.value !== '' && !isNaN(parseFloat(cEl.value))) {
+                currSum += parseFloat(cEl.value);
+                hasCurr = true;
+            }
+        }
+
+        const baseSumEl = document.querySelector('input[data-var="tl_baseline_sum"]');
+        if (baseSumEl && hasBase) {
+            baseSumEl.value = baseSum.toFixed(1);
+        }
+        const currSumEl = document.querySelector('input[data-var="tl_current_sum"]');
+        if (currSumEl && hasCurr) {
+            currSumEl.value = currSum.toFixed(1);
+        }
+        const pctChangeEl = document.querySelector('input[data-var="tl_percent_change"]');
+        if (pctChangeEl && hasBase && baseSum > 0 && hasCurr) {
+            const pct = ((currSum - baseSum) / baseSum) * 100;
+            pctChangeEl.value = (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%';
+        }
+
+        // 3. Vital Signs Plausibility soft alerts
+        checkPlausibility('sbp_val', 70, 200, 'mmHg');
+        checkPlausibility('dbp_val', 40, 130, 'mmHg');
+        checkPlausibility('hr_val', 40, 180, 'bpm');
+        checkPlausibility('rr_val', 8, 40, 'breaths/min');
+        checkPlausibility('temp_val', 35.0, 41.0, '°C');
+    }
+
+    function checkPlausibility(varName, min, max, unit) {
+        const el = document.querySelector(`input[data-var="${varName}"]`);
+        if (!el || el.value === '') return;
+        const val = parseFloat(el.value);
+        let noteEl = document.getElementById('warn_' + varName);
+
+        if (!isNaN(val) && (val < min || val > max)) {
+            if (!noteEl) {
+                noteEl = document.createElement('div');
+                noteEl.id = 'warn_' + varName;
+                noteEl.style.cssText = 'color: #b45309; background: #fffbeb; border: 1px solid #fef3c7; border-radius: 4px; padding: 4px 8px; font-size: 0.75rem; margin-top: 4px; display: flex; align-items: center; gap: 4px;';
+                noteEl.innerHTML = '<span class="material-icons-round" style="font-size: 14px;">warning</span> Value outside typical range (' + min + '–' + max + ' ' + unit + '). Flagged for protocol review.';
+                el.parentNode.appendChild(noteEl);
+            }
+            el.style.borderColor = '#f59e0b';
+        } else {
+            if (noteEl) noteEl.remove();
+            el.style.borderColor = '';
+        }
+    }
+    
     // Attach Listeners
     document.addEventListener('DOMContentLoaded', () => {
+         evaluateSkipLogic();
+         
          const inputs = document.querySelectorAll('[name^="field_"]');
          inputs.forEach(input => {
              const type = input.type || '';
              const tag = input.tagName.toLowerCase();
              
-             // For text/numeric fields, calculate progress on keypress (input) but only save on focus loss (change)
-             if (tag === 'textarea' || type === 'text' || type === 'number' || type === 'email' || type === 'tel' || type === 'url' || type === 'password') {
-                 input.addEventListener('input', checkProgress);
-                 input.addEventListener('change', debouncedSave);
-             } else {
-                 input.addEventListener('change', debouncedSave);
-             }
+             input.addEventListener('input', () => {
+                 evaluateSkipLogic();
+                 checkProgress();
+             });
+
+             input.addEventListener('change', () => {
+                 evaluateSkipLogic();
+                 debouncedSave();
+             });
          });
     });
 </script>
@@ -2783,11 +2989,24 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
 </html>
 
 <?php
+if (!function_exists('renderFieldInput')) {
 function renderFieldInput($field, $saved_value = '', $choices_map = []) {
     $type = $field['type'];
+    $var = $field['variable_name'] ?? ('var_' . $field['id']);
     $name = "field_" . $field['id'];
     $val_rules = json_decode($field['validation_rules'] ?? '{}', true);
-    $value = htmlspecialchars($saved_value); 
+    
+    // Auto-populate default values if empty
+    if (($saved_value === '' || $saved_value === null) && isset($val_rules['default'])) {
+        $saved_value = $val_rules['default'];
+    }
+    
+    // RECIST method is read-only RECIST 1.1 per protocol specification
+    if ($var === 'recist_method') {
+        $saved_value = 'RECIST 1.1';
+    }
+
+    $value = htmlspecialchars((string)$saved_value); 
     
     // Check Global Edit Permission
     global $can_edit;
@@ -2797,34 +3016,40 @@ function renderFieldInput($field, $saved_value = '', $choices_map = []) {
     $gid = $field['option_group_id'] ?? null;
     $options = ($gid && isset($choices_map[$gid])) ? $choices_map[$gid] : [];
 
+    // Custom Readonly for RECIST method
+    if ($var === 'recist_method') {
+        echo '<input type="text" name="'.$name.'" data-var="'.$var.'" class="crf-input" value="RECIST 1.1" readonly style="background:#f8fafc; font-weight:600; color:#1e293b; cursor:default;">';
+        return;
+    }
+
     switch ($type) {
         case 'text':
         case 'email':
         case 'calculation': // Read-only usually, but input for now
         case 'link':
-            echo '<input type="text" name="'.$name.'" class="crf-input" value="'.$value.'" '.$disabled.'>';
+            echo '<input type="text" name="'.$name.'" data-var="'.$var.'" class="crf-input" value="'.$value.'" '.$disabled.'>';
             break;
 
         case 'number':
         case 'year':
-            echo '<input type="number" name="'.$name.'" class="crf-input" value="'.$value.'" '.$disabled.'>';
+            echo '<input type="number" name="'.$name.'" data-var="'.$var.'" class="crf-input" value="'.$value.'" '.$disabled.'>';
             break;
 
         case 'date':
-            echo '<input type="date" name="'.$name.'" class="crf-input" value="'.$value.'" '.$disabled.'>';
+            echo '<input type="date" name="'.$name.'" data-var="'.$var.'" class="crf-input" value="'.$value.'" placeholder="MM/DD/YYYY" '.$disabled.'>';
             break;
 
         case 'datetime':
-            echo '<input type="datetime-local" name="'.$name.'" class="crf-input" value="'.$value.'" '.$disabled.'>';
+            echo '<input type="datetime-local" name="'.$name.'" data-var="'.$var.'" class="crf-input" value="'.$value.'" '.$disabled.'>';
             break;
 
         case 'time':
-            echo '<input type="time" name="'.$name.'" class="crf-input" value="'.$value.'" '.$disabled.'>';
+            echo '<input type="time" name="'.$name.'" data-var="'.$var.'" class="crf-input" value="'.$value.'" placeholder="HH:MM" '.$disabled.'>';
             break;
             
         case 'textarea':
         case 'remark': // Treat remark as text area for now, or read-only
-            echo '<textarea name="'.$name.'" class="crf-input" rows="3" '.$disabled.'>'.$value.'</textarea>';
+            echo '<textarea name="'.$name.'" data-var="'.$var.'" class="crf-input" rows="3" '.$disabled.'>'.$value.'</textarea>';
             break;
 
         case 'slider':
@@ -2832,13 +3057,13 @@ function renderFieldInput($field, $saved_value = '', $choices_map = []) {
             $min = $val_rules['min'] ?? 0;
             $max = $val_rules['max'] ?? 100;
             echo '<div style="display:flex; align-items:center; gap:1rem;">';
-            echo '<input type="range" name="'.$name.'" min="'.$min.'" max="'.$max.'" value="'.($value !== '' ? $value : $min).'" oninput="this.nextElementSibling.innerText = this.value" '.$disabled.' style="flex:1;">';
+            echo '<input type="range" name="'.$name.'" data-var="'.$var.'" min="'.$min.'" max="'.$max.'" value="'.($value !== '' ? $value : $min).'" oninput="this.nextElementSibling.innerText = this.value" '.$disabled.' style="flex:1;">';
             echo '<span style="font-weight:600; min-width:30px; text-align:right;">'.($value !== '' ? $value : $min).'</span>';
             echo '</div>';
             break;
             
         case 'dropdown':
-             echo '<select name="'.$name.'" class="crf-input" '.$disabled.'>';
+             echo '<select name="'.$name.'" data-var="'.$var.'" class="crf-input" '.$disabled.'>';
              echo '<option value="">Select option</option>';
              if (!empty($options)) {
                  foreach ($options as $opt) {
@@ -2858,16 +3083,16 @@ function renderFieldInput($field, $saved_value = '', $choices_map = []) {
                 foreach ($options as $opt) {
                     $checked = (trim((string)$value) === trim((string)$opt['value'])) ? 'checked' : '';
                     echo '<label style="display:flex; align-items:center; gap:0.5rem; font-weight:normal;">';
-                    echo '<input type="radio" name="'.$name.'" value="'.htmlspecialchars($opt['value']).'" '.$checked.' '.$disabled.'> ';
+                    echo '<input type="radio" name="'.$name.'" data-var="'.$var.'" value="'.htmlspecialchars($opt['value']).'" '.$checked.' '.$disabled.'> ';
                     echo htmlspecialchars($opt['label']);
                     echo '</label>';
                 }
             } else {
                 // Default Yes/No fallback
-                $checkedYes = ($value == '1') ? 'checked' : '';
-                $checkedNo = ($value == '0') ? 'checked' : '';
-                echo '<label><input type="radio" name="'.$name.'" value="1" '.$checkedYes.' '.$disabled.'> Yes</label>';
-                echo '<label><input type="radio" name="'.$name.'" value="0" '.$checkedNo.' '.$disabled.'> No</label>';
+                $checkedYes = ($value == 'Yes' || $value == '1') ? 'checked' : '';
+                $checkedNo = ($value == 'No' || $value == '0') ? 'checked' : '';
+                echo '<label><input type="radio" name="'.$name.'" data-var="'.$var.'" value="Yes" '.$checkedYes.' '.$disabled.'> Yes</label>';
+                echo '<label><input type="radio" name="'.$name.'" data-var="'.$var.'" value="No" '.$checkedNo.' '.$disabled.'> No</label>';
             }
             echo '</div>';
             break;
@@ -2896,7 +3121,7 @@ function renderFieldInput($field, $saved_value = '', $choices_map = []) {
                     }
                     $checked_str = $checked ? 'checked' : '';
                     echo '<label style="display:flex; align-items:center; gap:0.5rem; font-weight:normal;">';
-                    echo '<input type="checkbox" name="'.$name.'[]" value="'.htmlspecialchars($opt['value']).'" '.$checked_str.' '.$disabled.'> ';
+                    echo '<input type="checkbox" name="'.$name.'[]" data-var="'.$var.'" value="'.htmlspecialchars($opt['value']).'" '.$checked_str.' '.$disabled.'> ';
                     echo htmlspecialchars($opt['label']);
                     echo '</label>';
                 }
@@ -2923,6 +3148,7 @@ function renderFieldInput($field, $saved_value = '', $choices_map = []) {
         default:
             echo '<input type="text" name="'.$name.'" class="crf-input" placeholder="Unsupported type: '.$type.'" disabled>';
     }
+}
 }
 ?>
 
