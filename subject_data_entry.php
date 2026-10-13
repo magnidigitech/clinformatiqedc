@@ -553,8 +553,7 @@ if ($current_form_id && $subject_id) {
             <img src="edc_large_logo.png" alt="Logo" style="height: 100%; width: auto;">
         </div>
 <?php
-// Determine View Mode
-$can_edit = $current_form_id ? hasPermission('enter_data') : false;
+$can_edit = $current_form_id ? (hasPermission('enter_data') || $is_coordinator) : false;
 
 // Check if current form is verifiable
 $curr_stat_key = $current_form_id ? ($current_form_id . '_' . (int)($current_instance_id ?? 0)) : '0_0';
@@ -989,6 +988,21 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                             <?php 
                                 $f_stat = $statuses[$current_form_id . '_' . (int)($current_instance_id ?? 0)] ?? ['progress' => 0];
                                 $curr_pct = $f_stat['progress'];
+                                if ($current_form_id && !empty($fields)) {
+                                    $dyn_applicable = 0;
+                                    $dyn_filled = 0;
+                                    foreach ($fields as $f) {
+                                        if (isFieldApplicable($f, $valuesByVar ?? [], $existing_data ?? [], $fieldsByVar ?? [])) {
+                                            $dyn_applicable++;
+                                            $val = $existing_data[$f['id']] ?? '';
+                                            if ($val !== '' && $val !== null) {
+                                                $dyn_filled++;
+                                            }
+                                        }
+                                    }
+                                    $curr_pct = ($dyn_applicable > 0) ? round(($dyn_filled / $dyn_applicable) * 100) : 100;
+                                    if ($curr_pct > 100) $curr_pct = 100;
+                                }
                             ?>
                             <div style="display: flex; align-items: center; gap: 1rem;">
                                 <!-- SDR / Review Workflow Buttons -->
@@ -1769,42 +1783,83 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
 
 
 
+    let hasUnsavedChanges = false;
+    let isSaving = false;
+    let saveTimeout = null;
+
     function saveData(goNext = false) {
-        // Cancel any pending auto-saves to prevent race condition/duplicate saves
         clearTimeout(saveTimeout);
+        saveTimeout = null;
         
         // If called from button, give feedback
-        const btn = event instanceof PointerEvent ? event.target : null;
+        let btn = null;
+        try {
+            if (typeof window !== 'undefined' && window.event && window.event.target) {
+                btn = window.event.target.closest('button, a') || window.event.target;
+            }
+        } catch(e) {}
+
         let originalText = '';
-        if (btn) {
+        if (btn && btn.tagName) {
             originalText = btn.innerText;
             btn.innerText = 'Saving...';
             document.querySelectorAll('.btn-primary').forEach(b => b.disabled = true);
         }
 
         const data = {};
-        const inputs = document.querySelectorAll('[name^="field_"]');
+        const fieldEls = document.querySelectorAll('.crf-field');
         
-        inputs.forEach(input => {
-            const name = input.name; 
-            if(!name) return;
-            // Name format is field_{id} or field_{id}[]
-            // We need to extract digits only
-            const match = name.match(/field_(\d+)/);
+        fieldEls.forEach(fieldEl => {
+            const fieldId = fieldEl.getAttribute('data-field-id');
+            if (!fieldId) return;
+
+            // If field is skipped or hidden, send empty string to clear any existing DB value
+            if (fieldEl.classList.contains('skipped-field') || fieldEl.style.display === 'none') {
+                data[fieldId] = '';
+                return;
+            }
+
+            const inputs = fieldEl.querySelectorAll('input, select, textarea');
+            inputs.forEach(input => {
+                const name = input.name;
+                if (!name) return;
+                
+                if (input.type === 'radio') {
+                    if (input.checked) {
+                        data[fieldId] = input.value;
+                    } else if (data[fieldId] === undefined) {
+                        data[fieldId] = '';
+                    }
+                } else if (input.type === 'checkbox') {
+                    if (!data[fieldId]) data[fieldId] = [];
+                    if (input.checked) {
+                        if (Array.isArray(data[fieldId])) data[fieldId].push(input.value);
+                        else data[fieldId] = [input.value];
+                    }
+                } else {
+                    data[fieldId] = input.value;
+                }
+            });
+
+            // Ensure field has at least empty string if no radio was checked
+            if (data[fieldId] === undefined) {
+                data[fieldId] = '';
+            }
+        });
+
+        // Also check any standalone input outside crf-field
+        document.querySelectorAll('[name^="field_"]').forEach(input => {
+            const match = input.name.match(/field_(\d+)/);
             if (!match) return;
-            
             const id = match[1];
-            
-            if (input.type === 'radio') {
-                if(input.checked) data[id] = input.value;
-            } else if (input.type === 'checkbox') {
-                 if (!data[id]) data[id] = [];
-                 if (input.checked) {
-                     if (Array.isArray(data[id])) data[id].push(input.value);
-                     else data[id] = [input.value]; 
-                 }
-             } else {
-                data[id] = input.value;
+            if (data[id] === undefined) {
+                if (input.type === 'radio') {
+                    if (input.checked) data[id] = input.value;
+                } else if (input.type === 'checkbox') {
+                    if (input.checked) data[id] = input.value;
+                } else {
+                    data[id] = input.value;
+                }
             }
         });
 
@@ -1825,79 +1880,86 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
             formData.append(`data[${id}]`, val);
         }
         
-        fetch('ajax_data.php', { method: 'POST', body: formData })
+        isSaving = true;
+        return fetch('ajax_data.php', { method: 'POST', body: formData, keepalive: true })
         .then(response => response.json())
-        .then(data => {
-            if(data.success) {
+        .then(res => {
+            isSaving = false;
+            if (res.success) {
+                hasUnsavedChanges = false;
                 if (goNext && '<?php echo $next_link; ?>') {
                     window.location.href = '<?php echo $next_link; ?>';
+                    return res;
                 } else {
-                     // Update UI Elements if triggered by button
-                     if (btn) {
-                         btn.innerText = originalText;
-                         document.querySelectorAll('.btn-primary').forEach(b => b.disabled = false);
-                     }
-                     
-                     // Update current form progress inside CRF card dynamically
-                     if (data.form_progress !== undefined) {
+                    // Update UI Elements if triggered by button
+                    if (btn && btn.tagName) {
+                        btn.innerText = originalText;
+                        document.querySelectorAll('.btn-primary').forEach(b => b.disabled = false);
+                    }
+                    
+                    // Update current form progress inside CRF card dynamically
+                    if (res.form_progress !== undefined) {
                         const fText = document.querySelector('.form-progress-text');
                         const fBar = document.querySelector('.current-form-progress');
-                        if (fText) fText.innerText = data.form_progress + '%';
-                        if (fBar) fBar.style.width = data.form_progress + '%';
-                     }
+                        if (fText) fText.innerText = res.form_progress + '%';
+                        if (fBar) fBar.style.width = res.form_progress + '%';
+                    }
 
-                     
-                     // Global Progress
-                     if (data.subject_progress !== undefined) {
+                    // Global Progress
+                    if (res.subject_progress !== undefined) {
                         const gpBar = document.getElementById('global-progress-bar');
                         const gpText = document.getElementById('global-progress-text');
-                        if (gpBar) gpBar.style.width = data.subject_progress + '%';
-                        if (gpText) gpText.innerText = data.subject_progress + '%';
-                     }
-                     
-                     // Visit Progress (for current visit)
-                     if (data.visit_progress !== undefined) {
+                        if (gpBar) gpBar.style.width = res.subject_progress + '%';
+                        if (gpText) gpText.innerText = res.subject_progress + '%';
+                    }
+                    
+                    // Visit Progress (for current visit)
+                    if (res.visit_progress !== undefined) {
                         const vpBar = document.getElementById('visit-progress-bar-<?php echo $current_visit_id; ?>');
                         const vpText = document.getElementById('visit-progress-text-<?php echo $current_visit_id; ?>');
-                        if (vpBar) vpBar.style.width = data.visit_progress + '%';
-                        if (vpText) vpText.innerText = data.visit_progress + '%';
-                     }
-                     
-                     // Form Status Icon
-                     const iconId = 'form-icon-<?php echo $current_form_id; ?>-<?php echo $current_instance_id ?: 0; ?>';
-                     const iconEl = document.getElementById(iconId);
-                     if (iconEl) {
+                        if (vpBar) vpBar.style.width = res.visit_progress + '%';
+                        if (vpText) vpText.innerText = res.visit_progress + '%';
+                    }
+                    
+                    // Form Status Icon
+                    const iconId = 'form-icon-<?php echo $current_form_id; ?>-<?php echo $current_instance_id ?: 0; ?>';
+                    const iconEl = document.getElementById(iconId);
+                    if (iconEl) {
                         let color = '#cbd5e1';
                         let icon = 'radio_button_unchecked';
                         
-                        if (data.form_status === 'complete' || data.form_progress === 100) {
+                        if (res.form_status === 'complete' || res.form_progress === 100) {
                             color = '#0d8e6f';
                             icon = 'check_circle';
-                        } else if (data.form_status === 'in_progress' || data.form_progress > 0) {
+                        } else if (res.form_status === 'in_progress' || res.form_progress > 0) {
                             color = '#1d6f97';
                             icon = 'hourglass_top';
                         }
                         
                         iconEl.style.color = color;
                         iconEl.innerText = icon;
-                     }
+                    }
+                    return res;
                 }
             } else {
-                console.error("Save error:", data);
-                if (btn) {
-                    alert("Error saving: " + (data.error || 'Unknown'));
+                console.error("Save error:", res);
+                if (btn && btn.tagName) {
+                    alert("Error saving: " + (res.error || 'Unknown'));
                     btn.innerText = originalText;
                     document.querySelectorAll('.btn-primary').forEach(b => b.disabled = false);
                 }
+                throw new Error(res.error || 'Save failed');
             }
         })
         .catch(err => {
+            isSaving = false;
             console.error(err);
-            if (btn) {
+            if (btn && btn.tagName) {
                 alert("Network Error");
                 btn.innerText = originalText;
                 document.querySelectorAll('.btn-primary').forEach(b => b.disabled = false);
             }
+            throw err;
         });
     }
 
@@ -1907,31 +1969,39 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
         return match ? match[1] : null;
     }
 
-    // Real-time Progress Calculation (Visual)
+    // Real-time Dynamic Progress Calculation (Visible/applicable fields only)
     function checkProgress() {
-        const inputs = document.querySelectorAll('[name^="field_"]');
-        const fieldMap = new Set();
-        const filledMap = new Set();
+        const fieldEls = document.querySelectorAll('.crf-field');
+        const applicableFieldIds = new Set();
+        const filledFieldIds = new Set();
         
-        inputs.forEach(input => {
-             const name = input.name;
-             const id = getFieldId(name);
-             if(!id) return;
-             fieldMap.add(id);
-             
-             let isFilled = false;
-             if (input.type === 'radio' || input.type === 'checkbox') {
-                 if (input.checked) isFilled = true;
-             } else {
-                 if (input.value.trim() !== '') isFilled = true;
-             }
-             
-             if (isFilled) filledMap.add(id);
+        fieldEls.forEach(fieldEl => {
+            // Ignore conditionally hidden or skipped fields
+            if (fieldEl.classList.contains('skipped-field') || fieldEl.style.display === 'none') {
+                return;
+            }
+
+            const fieldId = fieldEl.getAttribute('data-field-id');
+            if (!fieldId) return;
+
+            applicableFieldIds.add(fieldId);
+            
+            const inputs = fieldEl.querySelectorAll('input, select, textarea');
+            let isFilled = false;
+            inputs.forEach(input => {
+                if (input.type === 'radio' || input.type === 'checkbox') {
+                    if (input.checked) isFilled = true;
+                } else {
+                    if (input.value && input.value.trim() !== '') isFilled = true;
+                }
+            });
+            
+            if (isFilled) filledFieldIds.add(fieldId);
         });
         
-        const total = fieldMap.size;
-        const filled = filledMap.size;
-        const percent = total > 0 ? Math.round((filled / total) * 100) : 0;
+        const total = applicableFieldIds.size;
+        const filled = filledFieldIds.size;
+        const percent = total > 0 ? Math.round((filled / total) * 100) : 100;
         
         // Update Local Progress Bar & Text
         const progressBar = document.querySelector('.current-form-progress');
@@ -1943,33 +2013,36 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
             progressText.innerText = percent + '%';
         }
 
-        // Update Field Icons
-        fieldMap.forEach(id => {
-            const fieldWrapper = document.querySelector(`.crf-field[data-field-id="${id}"]`);
-            if (fieldWrapper) {
-                const icon = fieldWrapper.querySelector('.status-icon');
-                if (icon) {
-                    if (filledMap.has(id)) {
-                        icon.innerText = 'check_circle';
-                        icon.style.color = 'var(--accent-color)';
-                    } else {
-                        icon.innerText = 'radio_button_unchecked';
-                        icon.style.color = '#94a3b8';
-                    }
+        // Update Field Icons for applicable fields
+        fieldEls.forEach(fieldEl => {
+            const fieldId = fieldEl.getAttribute('data-field-id');
+            const icon = fieldEl.querySelector('.status-icon');
+            if (icon) {
+                if (filledFieldIds.has(fieldId)) {
+                    icon.innerText = 'check_circle';
+                    icon.style.color = 'var(--accent-color)';
+                } else {
+                    icon.innerText = 'radio_button_unchecked';
+                    icon.style.color = '#94a3b8';
                 }
             }
         });
+
+        return { total, filled, percent };
     }
     
-    let saveTimeout;
-    function debouncedSave() {
-        checkProgress(); // Calculate local
-        
+    function debouncedSave(immediate = false) {
+        checkProgress();
         clearTimeout(saveTimeout);
+        if (immediate) {
+            saveTimeout = null;
+            saveData(false);
+            return;
+        }
         saveTimeout = setTimeout(() => {
-             // Trigger save without button context (silent save)
-             saveData(false); 
-        }, 800); // 1.5 second delay after last input
+            saveTimeout = null;
+            saveData(false);
+        }, 500);
     }
     
     // Skip Logic & Conditional Questions Engine
@@ -2024,7 +2097,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
 
                 // If parent field itself is currently skipped/hidden, cascade hide child
                 const parentFieldEl = document.querySelector(`.crf-field[data-variable-name="${cond.field}"]`);
-                if (parentFieldEl && parentFieldEl.classList.contains('skipped-field')) {
+                if (parentFieldEl && (parentFieldEl.classList.contains('skipped-field') || parentFieldEl.style.display === 'none')) {
                     isVisible = false;
                 }
 
@@ -2042,7 +2115,14 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                 } else {
                     fieldEl.style.display = 'none';
                     fieldEl.classList.add('skipped-field');
-                    inputs.forEach(inp => inp.required = false);
+                    inputs.forEach(inp => {
+                        inp.required = false;
+                        if (inp.type === 'radio' || inp.type === 'checkbox') {
+                            inp.checked = false;
+                        } else {
+                            inp.value = '';
+                        }
+                    });
                 }
             } catch(e) {
                 console.error('Error evaluating condition:', e);
@@ -2051,6 +2131,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
 
         handleCalculationsAndFlags();
         handleVisitDisabledFormsRealtime();
+        checkProgress();
     }
 
     function handleVisitDisabledFormsRealtime() {
@@ -2066,11 +2147,19 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
             if (formName.toLowerCase().includes('visit details')) return;
 
             const iconEl = link.querySelector('.form-status-icon');
+            const nameEl = link.querySelector('.tree-form-name');
             let badge = link.querySelector('.badge-disabled');
 
             if (vpVal === 'No') {
+                if (iconEl && !link.getAttribute('data-orig-icon')) {
+                    link.setAttribute('data-orig-icon', iconEl.innerText);
+                    link.setAttribute('data-orig-color', iconEl.style.color || '#94a3b8');
+                }
                 link.classList.add('form-disabled');
                 link.style.opacity = '0.55';
+                link.style.pointerEvents = 'none';
+                link.style.cursor = 'not-allowed';
+                if (nameEl) nameEl.style.color = '#64748b';
                 if (iconEl) {
                     iconEl.innerText = 'block';
                     iconEl.style.color = '#94a3b8';
@@ -2086,10 +2175,15 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
             } else if (vpVal === 'Yes') {
                 link.classList.remove('form-disabled');
                 link.style.opacity = '1';
+                link.style.pointerEvents = '';
+                link.style.cursor = '';
+                if (nameEl) nameEl.style.color = 'var(--text-main)';
                 if (badge) badge.remove();
-                if (iconEl && iconEl.innerText === 'block') {
-                    iconEl.innerText = 'radio_button_unchecked';
-                    iconEl.style.color = '#94a3b8';
+                if (iconEl) {
+                    const origIcon = link.getAttribute('data-orig-icon') || 'radio_button_unchecked';
+                    const origColor = link.getAttribute('data-orig-color') || '#94a3b8';
+                    iconEl.innerText = origIcon;
+                    iconEl.style.color = origColor;
                 }
             }
         });
@@ -2177,9 +2271,40 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
         }
     }
     
+    // Intercept navigation to ensure changes are saved before navigating
+    document.addEventListener('click', async (e) => {
+        const link = e.target.closest('a');
+        if (!link) return;
+        
+        const href = link.getAttribute('href');
+        if (!href || href.startsWith('#') || href.startsWith('javascript:') || link.target === '_blank') {
+            return;
+        }
+
+        if (link.getAttribute('onclick')) return;
+
+        if (hasUnsavedChanges || saveTimeout) {
+            e.preventDefault();
+            clearTimeout(saveTimeout);
+            saveTimeout = null;
+            
+            link.style.pointerEvents = 'none';
+            link.style.opacity = '0.7';
+
+            try {
+                await saveData(false);
+            } catch(err) {
+                console.error("Auto-save before navigation failed:", err);
+            }
+            
+            window.location.href = href;
+        }
+    });
+
     // Attach Listeners
     document.addEventListener('DOMContentLoaded', () => {
          evaluateSkipLogic();
+         checkProgress();
          
          const inputs = document.querySelectorAll('[name^="field_"]');
          inputs.forEach(input => {
@@ -2187,13 +2312,17 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
              const tag = input.tagName.toLowerCase();
              
              input.addEventListener('input', () => {
+                 hasUnsavedChanges = true;
                  evaluateSkipLogic();
                  checkProgress();
              });
 
              input.addEventListener('change', () => {
+                 hasUnsavedChanges = true;
                  evaluateSkipLogic();
-                 debouncedSave();
+                 checkProgress();
+                 const isClickSelect = (type === 'radio' || type === 'checkbox' || tag === 'select' || type === 'date');
+                 debouncedSave(isClickSelect);
              });
          });
     });

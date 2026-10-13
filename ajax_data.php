@@ -25,7 +25,7 @@ try {
     $is_manager = (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'admin') !== false);
 
     if ($action === 'save_data') {
-        if (!hasPermission('enter_data') && !hasPermission('edit')) {
+        if (!hasPermission('enter_data') && !hasPermission('edit') && !$is_coordinator) {
             throw new Exception("Unauthorized: Enter Data permission required");
         }
         // 1. Ensure Tables Exist (Lazy Migration)
@@ -838,7 +838,7 @@ try {
                  }
              }
              
-             $is_complete_val = ($status_text === 'complete' || $status_text === 'verified') ? 1 : 0;
+             $is_complete_val = ($status_text === 'complete' || $status_text === 'verified') ? 'true' : 'false';
              
              $is_verified_val = ($monitor_reviewed || $manager_reviewed) ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
              if ($status_row) {
@@ -1174,7 +1174,7 @@ function calculateAndSaveProgress($pdo, $study_id, $subject_id, $visit_id, $form
         }
     }
     
-    $is_complete = ($status === 'complete' || $status === 'verified') ? 1 : 0;
+    $is_complete = ($status === 'complete' || $status === 'verified') ? 'true' : 'false';
 
     if ($stat_row) {
          $pdo->prepare("UPDATE subject_form_status SET status = ?, is_complete = ?, progress_percent = ?, repeating_instance_id = ?, updated_at = NOW() WHERE id = ?")
@@ -1199,27 +1199,29 @@ function calculateAndSaveProgress($pdo, $study_id, $subject_id, $visit_id, $form
                 $stat_id = $stmt_chk_stat->fetchColumn();
 
                 if ($stat_id) {
-                    $pdo->prepare("UPDATE subject_form_status SET status = 'skipped', is_complete = 1, progress_percent = 100, updated_at = NOW() WHERE id = ?")
+                    $pdo->prepare("UPDATE subject_form_status SET status = 'skipped', is_complete = TRUE, progress_percent = 100, updated_at = NOW() WHERE id = ?")
                         ->execute([$stat_id]);
                 } else {
-                    $pdo->prepare("INSERT INTO subject_form_status (study_id, subject_id, visit_id, form_id, repeating_instance_id, status, is_complete, progress_percent, updated_at) VALUES (?, ?, ?, ?, 0, 'skipped', 1, 100, NOW())")
+                    $pdo->prepare("INSERT INTO subject_form_status (study_id, subject_id, visit_id, form_id, repeating_instance_id, status, is_complete, progress_percent, updated_at) VALUES (?, ?, ?, ?, 0, 'skipped', TRUE, 100, NOW())")
                         ->execute([$study_id, $subject_id, $visit_id, $oth_fid]);
                 }
             }
         } elseif ($vp_val === 'Yes') {
-            // If other forms in this visit were marked 'skipped', revert those that have no data
+            // If other forms in this visit were marked 'skipped', revert those that have no data, or recalculate if they had data
             $stmt_other = $pdo->prepare("SELECT id FROM study_forms WHERE visit_id = ? AND id != ?");
             $stmt_other->execute([$visit_id, $form_id]);
             $other_form_ids = $stmt_other->fetchAll(PDO::FETCH_COLUMN);
 
             foreach ($other_form_ids as $oth_fid) {
-                $stmt_has_data = $pdo->prepare("SELECT COUNT(*) FROM subject_data WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = 0 OR repeating_instance_id IS NULL)");
+                $stmt_has_data = $pdo->prepare("SELECT COUNT(*) FROM subject_data WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = 0 OR repeating_instance_id IS NULL) AND value IS NOT NULL AND value != ''");
                 $stmt_has_data->execute([$subject_id, $oth_fid]);
                 $has_data = ((int)$stmt_has_data->fetchColumn()) > 0;
 
                 if (!$has_data) {
-                    $pdo->prepare("UPDATE subject_form_status SET status = 'empty', is_complete = 0, progress_percent = 0, updated_at = NOW() WHERE subject_id = ? AND form_id = ? AND status = 'skipped' AND (repeating_instance_id = 0 OR repeating_instance_id IS NULL)")
+                    $pdo->prepare("UPDATE subject_form_status SET status = 'empty', is_complete = FALSE, progress_percent = 0, updated_at = NOW() WHERE subject_id = ? AND form_id = ? AND status = 'skipped' AND (repeating_instance_id = 0 OR repeating_instance_id IS NULL)")
                         ->execute([$subject_id, $oth_fid]);
+                } else {
+                    calculateAndSaveProgress($pdo, $study_id, $subject_id, $visit_id, $oth_fid, 0);
                 }
             }
         }
