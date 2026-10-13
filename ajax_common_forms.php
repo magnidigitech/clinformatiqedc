@@ -42,7 +42,7 @@ try {
         $sdr_filter = trim($_POST['sdr_status'] ?? '');
         $include_voided = !empty($_POST['include_voided']) && $_POST['include_voided'] !== 'false';
 
-        if (!in_array($form_type, ['MH', 'AE', 'CM'], true)) {
+        if (!in_array($form_type, ['MH', 'AE', 'CM', 'TA'], true)) {
             throw new Exception("Invalid form type");
         }
 
@@ -102,6 +102,11 @@ try {
                 if ($form_type === 'MH' && !empty($data['mh_term'])) $term_match = strpos(strtolower($data['mh_term']), $search_lower) !== false;
                 if ($form_type === 'AE' && !empty($data['ae_term'])) $term_match = strpos(strtolower($data['ae_term']), $search_lower) !== false;
                 if ($form_type === 'CM' && !empty($data['medication_name'])) $term_match = strpos(strtolower($data['medication_name']), $search_lower) !== false;
+                if ($form_type === 'TA') {
+                    if (!empty($data['tumor_timepoint']) && strpos(strtolower($data['tumor_timepoint']), $search_lower) !== false) $term_match = true;
+                    if (!empty($data['recist_overall_response']) && strpos(strtolower($data['recist_overall_response']), $search_lower) !== false) $term_match = true;
+                    if (!empty($data['imaging_modality']) && strpos(strtolower($data['imaging_modality']), $search_lower) !== false) $term_match = true;
+                }
                 
                 if (!$num_match && !$term_match) {
                     continue; // skip non-matching
@@ -416,7 +421,7 @@ try {
         $mode = trim($_POST['mode'] ?? 'draft'); // 'draft' or 'complete'
         $change_reason = trim($_POST['change_reason'] ?? 'Clinical Data Update');
 
-        if (!in_array($form_type, ['MH', 'AE', 'CM'], true)) {
+        if (!in_array($form_type, ['MH', 'AE', 'CM', 'TA'], true)) {
             throw new Exception("Invalid form type");
         }
         if (!in_array($mode, ['draft', 'complete'], true)) {
@@ -523,6 +528,25 @@ try {
 
                 if ($start_date !== '' && $stop_date !== '' && $stop_date < $start_date) {
                     throw new Exception("Stop Date cannot precede Start Date.");
+                }
+            }
+            elseif ($form_type === 'TA') {
+                $tumor_assessed = trim($data['tumor_assessed'] ?? '');
+                if ($tumor_assessed === '') throw new Exception("Tumor Assessment Performed status is required to mark complete.");
+                if ($tumor_assessed === 'No') {
+                    if (empty(trim($data['tumor_not_assessed_reason'] ?? ''))) {
+                        throw new Exception("Reason tumor assessment not performed is required.");
+                    }
+                } else {
+                    if (empty(trim($data['tumor_timepoint'] ?? ''))) {
+                        throw new Exception("Assessment Time Point is required.");
+                    }
+                    if (empty(trim($data['imaging_date'] ?? ''))) {
+                        throw new Exception("Imaging Assessment Date is required.");
+                    }
+                    if (empty(trim($data['imaging_modality'] ?? ''))) {
+                        throw new Exception("Imaging Modality is required.");
+                    }
                 }
             }
         }

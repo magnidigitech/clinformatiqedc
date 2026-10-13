@@ -19,7 +19,7 @@ $pdo = getDB();
 ensureCommonFormsTables($pdo);
 
 $current_common_form = strtolower(trim($_GET['common_form'] ?? ''));
-if (!in_array($current_common_form, ['mh', 'ae', 'cm'], true)) {
+if (!in_array($current_common_form, ['mh', 'ae', 'cm', 'ta'], true)) {
     $current_common_form = '';
 }
 
@@ -599,6 +599,9 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
         <a href="?subject_id=<?php echo $subject_id; ?>&common_form=cm" style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.875rem; font-weight: 600; text-decoration: none; padding: 0.75rem 0; color: <?php echo ($current_common_form === 'cm') ? 'var(--primary-color)' : '#64748b'; ?>; border-bottom: 2px solid <?php echo ($current_common_form === 'cm') ? 'var(--primary-color)' : 'transparent'; ?>;">
             <span class="material-icons-round" style="font-size: 1.1rem; color: #059669;">medication</span> Concomitant Medications (CM)
         </a>
+        <a href="?subject_id=<?php echo $subject_id; ?>&common_form=ta" style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.875rem; font-weight: 600; text-decoration: none; padding: 0.75rem 0; color: <?php echo ($current_common_form === 'ta') ? 'var(--primary-color)' : '#64748b'; ?>; border-bottom: 2px solid <?php echo ($current_common_form === 'ta') ? 'var(--primary-color)' : 'transparent'; ?>;">
+            <span class="material-icons-round" style="font-size: 1.1rem; color: #8b5cf6;">radar</span> Tumor Assessment (TA)
+        </a>
     </div>
 
     <div class="entry-layout">
@@ -762,6 +765,14 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                              <span class="badge" id="sidebar-count-cm" style="font-size: 0.75rem; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 999px;">0</span>
                          </div>
                      </a>
+                     <a href="?subject_id=<?php echo $subject_id; ?>&common_form=ta" class="visit-header <?php echo ($current_common_form === 'ta') ? 'active' : ''; ?>" style="display: block; padding: 0.65rem 1rem; text-decoration: none;">
+                         <div style="display: flex; justify-content: space-between; align-items: center;">
+                             <div style="display: flex; align-items: center; gap: 0.5rem; font-weight: 600; color: #334155;">
+                                 <span class="material-icons-round" style="font-size: 1.25rem; color: #8b5cf6;">radar</span> Tumor Assessment
+                             </div>
+                             <span class="badge" id="sidebar-count-ta" style="font-size: 0.75rem; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 999px;">0</span>
+                         </div>
+                     </a>
                  </div>
 
             </div>
@@ -770,7 +781,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
         <!-- Main Form Area -->
         <main class="entry-main">
             <?php if (!empty($current_common_form)): ?>
-                <!-- COMMON FORMS VIEW (MH / AE / CM) -->
+                <!-- COMMON FORMS VIEW (MH / AE / CM / TA) -->
                 <div class="crf-card" style="max-width: 1200px;">
                     <div class="crf-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
                         <div>
@@ -782,6 +793,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                                     if ($current_common_form === 'mh') echo '<span class="material-icons-round" style="color: #2563eb;">history_edu</span> Medical History (MH)';
                                     elseif ($current_common_form === 'ae') echo '<span class="material-icons-round" style="color: #d97706;">warning_amber</span> Adverse Events (AE)';
                                     elseif ($current_common_form === 'cm') echo '<span class="material-icons-round" style="color: #059669;">medication</span> Concomitant Medications (CM)';
+                                    elseif ($current_common_form === 'ta') echo '<span class="material-icons-round" style="color: #8b5cf6;">radar</span> Tumor Assessment (TA)';
                                 ?>
                                 <span id="commonFormRecordCountBadge" style="background: #e2e8f0; color: #475569; font-size: 0.8rem; padding: 2px 8px; border-radius: 99px; font-weight: 600;">0</span>
                             </h1>
@@ -1122,7 +1134,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                                         
                                         <!-- Field Label -->
                                         <div class="field-label" style="display: flex; align-items: center; gap: 0.25rem; flex-wrap: wrap;">
-                                            <span><?php echo ($index + 1) . '. ' . htmlspecialchars($field['label']); ?></span>
+                                            <span><?php echo htmlspecialchars($field['label']); ?></span>
                                             <?php if($field['is_required']) echo '<span style="color:#ef4444">*</span>'; ?>
                                             <?php if (!empty($field['help_text'])): ?>
                                                 <div class="tooltip-container">
@@ -3403,9 +3415,9 @@ let currentEditingRecordData = null;
 let currentLinkableRecords = [];
 
 document.addEventListener('DOMContentLoaded', function() {
-    if (COMMON_FORM_TYPE && ['MH', 'AE', 'CM'].includes(COMMON_FORM_TYPE)) {
-        loadCommonRecords();
-    }
+    ['MH', 'AE', 'CM', 'TA'].forEach(ft => {
+        loadCommonRecords(ft);
+    });
 });
 
 function debounceCommonSearch() {
@@ -3511,6 +3523,20 @@ function renderCommonTable(records, formType) {
             <th style="padding: 0.85rem 1rem; text-align: left;">Stop Date</th>
             <th style="padding: 0.85rem 1rem; text-align: center;">Taken For</th>
             <th style="padding: 0.85rem 1rem; text-align: left;">Linked Conditions / Events</th>
+            <th style="padding: 0.85rem 1rem; text-align: center;">Status</th>
+            <th style="padding: 0.85rem 1rem; text-align: center;">SDR</th>
+            <th style="padding: 0.85rem 1rem; text-align: center;">Queries</th>
+            <th style="padding: 0.85rem 1rem; text-align: right;">Actions</th>
+        `;
+    } else if (formType === 'TA') {
+        thead.innerHTML = `
+            <th style="padding: 0.85rem 1rem; text-align: left;">TA Number</th>
+            <th style="padding: 0.85rem 1rem; text-align: left;">Time Point</th>
+            <th style="padding: 0.85rem 1rem; text-align: left;">Imaging Date</th>
+            <th style="padding: 0.85rem 1rem; text-align: left;">Modality</th>
+            <th style="padding: 0.85rem 1rem; text-align: center;">Target Lesions</th>
+            <th style="padding: 0.85rem 1rem; text-align: center;">Sum LD (mm)</th>
+            <th style="padding: 0.85rem 1rem; text-align: center;">Overall Response</th>
             <th style="padding: 0.85rem 1rem; text-align: center;">Status</th>
             <th style="padding: 0.85rem 1rem; text-align: center;">SDR</th>
             <th style="padding: 0.85rem 1rem; text-align: center;">Queries</th>
@@ -3675,6 +3701,37 @@ function renderCommonTable(records, formType) {
                     </td>
                 </tr>
             `;
+        } else if (formType === 'TA') {
+            let respBg = '#f1f5f9'; let respColor = '#475569';
+            if (d.recist_overall_response && d.recist_overall_response.startsWith('CR')) { respBg = '#ecfdf5'; respColor = '#047857'; }
+            else if (d.recist_overall_response && d.recist_overall_response.startsWith('PR')) { respBg = '#eff6ff'; respColor = '#1d4ed8'; }
+            else if (d.recist_overall_response && d.recist_overall_response.startsWith('PD')) { respBg = '#fef2f2'; respColor = '#dc2626'; }
+            else if (d.recist_overall_response && d.recist_overall_response.startsWith('SD')) { respBg = '#fff7ed'; respColor = '#c2410c'; }
+
+            html += `
+                <tr style="${rowStyle}">
+                    <td style="padding: 0.85rem 1rem; font-weight: 700; color: #1e293b;">
+                        ${escapeHtml(r.record_number)}
+                        ${isVoided ? '<span style="background: #dc2626; color: white; font-size: 0.65rem; padding: 1px 5px; border-radius: 4px; margin-left: 4px;">VOIDED</span>' : ''}
+                    </td>
+                    <td style="padding: 0.85rem 1rem; color: #0f172a; font-weight: 600;">${escapeHtml(d.tumor_timepoint || '-')}</td>
+                    <td style="padding: 0.85rem 1rem; color: #475569;">${escapeHtml(d.imaging_date || '-')}</td>
+                    <td style="padding: 0.85rem 1rem; color: #475569;">${escapeHtml(d.imaging_modality === 'Other' ? (d.imaging_modality_other || 'Other') : (d.imaging_modality || '-'))}</td>
+                    <td style="padding: 0.85rem 1rem; text-align: center;">
+                        <span style="font-weight: 600; color: ${d.target_lesions_present === 'Yes' ? '#0f172a' : '#64748b'};">${escapeHtml(d.target_lesions_present || '-')}</span>
+                    </td>
+                    <td style="padding: 0.85rem 1rem; text-align: center; font-weight: 600; color: #334155;">${escapeHtml(d.sum_longest_dia || '-')}</td>
+                    <td style="padding: 0.85rem 1rem; text-align: center;">
+                        <span style="background: ${respBg}; color: ${respColor}; padding: 2px 8px; border-radius: 99px; font-weight: 600; font-size: 0.75rem;">${escapeHtml(d.recist_overall_response || '-')}</span>
+                    </td>
+                    <td style="padding: 0.85rem 1rem; text-align: center;">${statusBadge}</td>
+                    <td style="padding: 0.85rem 1rem; text-align: center;">${sdrBadge}</td>
+                    <td style="padding: 0.85rem 1rem; text-align: center;">${queryBadge}</td>
+                    <td style="padding: 0.85rem 1rem; text-align: right;">
+                        ${renderRecordActionButtons(r, 'TA')}
+                    </td>
+                </tr>
+            `;
         }
     });
 
@@ -3748,7 +3805,8 @@ function openCommonFormModal(recordId, formType, defaultData = null) {
     const formNames = {
         'MH': 'Medical History (MH)',
         'AE': 'Adverse Events (AE)',
-        'CM': 'Concomitant Medications (CM)'
+        'CM': 'Concomitant Medications (CM)',
+        'TA': 'Tumor Assessment (TA)'
     };
     const formNameStr = formNames[formType] || (formType + ' Form');
     const subTitleEl = document.getElementById('cfEditorSubTitle');
@@ -3800,6 +3858,7 @@ function setupEditorForm(rec, formType) {
     if (formType === 'MH') iconHtml = '<span class="material-icons-round" style="color: #2563eb; font-size: 1.35rem;">history_edu</span>';
     else if (formType === 'AE') iconHtml = '<span class="material-icons-round" style="color: #d97706; font-size: 1.35rem;">warning_amber</span>';
     else if (formType === 'CM') iconHtml = '<span class="material-icons-round" style="color: #059669; font-size: 1.35rem;">medication</span>';
+    else if (formType === 'TA') iconHtml = '<span class="material-icons-round" style="color: #8b5cf6; font-size: 1.35rem;">radar</span>';
 
     document.getElementById('cfEditorTitle').innerHTML = `${iconHtml} <span>${escapeHtml(rec.record_number)}</span>`;
 
@@ -4141,6 +4200,317 @@ function setupEditorForm(rec, formType) {
         if (indType === 'MH' || indType === 'AE') {
             loadCMLinkableRecords(indType, existingLinks);
         }
+    } else if (formType === 'TA') {
+        let tlRowsHtml = '';
+        for (let i = 1; i <= 5; i++) {
+            const org = d[`tl${i}_organ`] || '';
+            const site = d[`tl${i}_site`] || '';
+            const axis = d[`tl${i}_axis`] || 'Long';
+            const dia = d[`tl${i}_longest_dia`] || '';
+            const st = d[`tl${i}_status`] || 'Measured';
+            tlRowsHtml += `
+                <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 0.5rem; font-weight: 600; font-size: 0.8rem; color: #475569;">TL ${i}</td>
+                    <td style="padding: 0.5rem;">
+                        <input type="text" id="inp_ta_tl${i}_organ" class="form-input" style="width: 100%; font-size: 0.8rem;" value="${escapeHtml(org)}" placeholder="e.g. Lung, Liver, Lymph Node">
+                    </td>
+                    <td style="padding: 0.5rem;">
+                        <input type="text" id="inp_ta_tl${i}_site" class="form-input" style="width: 100%; font-size: 0.8rem;" value="${escapeHtml(site)}" placeholder="Anatomical location">
+                    </td>
+                    <td style="padding: 0.5rem;">
+                        <select id="inp_ta_tl${i}_axis" class="form-input" style="width: 100%; font-size: 0.8rem;">
+                            <option value="Long" ${axis === 'Long' ? 'selected' : ''}>Long (Non-nodal)</option>
+                            <option value="Short" ${axis === 'Short' ? 'selected' : ''}>Short (Nodal)</option>
+                        </select>
+                    </td>
+                    <td style="padding: 0.5rem;">
+                        <input type="number" step="0.1" id="inp_ta_tl${i}_longest_dia" class="form-input tl-dia-input" oninput="calcTaSumDia()" style="width: 90px; font-size: 0.8rem;" value="${escapeHtml(dia)}" placeholder="mm">
+                    </td>
+                    <td style="padding: 0.5rem;">
+                        <select id="inp_ta_tl${i}_status" class="form-input" style="width: 100%; font-size: 0.8rem;">
+                            <option value="Measured" ${st === 'Measured' ? 'selected' : ''}>Measured</option>
+                            <option value="Absent" ${st === 'Absent' ? 'selected' : ''}>Absent</option>
+                            <option value="Too small to measure" ${st === 'Too small to measure' ? 'selected' : ''}>Too small to measure</option>
+                            <option value="Not assessed" ${st === 'Not assessed' ? 'selected' : ''}>Not assessed</option>
+                        </select>
+                    </td>
+                </tr>
+            `;
+        }
+
+        let ntlRowsHtml = '';
+        for (let i = 1; i <= 3; i++) {
+            const norg = d[`ntl${i}_organ`] || '';
+            const nsite = d[`ntl${i}_site`] || '';
+            const nst = d[`ntl${i}_status`] || 'Present';
+            ntlRowsHtml += `
+                <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 0.5rem; font-weight: 600; font-size: 0.8rem; color: #475569;">NTL ${i}</td>
+                    <td style="padding: 0.5rem;">
+                        <input type="text" id="inp_ta_ntl${i}_organ" class="form-input" style="width: 100%; font-size: 0.8rem;" value="${escapeHtml(norg)}" placeholder="e.g. Bone, Peritoneum">
+                    </td>
+                    <td style="padding: 0.5rem;">
+                        <input type="text" id="inp_ta_ntl${i}_site" class="form-input" style="width: 100%; font-size: 0.8rem;" value="${escapeHtml(nsite)}" placeholder="Anatomical location">
+                    </td>
+                    <td style="padding: 0.5rem;">
+                        <select id="inp_ta_ntl${i}_status" class="form-input" style="width: 100%; font-size: 0.8rem;">
+                            <option value="Present" ${nst === 'Present' ? 'selected' : ''}>Present</option>
+                            <option value="Absent" ${nst === 'Absent' ? 'selected' : ''}>Absent</option>
+                            <option value="Unequivocal progression" ${nst === 'Unequivocal progression' ? 'selected' : ''}>Unequivocal progression</option>
+                            <option value="Not assessed" ${nst === 'Not assessed' ? 'selected' : ''}>Not assessed</option>
+                        </select>
+                    </td>
+                </tr>
+            `;
+        }
+
+        fieldsBox.innerHTML = `
+            <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+                <!-- General Assessment Info -->
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem;">
+                    <div style="font-weight: 700; color: #1e293b; margin-bottom: 0.75rem; font-size: 0.95rem; display: flex; align-items: center; gap: 0.5rem;">
+                        <span class="material-icons-round" style="color: #8b5cf6;">tune</span> Assessment Parameters (RECIST 1.1)
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                        <div>
+                            <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                                Assessment Method
+                            </label>
+                            <input type="text" id="inp_ta_recist_method" class="form-input" value="${escapeHtml(d.recist_method || 'RECIST 1.1')}" readonly style="background: #f1f5f9; width: 100%;">
+                        </div>
+                        <div>
+                            <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                                Was Tumor Assessment Performed? <span style="color: #dc2626;">*</span>
+                            </label>
+                            <select id="inp_ta_tumor_assessed" onchange="onTaAssessedChange()" class="form-input" style="width: 100%;">
+                                <option value="Yes" ${d.tumor_assessed !== 'No' ? 'selected' : ''}>Yes</option>
+                                <option value="No" ${d.tumor_assessed === 'No' ? 'selected' : ''}>No</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="taNotAssessedReasonContainer" style="display: ${d.tumor_assessed === 'No' ? 'block' : 'none'}; margin-bottom: 1rem;">
+                        <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                            Reason Tumor Assessment Not Performed <span style="color: #dc2626;">*</span>
+                        </label>
+                        <input type="text" id="inp_ta_not_assessed_reason" class="form-input" value="${escapeHtml(d.tumor_not_assessed_reason || '')}" placeholder="Enter clinical reason..." style="width: 100%;">
+                    </div>
+
+                    <div id="taAssessmentDetailsContainer" style="display: ${d.tumor_assessed === 'No' ? 'none' : 'block'};">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+                            <div>
+                                <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                                    Assessment Time Point <span style="color: #dc2626;">*</span>
+                                </label>
+                                <input type="text" id="inp_ta_timepoint" class="form-input" value="${escapeHtml(d.tumor_timepoint || '')}" placeholder="e.g. Screening, Cycle 2 Day 1, Week 6" style="width: 100%;">
+                            </div>
+                            <div>
+                                <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                                    Imaging Assessment Date <span style="color: #dc2626;">*</span>
+                                </label>
+                                <input type="date" id="inp_ta_imaging_date" class="form-input" value="${escapeHtml(d.imaging_date || '')}" style="width: 100%;">
+                            </div>
+                            <div>
+                                <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                                    Imaging Modality <span style="color: #dc2626;">*</span>
+                                </label>
+                                <select id="inp_ta_imaging_modality" onchange="onTaModalityChange()" class="form-input" style="width: 100%;">
+                                    <option value="">-- Select --</option>
+                                    <option value="CT" ${d.imaging_modality === 'CT' ? 'selected' : ''}>CT</option>
+                                    <option value="MRI" ${d.imaging_modality === 'MRI' ? 'selected' : ''}>MRI</option>
+                                    <option value="CT and MRI" ${d.imaging_modality === 'CT and MRI' ? 'selected' : ''}>CT and MRI</option>
+                                    <option value="PET-CT" ${d.imaging_modality === 'PET-CT' ? 'selected' : ''}>PET-CT</option>
+                                    <option value="Other" ${d.imaging_modality === 'Other' ? 'selected' : ''}>Other</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="taModalityOtherContainer" style="display: ${d.imaging_modality === 'Other' ? 'block' : 'none'}; margin-top: 0.75rem;">
+                            <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                                Other Modality — Specify <span style="color: #dc2626;">*</span>
+                            </label>
+                            <input type="text" id="inp_ta_imaging_modality_other" class="form-input" value="${escapeHtml(d.imaging_modality_other || '')}" placeholder="Specify imaging technique..." style="width: 100%;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Target Lesions Section -->
+                <div id="taTargetLesionsContainer" style="display: ${d.tumor_assessed === 'No' ? 'none' : 'block'}; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                        <div style="font-weight: 700; color: #1e293b; font-size: 0.95rem; display: flex; align-items: center; gap: 0.5rem;">
+                            <span class="material-icons-round" style="color: #2563eb;">center_focus_strong</span> Target Lesions (Max 5 total, max 2 per organ)
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <label style="font-weight: 600; font-size: 0.85rem; color: #334155;">Target Lesions Present?</label>
+                            <select id="inp_ta_target_present" onchange="onTaTargetPresentChange()" class="form-input" style="width: 100px; font-size: 0.85rem;">
+                                <option value="Yes" ${d.target_lesions_present !== 'No' ? 'selected' : ''}>Yes</option>
+                                <option value="No" ${d.target_lesions_present === 'No' ? 'selected' : ''}>No</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="taTargetTableContainer" style="display: ${d.target_lesions_present === 'No' ? 'none' : 'block'};">
+                        <table style="width: 100%; border-collapse: collapse; background: white; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden;">
+                            <thead style="background: #f1f5f9; font-size: 0.8rem; color: #475569;">
+                                <tr>
+                                    <th style="padding: 0.5rem; text-align: left; width: 60px;">Lesion</th>
+                                    <th style="padding: 0.5rem; text-align: left;">Organ / Tissue</th>
+                                    <th style="padding: 0.5rem; text-align: left;">Site / Location</th>
+                                    <th style="padding: 0.5rem; text-align: left; width: 140px;">Axis</th>
+                                    <th style="padding: 0.5rem; text-align: left; width: 100px;">Diameter (mm)</th>
+                                    <th style="padding: 0.5rem; text-align: left; width: 140px;">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${tlRowsHtml}
+                            </tbody>
+                        </table>
+                        <div style="display: flex; justify-content: flex-end; align-items: center; gap: 0.75rem; margin-top: 0.75rem;">
+                            <label style="font-weight: 700; font-size: 0.875rem; color: #1e293b;">Sum of Longest Diameters (mm):</label>
+                            <input type="number" step="0.1" id="inp_ta_sum_longest_dia" class="form-input" value="${escapeHtml(d.sum_longest_dia || '')}" placeholder="0.0" style="width: 120px; font-weight: 700; text-align: right; background: #f8fafc;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Non-Target Lesions Section -->
+                <div id="taNonTargetContainer" style="display: ${d.tumor_assessed === 'No' ? 'none' : 'block'}; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                        <div style="font-weight: 700; color: #1e293b; font-size: 0.95rem; display: flex; align-items: center; gap: 0.5rem;">
+                            <span class="material-icons-round" style="color: #059669;">bubble_chart</span> Non-Target Lesions
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <label style="font-weight: 600; font-size: 0.85rem; color: #334155;">Non-Target Present?</label>
+                            <select id="inp_ta_nontarget_present" onchange="onTaNonTargetChange()" class="form-input" style="width: 100px; font-size: 0.85rem;">
+                                <option value="Yes" ${d.nontarget_lesions_present !== 'No' ? 'selected' : ''}>Yes</option>
+                                <option value="No" ${d.nontarget_lesions_present === 'No' ? 'selected' : ''}>No</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="taNonTargetTableContainer" style="display: ${d.nontarget_lesions_present === 'No' ? 'none' : 'block'};">
+                        <table style="width: 100%; border-collapse: collapse; background: white; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden;">
+                            <thead style="background: #f1f5f9; font-size: 0.8rem; color: #475569;">
+                                <tr>
+                                    <th style="padding: 0.5rem; text-align: left; width: 60px;">Lesion</th>
+                                    <th style="padding: 0.5rem; text-align: left;">Organ / Tissue</th>
+                                    <th style="padding: 0.5rem; text-align: left;">Site / Location</th>
+                                    <th style="padding: 0.5rem; text-align: left; width: 180px;">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${ntlRowsHtml}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- RECIST Overall Response & Evaluation -->
+                <div id="taResponseContainer" style="display: ${d.tumor_assessed === 'No' ? 'none' : 'block'}; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem;">
+                    <div style="font-weight: 700; color: #1e293b; margin-bottom: 0.75rem; font-size: 0.95rem; display: flex; align-items: center; gap: 0.5rem;">
+                        <span class="material-icons-round" style="color: #d97706;">assessment</span> RECIST 1.1 Overall Evaluation
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                        <div>
+                            <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                                New Lesions Identified? <span style="color: #dc2626;">*</span>
+                            </label>
+                            <select id="inp_ta_new_lesions" onchange="onTaNewLesionsChange()" class="form-input" style="width: 100%;">
+                                <option value="No" ${d.new_lesions_present === 'No' ? 'selected' : ''}>No</option>
+                                <option value="Yes" ${d.new_lesions_present === 'Yes' ? 'selected' : ''}>Yes</option>
+                                <option value="Indeterminate" ${d.new_lesions_present === 'Indeterminate' ? 'selected' : ''}>Indeterminate</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                                RECIST 1.1 Overall Response <span style="color: #dc2626;">*</span>
+                            </label>
+                            <select id="inp_ta_overall_response" class="form-input" style="width: 100%;">
+                                <option value="">-- Select Response --</option>
+                                <option value="CR — Complete Response" ${d.recist_overall_response === 'CR — Complete Response' ? 'selected' : ''}>CR — Complete Response</option>
+                                <option value="PR — Partial Response" ${d.recist_overall_response === 'PR — Partial Response' ? 'selected' : ''}>PR — Partial Response</option>
+                                <option value="SD — Stable Disease" ${d.recist_overall_response === 'SD — Stable Disease' ? 'selected' : ''}>SD — Stable Disease</option>
+                                <option value="PD — Progressive Disease" ${d.recist_overall_response === 'PD — Progressive Disease' ? 'selected' : ''}>PD — Progressive Disease</option>
+                                <option value="NE — Not Evaluable" ${d.recist_overall_response === 'NE — Not Evaluable' ? 'selected' : ''}>NE — Not Evaluable</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="taNewLesionsDetailsContainer" style="display: ${d.new_lesions_present === 'Yes' ? 'block' : 'none'}; margin-bottom: 1rem;">
+                        <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                            New Lesion Details / Anatomical Location <span style="color: #dc2626;">*</span>
+                        </label>
+                        <input type="text" id="inp_ta_new_lesions_details" class="form-input" value="${escapeHtml(d.new_lesions_details || '')}" placeholder="Specify organ and location of new lesion..." style="width: 100%;">
+                    </div>
+                    <div>
+                        <label style="font-weight: 600; font-size: 0.875rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
+                            Clinical Comments / Radiology Notes
+                        </label>
+                        <textarea id="inp_ta_comments" class="form-input" rows="3" placeholder="Enter additional radiological remarks..." style="width: 100%; resize: vertical;">${escapeHtml(d.comments || '')}</textarea>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+}
+
+function onTaAssessedChange() {
+    const val = document.getElementById('inp_ta_tumor_assessed') ? document.getElementById('inp_ta_tumor_assessed').value : 'Yes';
+    const notAssBox = document.getElementById('taNotAssessedReasonContainer');
+    const detailsBox = document.getElementById('taAssessmentDetailsContainer');
+    const tlBox = document.getElementById('taTargetLesionsContainer');
+    const ntlBox = document.getElementById('taNonTargetContainer');
+    const respBox = document.getElementById('taResponseContainer');
+
+    if (val === 'No') {
+        if (notAssBox) notAssBox.style.display = 'block';
+        if (detailsBox) detailsBox.style.display = 'none';
+        if (tlBox) tlBox.style.display = 'none';
+        if (ntlBox) ntlBox.style.display = 'none';
+        if (respBox) respBox.style.display = 'none';
+    } else {
+        if (notAssBox) notAssBox.style.display = 'none';
+        if (detailsBox) detailsBox.style.display = 'block';
+        if (tlBox) tlBox.style.display = 'block';
+        if (ntlBox) ntlBox.style.display = 'block';
+        if (respBox) respBox.style.display = 'block';
+    }
+}
+
+function onTaModalityChange() {
+    const val = document.getElementById('inp_ta_imaging_modality') ? document.getElementById('inp_ta_imaging_modality').value : '';
+    const otherBox = document.getElementById('taModalityOtherContainer');
+    if (otherBox) otherBox.style.display = (val === 'Other') ? 'block' : 'none';
+}
+
+function onTaTargetPresentChange() {
+    const val = document.getElementById('inp_ta_target_present') ? document.getElementById('inp_ta_target_present').value : 'Yes';
+    const box = document.getElementById('taTargetTableContainer');
+    if (box) box.style.display = (val === 'Yes') ? 'block' : 'none';
+}
+
+function onTaNonTargetChange() {
+    const val = document.getElementById('inp_ta_nontarget_present') ? document.getElementById('inp_ta_nontarget_present').value : 'Yes';
+    const box = document.getElementById('taNonTargetTableContainer');
+    if (box) box.style.display = (val === 'Yes') ? 'block' : 'none';
+}
+
+function onTaNewLesionsChange() {
+    const val = document.getElementById('inp_ta_new_lesions') ? document.getElementById('inp_ta_new_lesions').value : 'No';
+    const box = document.getElementById('taNewLesionsDetailsContainer');
+    if (box) box.style.display = (val === 'Yes') ? 'block' : 'none';
+}
+
+function calcTaSumDia() {
+    let sum = 0;
+    let any = false;
+    document.querySelectorAll('.tl-dia-input').forEach(inp => {
+        const v = parseFloat(inp.value);
+        if (!isNaN(v) && v >= 0) {
+            sum += v;
+            any = true;
+        }
+    });
+    const sumEl = document.getElementById('inp_ta_sum_longest_dia');
+    if (sumEl && any) {
+        sumEl.value = sum.toFixed(1);
     }
 }
 
@@ -4384,6 +4754,58 @@ function saveCommonRecord(mode) {
 
         const linkedCbs = document.querySelectorAll('.cb_cm_linked:checked');
         linkedCbs.forEach(cb => linkedIds.push(parseInt(cb.value)));
+    } else if (formType === 'TA') {
+        const inpMethod = document.getElementById('inp_ta_recist_method');
+        const inpAssessed = document.getElementById('inp_ta_tumor_assessed');
+        const inpReason = document.getElementById('inp_ta_not_assessed_reason');
+        const inpTimepoint = document.getElementById('inp_ta_timepoint');
+        const inpDate = document.getElementById('inp_ta_imaging_date');
+        const inpMod = document.getElementById('inp_ta_imaging_modality');
+        const inpModOther = document.getElementById('inp_ta_imaging_modality_other');
+        const inpTargetPres = document.getElementById('inp_ta_target_present');
+        const inpSumDia = document.getElementById('inp_ta_sum_longest_dia');
+        const inpNonTargetPres = document.getElementById('inp_ta_nontarget_present');
+        const inpNewLes = document.getElementById('inp_ta_new_lesions');
+        const inpNewLesDet = document.getElementById('inp_ta_new_lesions_details');
+        const inpResp = document.getElementById('inp_ta_overall_response');
+        const inpComments = document.getElementById('inp_ta_comments');
+
+        data.recist_method = inpMethod ? inpMethod.value : 'RECIST 1.1';
+        data.tumor_assessed = inpAssessed ? inpAssessed.value : 'Yes';
+        data.tumor_not_assessed_reason = inpReason ? inpReason.value.trim() : '';
+        data.tumor_timepoint = inpTimepoint ? inpTimepoint.value.trim() : '';
+        data.imaging_date = inpDate ? inpDate.value : '';
+        data.imaging_modality = inpMod ? inpMod.value : '';
+        data.imaging_modality_other = inpModOther ? inpModOther.value.trim() : '';
+        data.target_lesions_present = inpTargetPres ? inpTargetPres.value : 'Yes';
+        data.sum_longest_dia = inpSumDia ? inpSumDia.value : '';
+        data.nontarget_lesions_present = inpNonTargetPres ? inpNonTargetPres.value : 'Yes';
+        data.new_lesions_present = inpNewLes ? inpNewLes.value : 'No';
+        data.new_lesions_details = inpNewLesDet ? inpNewLesDet.value.trim() : '';
+        data.recist_overall_response = inpResp ? inpResp.value : '';
+        data.comments = inpComments ? inpComments.value.trim() : '';
+
+        for (let i = 1; i <= 5; i++) {
+            const org = document.getElementById(`inp_ta_tl${i}_organ`);
+            const site = document.getElementById(`inp_ta_tl${i}_site`);
+            const axis = document.getElementById(`inp_ta_tl${i}_axis`);
+            const dia = document.getElementById(`inp_ta_tl${i}_longest_dia`);
+            const st = document.getElementById(`inp_ta_tl${i}_status`);
+            data[`tl${i}_organ`] = org ? org.value.trim() : '';
+            data[`tl${i}_site`] = site ? site.value.trim() : '';
+            data[`tl${i}_axis`] = axis ? axis.value : 'Long';
+            data[`tl${i}_longest_dia`] = dia ? dia.value : '';
+            data[`tl${i}_status`] = st ? st.value : 'Measured';
+        }
+
+        for (let i = 1; i <= 3; i++) {
+            const norg = document.getElementById(`inp_ta_ntl${i}_organ`);
+            const nsite = document.getElementById(`inp_ta_ntl${i}_site`);
+            const nst = document.getElementById(`inp_ta_ntl${i}_status`);
+            data[`ntl${i}_organ`] = norg ? norg.value.trim() : '';
+            data[`ntl${i}_site`] = nsite ? nsite.value.trim() : '';
+            data[`ntl${i}_status`] = nst ? nst.value : 'Present';
+        }
     }
 
     const fd = new FormData();

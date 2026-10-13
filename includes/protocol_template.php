@@ -350,9 +350,14 @@ function getProtocolTemplateDefinition() {
                         'fields' => getVitalSignsFields('Screening')
                     ],
                     [
-                        'name' => 'Laboratory Assessments',
+                        'name' => 'Laboratory Assessment Hematology',
                         'order' => 4,
-                        'fields' => getLaboratoryFields('Screening')
+                        'fields' => getHematologyFields('Screening')
+                    ],
+                    [
+                        'name' => 'Laboratory Assessment Chemistry',
+                        'order' => 5,
+                        'fields' => getChemistryFields('Screening')
                     ]
                 ]
             ],
@@ -371,19 +376,19 @@ function getProtocolTemplateDefinition() {
                         'fields' => getVitalSignsFields('Pre-dose')
                     ],
                     [
-                        'name' => 'Pre-dose Laboratory Assessments',
+                        'name' => 'Laboratory Assessment Hematology',
                         'order' => 3,
-                        'fields' => getLaboratoryFields('Pre-dose')
+                        'fields' => getHematologyFields('Pre-dose')
+                    ],
+                    [
+                        'name' => 'Laboratory Assessment Chemistry',
+                        'order' => 4,
+                        'fields' => getChemistryFields('Pre-dose')
                     ],
                     [
                         'name' => 'Study Drug Administration',
-                        'order' => 4,
-                        'fields' => getStudyDrugAdministrationFields()
-                    ],
-                    [
-                        'name' => 'Tumor Assessment',
                         'order' => 5,
-                        'fields' => getTumorAssessmentFields()
+                        'fields' => getStudyDrugAdministrationFields()
                     ]
                 ]
             ],
@@ -477,14 +482,6 @@ function getDemographicsFields() {
             'help' => 'Integer. Calculated from DOB and screening date, or manually entered.'
         ],
         [
-            'var' => 'age_entry_mode',
-            'label' => 'Age calculation method',
-            'type' => 'radio',
-            'opt_group' => 'yes_no',
-            'required' => false,
-            'help' => 'Identifies whether age was auto-calculated (read-only) or manually entered.'
-        ],
-        [
             'var' => 'sex',
             'label' => 'Sex',
             'type' => 'dropdown',
@@ -564,15 +561,6 @@ function getVitalSignsFields($defaultTimepoint = 'Screening') {
             'required' => true,
             'condition' => ['field' => 'vitals_assessed', 'operator' => '==', 'value' => 'Yes'],
             'help' => 'Format: HH:MM (24-hour clock). Required for pre-dose timing comparison.'
-        ],
-        [
-            'var' => 'vitals_timepoint',
-            'label' => 'Time point',
-            'type' => 'text',
-            'required' => true,
-            'condition' => ['field' => 'vitals_assessed', 'operator' => '==', 'value' => 'Yes'],
-            'default' => $defaultTimepoint,
-            'help' => 'Auto-populated: Screening or Pre-dose.'
         ],
         
         // Systolic Blood Pressure
@@ -731,44 +719,17 @@ function getVitalSignsFields($defaultTimepoint = 'Screening') {
 }
 
 /**
- * 5. Laboratory Assessments Form Fields
+ * 5. Laboratory Assessment Hematology Form Fields
  */
-function getLaboratoryFields($timepoint = 'Screening') {
+function getHematologyFields($timepoint = 'Screening') {
     $fields = [
-        [
-            'var' => 'lab_samples_collected',
-            'label' => 'Were any samples collected for the scheduled laboratory assessments?',
-            'type' => 'radio',
-            'opt_group' => 'yes_no',
-            'required' => true,
-            'help' => 'Opening lab question. Selecting No requires a reason and skips panels to the next form.'
-        ],
-        [
-            'var' => 'lab_not_collected_reason',
-            'label' => 'Reason no laboratory samples collected',
-            'type' => 'dropdown',
-            'opt_group' => 'lab_not_collected_reason',
-            'required' => true,
-            'condition' => ['field' => 'lab_samples_collected', 'operator' => '==', 'value' => 'No'],
-            'help' => 'Subject unavailable / Subject declined / Vein access failed / Other.'
-        ],
-        [
-            'var' => 'lab_not_collected_other',
-            'label' => 'Please specify reason not collected',
-            'type' => 'text',
-            'required' => true,
-            'condition' => ['field' => 'lab_not_collected_reason', 'operator' => '==', 'value' => 'Other']
-        ],
-        
-        // --- Hematology Panel ---
         [
             'var' => 'hema_panel_collected',
             'label' => 'Hematology Panel — Was a sample collected for this panel?',
             'type' => 'radio',
             'opt_group' => 'yes_no',
             'required' => true,
-            'condition' => ['field' => 'lab_samples_collected', 'operator' => '==', 'value' => 'Yes'],
-            'help' => 'Yes shows collection details & results status. No requires reason and skips only this panel.'
+            'help' => 'Select Yes to enter sample collection details and test results; No to enter reason not collected.'
         ],
         [
             'var' => 'hema_not_collected_reason',
@@ -791,34 +752,10 @@ function getLaboratoryFields($timepoint = 'Screening') {
             'type' => 'time',
             'required' => true,
             'condition' => ['field' => 'hema_panel_collected', 'operator' => '==', 'value' => 'Yes'],
-            'help' => 'Format: HH:MM (24-hour clock). Checked against dose time for Day 1 pre-dose timing.'
-        ],
-        [
-            'var' => 'hema_lab_name',
-            'label' => 'Hematology — Laboratory Name / ID',
-            'type' => 'text',
-            'required' => true,
-            'condition' => ['field' => 'hema_panel_collected', 'operator' => '==', 'value' => 'Yes']
-        ],
-        [
-            'var' => 'hema_results_status',
-            'label' => 'Hematology — Results status',
-            'type' => 'dropdown',
-            'opt_group' => 'lab_results_status',
-            'required' => true,
-            'condition' => ['field' => 'hema_panel_collected', 'operator' => '==', 'value' => 'Yes'],
-            'help' => 'Available: display test table; Pending: await results without zero substitute; Unavailable: require reason.'
-        ],
-        [
-            'var' => 'hema_unavailable_reason',
-            'label' => 'Hematology — Reason results unavailable',
-            'type' => 'text',
-            'required' => true,
-            'condition' => ['field' => 'hema_results_status', 'operator' => '==', 'value' => 'Unavailable']
+            'help' => 'Format: HH:MM (24-hour clock)'
         ]
     ];
 
-    // Hematology individual tests
     $hemaTests = [
         ['code' => 'hgb', 'name' => 'Hemoglobin', 'unit' => 'g/dL', 'ref_low' => '12.0', 'ref_high' => '17.5'],
         ['code' => 'hct', 'name' => 'Hematocrit', 'unit' => '%', 'ref_low' => '36.0', 'ref_high' => '50.0'],
@@ -830,19 +767,11 @@ function getLaboratoryFields($timepoint = 'Screening') {
 
     foreach ($hemaTests as $t) {
         $fields[] = [
-            'var' => 'hema_' . $t['code'] . '_status',
-            'label' => $t['name'] . ' — Status',
-            'type' => 'dropdown',
-            'opt_group' => 'lab_test_status',
-            'required' => true,
-            'condition' => ['field' => 'hema_results_status', 'operator' => '==', 'value' => 'Available']
-        ];
-        $fields[] = [
             'var' => 'hema_' . $t['code'] . '_val',
             'label' => $t['name'] . ' — Result (' . $t['unit'] . ')',
             'type' => 'text',
             'required' => true,
-            'condition' => ['field' => 'hema_' . $t['code'] . '_status', 'operator' => '==', 'value' => 'Available'],
+            'condition' => ['field' => 'hema_panel_collected', 'operator' => '==', 'value' => 'Yes'],
             'help' => 'Normal range: ' . $t['ref_low'] . ' – ' . $t['ref_high'] . ' ' . $t['unit']
         ];
         $fields[] = [
@@ -850,7 +779,7 @@ function getLaboratoryFields($timepoint = 'Screening') {
             'label' => $t['name'] . ' — Flag',
             'type' => 'dropdown',
             'opt_group' => 'lab_flag',
-            'condition' => ['field' => 'hema_' . $t['code'] . '_status', 'operator' => '==', 'value' => 'Available']
+            'condition' => ['field' => 'hema_panel_collected', 'operator' => '==', 'value' => 'Yes']
         ];
         $fields[] = [
             'var' => 'hema_' . $t['code'] . '_clin_sig',
@@ -864,66 +793,51 @@ function getLaboratoryFields($timepoint = 'Screening') {
             'var' => 'hema_' . $t['code'] . '_action',
             'label' => $t['name'] . ' — Clinical comment / AE Cross-reference',
             'type' => 'text',
-            'condition' => ['field' => 'hema_' . $t['code'] . '_clin_sig', 'operator' => '==', 'value' => 'Yes'],
-            'help' => 'Cross-reference adverse event record or clinical action.'
+            'condition' => ['field' => 'hema_' . $t['code'] . '_clin_sig', 'operator' => '==', 'value' => 'Yes']
         ];
     }
 
-    // --- Chemistry Panel ---
-    $fields[] = [
-        'var' => 'chem_panel_collected',
-        'label' => 'Chemistry Panel — Was a sample collected for this panel?',
-        'type' => 'radio',
-        'opt_group' => 'yes_no',
-        'required' => true,
-        'condition' => ['field' => 'lab_samples_collected', 'operator' => '==', 'value' => 'Yes']
-    ];
-    $fields[] = [
-        'var' => 'chem_not_collected_reason',
-        'label' => 'Chemistry Panel — Reason sample not collected',
-        'type' => 'text',
-        'required' => true,
-        'condition' => ['field' => 'chem_panel_collected', 'operator' => '==', 'value' => 'No']
-    ];
-    $fields[] = [
-        'var' => 'chem_collection_date',
-        'label' => 'Chemistry — Sample collection date',
-        'type' => 'date',
-        'required' => true,
-        'condition' => ['field' => 'chem_panel_collected', 'operator' => '==', 'value' => 'Yes']
-    ];
-    $fields[] = [
-        'var' => 'chem_collection_time',
-        'label' => 'Chemistry — Sample collection time',
-        'type' => 'time',
-        'required' => true,
-        'condition' => ['field' => 'chem_panel_collected', 'operator' => '==', 'value' => 'Yes'],
-        'help' => 'Format: HH:MM (24-hour clock)'
-    ];
-    $fields[] = [
-        'var' => 'chem_lab_name',
-        'label' => 'Chemistry — Laboratory Name / ID',
-        'type' => 'text',
-        'required' => true,
-        'condition' => ['field' => 'chem_panel_collected', 'operator' => '==', 'value' => 'Yes']
-    ];
-    $fields[] = [
-        'var' => 'chem_results_status',
-        'label' => 'Chemistry — Results status',
-        'type' => 'dropdown',
-        'opt_group' => 'lab_results_status',
-        'required' => true,
-        'condition' => ['field' => 'chem_panel_collected', 'operator' => '==', 'value' => 'Yes']
-    ];
-    $fields[] = [
-        'var' => 'chem_unavailable_reason',
-        'label' => 'Chemistry — Reason results unavailable',
-        'type' => 'text',
-        'required' => true,
-        'condition' => ['field' => 'chem_results_status', 'operator' => '==', 'value' => 'Unavailable']
+    return $fields;
+}
+
+/**
+ * 5b. Laboratory Assessment Chemistry Form Fields
+ */
+function getChemistryFields($timepoint = 'Screening') {
+    $fields = [
+        [
+            'var' => 'chem_panel_collected',
+            'label' => 'Chemistry Panel — Was a sample collected for this panel?',
+            'type' => 'radio',
+            'opt_group' => 'yes_no',
+            'required' => true,
+            'help' => 'Select Yes to enter sample collection details and test results; No to enter reason not collected.'
+        ],
+        [
+            'var' => 'chem_not_collected_reason',
+            'label' => 'Chemistry Panel — Reason sample not collected',
+            'type' => 'text',
+            'required' => true,
+            'condition' => ['field' => 'chem_panel_collected', 'operator' => '==', 'value' => 'No']
+        ],
+        [
+            'var' => 'chem_collection_date',
+            'label' => 'Chemistry — Sample collection date',
+            'type' => 'date',
+            'required' => true,
+            'condition' => ['field' => 'chem_panel_collected', 'operator' => '==', 'value' => 'Yes'],
+            'help' => 'Format: MM/DD/YYYY'
+        ],
+        [
+            'var' => 'chem_collection_time',
+            'label' => 'Chemistry — Sample collection time',
+            'type' => 'time',
+            'required' => true,
+            'condition' => ['field' => 'chem_panel_collected', 'operator' => '==', 'value' => 'Yes'],
+            'help' => 'Format: HH:MM (24-hour clock)'
+        ]
     ];
 
-    // Chemistry individual tests
     $chemTests = [
         ['code' => 'sod', 'name' => 'Sodium', 'unit' => 'mmol/L', 'ref_low' => '135', 'ref_high' => '145'],
         ['code' => 'pot', 'name' => 'Potassium', 'unit' => 'mmol/L', 'ref_low' => '3.5', 'ref_high' => '5.0'],
@@ -935,19 +849,11 @@ function getLaboratoryFields($timepoint = 'Screening') {
 
     foreach ($chemTests as $t) {
         $fields[] = [
-            'var' => 'chem_' . $t['code'] . '_status',
-            'label' => $t['name'] . ' — Status',
-            'type' => 'dropdown',
-            'opt_group' => 'lab_test_status',
-            'required' => true,
-            'condition' => ['field' => 'chem_results_status', 'operator' => '==', 'value' => 'Available']
-        ];
-        $fields[] = [
             'var' => 'chem_' . $t['code'] . '_val',
             'label' => $t['name'] . ' — Result (' . $t['unit'] . ')',
             'type' => 'text',
             'required' => true,
-            'condition' => ['field' => 'chem_' . $t['code'] . '_status', 'operator' => '==', 'value' => 'Available'],
+            'condition' => ['field' => 'chem_panel_collected', 'operator' => '==', 'value' => 'Yes'],
             'help' => 'Normal range: ' . $t['ref_low'] . ' – ' . $t['ref_high'] . ' ' . $t['unit']
         ];
         $fields[] = [
@@ -955,14 +861,15 @@ function getLaboratoryFields($timepoint = 'Screening') {
             'label' => $t['name'] . ' — Flag',
             'type' => 'dropdown',
             'opt_group' => 'lab_flag',
-            'condition' => ['field' => 'chem_' . $t['code'] . '_status', 'operator' => '==', 'value' => 'Available']
+            'condition' => ['field' => 'chem_panel_collected', 'operator' => '==', 'value' => 'Yes']
         ];
         $fields[] = [
             'var' => 'chem_' . $t['code'] . '_clin_sig',
             'label' => $t['name'] . ' — Clinically significant?',
             'type' => 'radio',
             'opt_group' => 'yes_no',
-            'condition' => ['field' => 'chem_' . $t['code'] . '_flag', 'operator' => 'in', 'value' => ['Low', 'High']]
+            'condition' => ['field' => 'chem_' . $t['code'] . '_flag', 'operator' => 'in', 'value' => ['Low', 'High']],
+            'help' => 'Shown when result is abnormal (Low/High).'
         ];
         $fields[] = [
             'var' => 'chem_' . $t['code'] . '_action',
@@ -973,6 +880,10 @@ function getLaboratoryFields($timepoint = 'Screening') {
     }
 
     return $fields;
+}
+
+function getLaboratoryFields($timepoint = 'Screening') {
+    return array_merge(getHematologyFields($timepoint), getChemistryFields($timepoint));
 }
 
 /**
@@ -1175,8 +1086,7 @@ function getTumorAssessmentFields() {
         [
             'var' => 'tumor_timepoint',
             'label' => 'Assessment time point',
-            'type' => 'dropdown',
-            'opt_group' => 'tumor_timepoint',
+            'type' => 'text',
             'required' => true,
             'condition' => ['field' => 'tumor_assessed', 'operator' => '==', 'value' => 'Yes'],
             'help' => 'Baseline: establish target lesions (no CR/PR/SD/PD). Post-baseline: evaluate changes.'
@@ -1203,13 +1113,6 @@ function getTumorAssessmentFields() {
             'type' => 'text',
             'required' => true,
             'condition' => ['field' => 'imaging_modality', 'operator' => '==', 'value' => 'Other']
-        ],
-        [
-            'var' => 'assessor_reader',
-            'label' => 'Assessor / reader',
-            'type' => 'text',
-            'condition' => ['field' => 'tumor_assessed', 'operator' => '==', 'value' => 'Yes'],
-            'help' => 'Radiologist / Central Reviewer name'
         ],
         
         // Target Lesions
