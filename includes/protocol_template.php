@@ -30,7 +30,8 @@ function getProtocolTemplateDefinition() {
                 'choices' => [
                     ['label' => 'Subject Screen Failure', 'value' => 'Subject Screen Failure', 'order' => 1],
                     ['label' => 'Subject Unable to Attend Visit', 'value' => 'Subject Unable to Attend Visit', 'order' => 2],
-                    ['label' => 'Subject Withdraw Consent', 'value' => 'Subject Withdraw Consent', 'order' => 3]
+                    ['label' => 'Subject Withdraw Consent', 'value' => 'Subject Withdraw Consent', 'order' => 3],
+                    ['label' => 'Death', 'value' => 'Death', 'order' => 4]
                 ]
             ],
             'sex' => [
@@ -250,8 +251,7 @@ function getProtocolTemplateDefinition() {
                 'layout' => 'vertical',
                 'choices' => [
                     ['label' => 'Completed per protocol', 'value' => 'Completed per protocol', 'order' => 1],
-                    ['label' => 'Discontinued', 'value' => 'Discontinued', 'order' => 2],
-                    ['label' => 'Never started', 'value' => 'Never started', 'order' => 3]
+                    ['label' => 'Discontinued', 'value' => 'Discontinued', 'order' => 2]
                 ]
             ],
             'treatment_discontinuation_reason' => [
@@ -405,16 +405,6 @@ function getProtocolTemplateDefinition() {
                         'name' => 'Treatment Status',
                         'order' => 2,
                         'fields' => getTreatmentStatusFields()
-                    ],
-                    [
-                        'name' => 'Further Study Participation',
-                        'order' => 3,
-                        'fields' => getFurtherParticipationFields()
-                    ],
-                    [
-                        'name' => 'Study Completion / Withdrawal Details',
-                        'order' => 4,
-                        'fields' => getStudyCompletionDetailsFields()
                     ]
                 ]
             ]
@@ -451,6 +441,14 @@ function getVisitDetailsFields() {
             'required' => true,
             'condition' => ['field' => 'visit_performed', 'operator' => '==', 'value' => 'No'],
             'help' => 'Required if visit was not performed.'
+        ],
+        [
+            'var' => 'date_of_death',
+            'label' => 'Date of death',
+            'type' => 'date',
+            'required' => true,
+            'condition' => ['field' => 'visit_not_performed_reason', 'operator' => '==', 'value' => 'Death'],
+            'help' => 'Format: MM/DD/YYYY'
         ]
     ];
 }
@@ -1277,7 +1275,7 @@ function getTreatmentStatusFields() {
             'type' => 'dropdown',
             'opt_group' => 'treatment_status',
             'required' => true,
-            'help' => 'Completed per protocol / Discontinued / Never started.'
+            'help' => 'Completed per protocol / Discontinued.'
         ],
         [
             'var' => 'treatment_completion_date',
@@ -1318,17 +1316,10 @@ function getTreatmentStatusFields() {
             'condition' => ['field' => 'discontinuation_reason', 'operator' => '==', 'value' => 'Other']
         ],
         [
-            'var' => 'treatment_never_started_reason',
-            'label' => 'Reason treatment never started',
-            'type' => 'textarea',
-            'required' => true,
-            'condition' => ['field' => 'treatment_status', 'operator' => '==', 'value' => 'Never started']
-        ],
-        [
             'var' => 'date_of_last_treatment',
             'label' => 'Date of last study treatment',
             'type' => 'date',
-            'condition' => ['field' => 'treatment_status', 'operator' => '!=', 'value' => 'Never started'],
+            'condition' => ['field' => 'treatment_status', 'operator' => 'in', 'value' => ['Completed per protocol', 'Discontinued']],
             'help' => 'Format: MM/DD/YYYY. Preferably derived from administration records.'
         ]
     ];
