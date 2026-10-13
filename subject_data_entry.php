@@ -4364,30 +4364,24 @@ function setupEditorForm(rec, formType) {
             tlRowsHtml += renderTaTlRowHtml(i, { organ: org, site: site, axis: axis, dia: dia, status: st }, existingTlCount > 1);
         }
 
+        let existingNtlCount = 1;
+        for (let i = 5; i >= 1; i--) {
+            if (
+                (d[`ntl${i}_organ`] && d[`ntl${i}_organ`].trim() !== '') ||
+                (d[`ntl${i}_site`] && d[`ntl${i}_site`].trim() !== '')
+            ) {
+                existingNtlCount = i;
+                break;
+            }
+        }
+        if (existingNtlCount < 1) existingNtlCount = 1;
+
         let ntlRowsHtml = '';
-        for (let i = 1; i <= 3; i++) {
+        for (let i = 1; i <= existingNtlCount; i++) {
             const norg = d[`ntl${i}_organ`] || '';
             const nsite = d[`ntl${i}_site`] || '';
             const nst = d[`ntl${i}_status`] || 'Present';
-            ntlRowsHtml += `
-                <tr style="border-bottom: 1px solid #e2e8f0;">
-                    <td style="padding: 0.5rem; font-weight: 600; font-size: 0.8rem; color: #475569;">NTL ${i}</td>
-                    <td style="padding: 0.5rem;">
-                        <input type="text" id="inp_ta_ntl${i}_organ" class="form-input" style="width: 100%; font-size: 0.8rem;" value="${escapeHtml(norg)}" placeholder="e.g. Bone, Peritoneum">
-                    </td>
-                    <td style="padding: 0.5rem;">
-                        <input type="text" id="inp_ta_ntl${i}_site" class="form-input" style="width: 100%; font-size: 0.8rem;" value="${escapeHtml(nsite)}" placeholder="Anatomical location">
-                    </td>
-                    <td style="padding: 0.5rem;">
-                        <select id="inp_ta_ntl${i}_status" class="form-input" style="width: 100%; font-size: 0.8rem;">
-                            <option value="Present" ${nst === 'Present' ? 'selected' : ''}>Present</option>
-                            <option value="Absent" ${nst === 'Absent' ? 'selected' : ''}>Absent</option>
-                            <option value="Unequivocal progression" ${nst === 'Unequivocal progression' ? 'selected' : ''}>Unequivocal progression</option>
-                            <option value="Not assessed" ${nst === 'Not assessed' ? 'selected' : ''}>Not assessed</option>
-                        </select>
-                    </td>
-                </tr>
-            `;
+            ntlRowsHtml += renderTaNtlRowHtml(i, { organ: norg, site: nsite, status: nst }, existingNtlCount > 1);
         }
 
         fieldsBox.innerHTML = `
@@ -4527,16 +4521,27 @@ function setupEditorForm(rec, formType) {
                         <table style="width: 100%; border-collapse: collapse; background: white; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden;">
                             <thead style="background: #f1f5f9; font-size: 0.8rem; color: #475569;">
                                 <tr>
-                                    <th style="padding: 0.5rem; text-align: left; width: 60px;">Lesion</th>
-                                    <th style="padding: 0.5rem; text-align: left;">Organ / Tissue</th>
-                                    <th style="padding: 0.5rem; text-align: left;">Site / Location</th>
-                                    <th style="padding: 0.5rem; text-align: left; width: 180px;">Status</th>
+                                    <th style="padding: 0.6rem 0.5rem; text-align: left; width: 60px;">Lesion</th>
+                                    <th style="padding: 0.6rem 0.5rem; text-align: left;">Organ / Tissue</th>
+                                    <th style="padding: 0.6rem 0.5rem; text-align: left;">Site / Location</th>
+                                    <th style="padding: 0.6rem 0.5rem; text-align: left; width: 200px;">Status</th>
+                                    <th style="padding: 0.6rem 0.5rem; text-align: center; width: 45px;">Action</th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody id="taNtlTbody">
                                 ${ntlRowsHtml}
                             </tbody>
                         </table>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.85rem; flex-wrap: wrap; gap: 0.75rem;">
+                            <div style="display: flex; align-items: center; gap: 0.6rem;">
+                                <button type="button" id="btnAddTaNtlRow" onclick="addTaNtlRow()" style="display: inline-flex; align-items: center; gap: 0.35rem; background: #ecfdf5; color: #059669; border: 1px dashed #10b981; padding: 0.45rem 0.9rem; border-radius: 6px; font-weight: 600; font-size: 0.825rem; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#d1fae5'" onmouseout="this.style.background='#ecfdf5'">
+                                    <span class="material-icons-round" style="font-size: 1.15rem; font-weight: bold;">add</span> Add Non-Target Lesion
+                                </button>
+                                <span id="taNtlCountBadge" style="font-size: 0.75rem; color: #64748b; font-weight: 500;">
+                                    (${existingNtlCount} of max 5 lesions)
+                                </span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -4587,6 +4592,7 @@ function setupEditorForm(rec, formType) {
         `;
         if (formType === 'TA') {
             reindexTaTlRows();
+            reindexTaNtlRows();
         }
     }
 }
@@ -4785,6 +4791,121 @@ function calcTaSumDia() {
     const sumEl = document.getElementById('inp_ta_sum_longest_dia');
     if (sumEl) {
         sumEl.value = any ? sum.toFixed(1) : '0.0';
+    }
+}
+
+function renderTaNtlRowHtml(i, data = {}, canDelete = false) {
+    const org = data.organ || '';
+    const site = data.site || '';
+    const st = data.status || 'Present';
+
+    return `
+        <tr class="ta-ntl-row" data-index="${i}" style="border-bottom: 1px solid #e2e8f0; transition: background 0.15s;">
+            <td class="ta-ntl-label" style="padding: 0.6rem 0.5rem; font-weight: 700; font-size: 0.85rem; color: #334155; white-space: nowrap;">NTL ${i}</td>
+            <td style="padding: 0.5rem;">
+                <input type="text" id="inp_ta_ntl${i}_organ" class="form-input ta-ntl-organ" style="width: 100%; font-size: 0.85rem;" value="${escapeHtml(org)}" placeholder="e.g. Bone, Peritoneum">
+            </td>
+            <td style="padding: 0.5rem;">
+                <input type="text" id="inp_ta_ntl${i}_site" class="form-input ta-ntl-site" style="width: 100%; font-size: 0.85rem;" value="${escapeHtml(site)}" placeholder="Anatomical location">
+            </td>
+            <td style="padding: 0.5rem; width: 200px;">
+                <select id="inp_ta_ntl${i}_status" class="form-input ta-ntl-status" style="width: 100%; font-size: 0.85rem;">
+                    <option value="Present" ${st === 'Present' ? 'selected' : ''}>Present</option>
+                    <option value="Absent" ${st === 'Absent' ? 'selected' : ''}>Absent</option>
+                    <option value="Unequivocal progression" ${st === 'Unequivocal progression' ? 'selected' : ''}>Unequivocal progression</option>
+                    <option value="Not assessed" ${st === 'Not assessed' ? 'selected' : ''}>Not assessed</option>
+                </select>
+            </td>
+            <td style="padding: 0.5rem; width: 45px; text-align: center;">
+                <button type="button" class="ta-ntl-del-btn" onclick="removeTaNtlRow(this)" title="Remove lesion" style="background: none; border: none; color: #ef4444; cursor: pointer; padding: 4px; border-radius: 4px; display: ${canDelete ? 'inline-flex' : 'none'}; align-items: center; justify-content: center; transition: all 0.2s;" onmouseover="this.style.background='#fee2e2'" onmouseout="this.style.background='none'">
+                    <span class="material-icons-round" style="font-size: 1.2rem;">delete_outline</span>
+                </button>
+            </td>
+        </tr>
+    `;
+}
+
+function addTaNtlRow() {
+    const tbody = document.getElementById('taNtlTbody');
+    if (!tbody) return;
+    const currentRows = tbody.querySelectorAll('tr.ta-ntl-row');
+    if (currentRows.length >= 5) {
+        if (typeof showToast === 'function') {
+            showToast('Maximum 5 non-target lesions allowed', 'warning');
+        } else {
+            alert('Maximum 5 non-target lesions allowed');
+        }
+        return;
+    }
+    const nextIndex = currentRows.length + 1;
+    const tempDiv = document.createElement('tbody');
+    tempDiv.innerHTML = renderTaNtlRowHtml(nextIndex, {}, true);
+    const newRow = tempDiv.firstElementChild;
+    tbody.appendChild(newRow);
+
+    reindexTaNtlRows();
+}
+
+function removeTaNtlRow(btn) {
+    const row = btn.closest('tr.ta-ntl-row');
+    const tbody = document.getElementById('taNtlTbody');
+    if (!row || !tbody) return;
+    const currentRows = tbody.querySelectorAll('tr.ta-ntl-row');
+    if (currentRows.length <= 1) {
+        if (typeof showToast === 'function') {
+            showToast('At least 1 non-target lesion row is required', 'warning');
+        }
+        return;
+    }
+    row.remove();
+    reindexTaNtlRows();
+}
+
+function reindexTaNtlRows() {
+    const tbody = document.getElementById('taNtlTbody');
+    if (!tbody) return;
+    const rows = tbody.querySelectorAll('tr.ta-ntl-row');
+    const total = rows.length;
+
+    rows.forEach((row, idx) => {
+        const num = idx + 1;
+        row.setAttribute('data-index', num);
+
+        const lbl = row.querySelector('.ta-ntl-label');
+        if (lbl) lbl.textContent = `NTL ${num}`;
+
+        const inpOrgan = row.querySelector('.ta-ntl-organ');
+        if (inpOrgan) inpOrgan.id = `inp_ta_ntl${num}_organ`;
+
+        const inpSite = row.querySelector('.ta-ntl-site');
+        if (inpSite) inpSite.id = `inp_ta_ntl${num}_site`;
+
+        const inpStatus = row.querySelector('.ta-ntl-status');
+        if (inpStatus) inpStatus.id = `inp_ta_ntl${num}_status`;
+
+        const delBtn = row.querySelector('.ta-ntl-del-btn');
+        if (delBtn) {
+            delBtn.style.display = total > 1 ? 'inline-flex' : 'none';
+        }
+    });
+
+    const addBtn = document.getElementById('btnAddTaNtlRow');
+    const countBadge = document.getElementById('taNtlCountBadge');
+    if (addBtn) {
+        if (total >= 5) {
+            addBtn.disabled = true;
+            addBtn.style.opacity = '0.5';
+            addBtn.style.cursor = 'not-allowed';
+            addBtn.title = 'Maximum 5 lesions reached';
+        } else {
+            addBtn.disabled = false;
+            addBtn.style.opacity = '1';
+            addBtn.style.cursor = 'pointer';
+            addBtn.title = 'Add non-target lesion';
+        }
+    }
+    if (countBadge) {
+        countBadge.textContent = `(${total} of max 5 lesions)`;
     }
 }
 
@@ -5080,13 +5201,19 @@ function saveCommonRecord(mode) {
             }
         }
 
-        for (let i = 1; i <= 3; i++) {
+        for (let i = 1; i <= 5; i++) {
             const norg = document.getElementById(`inp_ta_ntl${i}_organ`);
             const nsite = document.getElementById(`inp_ta_ntl${i}_site`);
             const nst = document.getElementById(`inp_ta_ntl${i}_status`);
-            data[`ntl${i}_organ`] = norg ? norg.value.trim() : '';
-            data[`ntl${i}_site`] = nsite ? nsite.value.trim() : '';
-            data[`ntl${i}_status`] = nst ? nst.value : 'Present';
+            if (norg) {
+                data[`ntl${i}_organ`] = norg.value.trim();
+                data[`ntl${i}_site`] = nsite ? nsite.value.trim() : '';
+                data[`ntl${i}_status`] = nst ? nst.value : 'Present';
+            } else {
+                data[`ntl${i}_organ`] = '';
+                data[`ntl${i}_site`] = '';
+                data[`ntl${i}_status`] = '';
+            }
         }
     }
 
