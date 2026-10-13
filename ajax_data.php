@@ -1184,6 +1184,47 @@ function calculateAndSaveProgress($pdo, $study_id, $subject_id, $visit_id, $form
              ->execute([$study_id, $subject_id, $visit_id, $form_id, $repeating_instance_id, $status, $is_complete, $progress]);
     }
 
+    // --- 1.5 Handle Visit Performed Status Cascading to other forms in visit ---
+    if (isset($valuesByVar['visit_performed']) && $visit_id > 0) {
+        $vp_val = trim((string)$valuesByVar['visit_performed']);
+        if ($vp_val === 'No') {
+            // Find all other forms in this visit
+            $stmt_other = $pdo->prepare("SELECT id FROM study_forms WHERE visit_id = ? AND id != ?");
+            $stmt_other->execute([$visit_id, $form_id]);
+            $other_form_ids = $stmt_other->fetchAll(PDO::FETCH_COLUMN);
+
+            foreach ($other_form_ids as $oth_fid) {
+                $stmt_chk_stat = $pdo->prepare("SELECT id FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = 0 OR repeating_instance_id IS NULL)");
+                $stmt_chk_stat->execute([$subject_id, $oth_fid]);
+                $stat_id = $stmt_chk_stat->fetchColumn();
+
+                if ($stat_id) {
+                    $pdo->prepare("UPDATE subject_form_status SET status = 'skipped', is_complete = 1, progress_percent = 100, updated_at = NOW() WHERE id = ?")
+                        ->execute([$stat_id]);
+                } else {
+                    $pdo->prepare("INSERT INTO subject_form_status (study_id, subject_id, visit_id, form_id, repeating_instance_id, status, is_complete, progress_percent, updated_at) VALUES (?, ?, ?, ?, 0, 'skipped', 1, 100, NOW())")
+                        ->execute([$study_id, $subject_id, $visit_id, $oth_fid]);
+                }
+            }
+        } elseif ($vp_val === 'Yes') {
+            // If other forms in this visit were marked 'skipped', revert those that have no data
+            $stmt_other = $pdo->prepare("SELECT id FROM study_forms WHERE visit_id = ? AND id != ?");
+            $stmt_other->execute([$visit_id, $form_id]);
+            $other_form_ids = $stmt_other->fetchAll(PDO::FETCH_COLUMN);
+
+            foreach ($other_form_ids as $oth_fid) {
+                $stmt_has_data = $pdo->prepare("SELECT COUNT(*) FROM subject_data WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = 0 OR repeating_instance_id IS NULL)");
+                $stmt_has_data->execute([$subject_id, $oth_fid]);
+                $has_data = ((int)$stmt_has_data->fetchColumn()) > 0;
+
+                if (!$has_data) {
+                    $pdo->prepare("UPDATE subject_form_status SET status = 'empty', is_complete = 0, progress_percent = 0, updated_at = NOW() WHERE subject_id = ? AND form_id = ? AND status = 'skipped' AND (repeating_instance_id = 0 OR repeating_instance_id IS NULL)")
+                        ->execute([$subject_id, $oth_fid]);
+                }
+            }
+        }
+    }
+
     // --- 2. Calculate Visit Progress ---
     $visit_progress = 0;
     if ($visit_id > 0) {

@@ -103,6 +103,10 @@ function getFormReviewStatus($f_stat) {
     $progress = (int)($f_stat['progress'] ?? 0);
     $status_str = $f_stat['status'] ?? 'empty';
     
+    if ($status_str === 'skipped' || $status_str === 'disabled') {
+        return ['text' => 'Not Applicable', 'color' => '#94a3b8', 'bg' => '#f1f5f9', 'icon' => 'block', 'progress' => 100, 'bar_color' => '#cbd5e1'];
+    }
+    
     if (!$sdr) {
         if ($status_str === 'complete' || $progress == 100) {
             return ['text' => 'Draft (100% Complete)', 'color' => '#0d8e6f', 'bg' => '#f0fdf4', 'icon' => 'check_circle', 'progress' => 0, 'bar_color' => '#cbd5e1'];

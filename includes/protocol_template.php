@@ -28,10 +28,9 @@ function getProtocolTemplateDefinition() {
                 'description' => 'Reasons a scheduled visit was not conducted',
                 'layout' => 'vertical',
                 'choices' => [
-                    ['label' => 'Subject unavailable', 'value' => 'Subject unavailable', 'order' => 1],
-                    ['label' => 'Subject declined', 'value' => 'Subject declined', 'order' => 2],
-                    ['label' => 'Unable to contact subject', 'value' => 'Unable to contact subject', 'order' => 3],
-                    ['label' => 'Other', 'value' => 'Other', 'order' => 4]
+                    ['label' => 'Subject Screen Failure', 'value' => 'Subject Screen Failure', 'order' => 1],
+                    ['label' => 'Subject Unable to Attend Visit', 'value' => 'Subject Unable to Attend Visit', 'order' => 2],
+                    ['label' => 'Subject Withdraw Consent', 'value' => 'Subject Withdraw Consent', 'order' => 3]
                 ]
             ],
             'sex' => [
@@ -425,11 +424,19 @@ function getVisitDetailsFields() {
     return [
         [
             'var' => 'visit_performed',
-            'label' => 'Was the visit performed?',
+            'label' => 'Was this Visit Performed',
             'type' => 'radio',
             'opt_group' => 'yes_no',
             'required' => true,
-            'help' => 'Required at every visit. Selecting No displays reason and skips actual visit date/routine assessments for this visit only.'
+            'help' => 'Required at every visit. Selecting No displays reason and skips actual visit date and routine assessments.'
+        ],
+        [
+            'var' => 'date_of_visit',
+            'label' => 'Date of Visit',
+            'type' => 'date',
+            'required' => true,
+            'condition' => ['field' => 'visit_performed', 'operator' => '==', 'value' => 'Yes'],
+            'help' => 'Format: MM/DD/YYYY. Actual date procedures were conducted.'
         ],
         [
             'var' => 'visit_not_performed_reason',
@@ -439,46 +446,6 @@ function getVisitDetailsFields() {
             'required' => true,
             'condition' => ['field' => 'visit_performed', 'operator' => '==', 'value' => 'No'],
             'help' => 'Required if visit was not performed.'
-        ],
-        [
-            'var' => 'visit_not_performed_other',
-            'label' => 'Please specify',
-            'type' => 'text',
-            'required' => true,
-            'condition' => ['field' => 'visit_not_performed_reason', 'operator' => '==', 'value' => 'Other'],
-            'help' => 'Required when reason is Other.'
-        ],
-        [
-            'var' => 'scheduled_visit_date',
-            'label' => 'Scheduled visit date',
-            'type' => 'date',
-            'required' => false,
-            'help' => 'Format: MM/DD/YYYY. Protocol target date for scheduled visits.'
-        ],
-        [
-            'var' => 'is_unscheduled_visit',
-            'label' => 'Was this an unscheduled visit?',
-            'type' => 'radio',
-            'opt_group' => 'yes_no',
-            'required' => true,
-            'condition' => ['field' => 'visit_performed', 'operator' => '==', 'value' => 'Yes'],
-            'help' => 'Indicate whether this was an unplanned or extra visit.'
-        ],
-        [
-            'var' => 'unscheduled_visit_reason',
-            'label' => 'Reason for unscheduled visit',
-            'type' => 'text',
-            'required' => true,
-            'condition' => ['field' => 'is_unscheduled_visit', 'operator' => '==', 'value' => 'Yes'],
-            'help' => 'Provide clinical justification for unscheduled visit.'
-        ],
-        [
-            'var' => 'date_of_visit',
-            'label' => 'Date of visit',
-            'type' => 'date',
-            'required' => true,
-            'condition' => ['field' => 'visit_performed', 'operator' => '==', 'value' => 'Yes'],
-            'help' => 'Format: MM/DD/YYYY. Actual date procedures were conducted.'
         ]
     ];
 }

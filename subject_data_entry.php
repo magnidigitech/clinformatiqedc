@@ -145,6 +145,20 @@ while($row = $stmt_q->fetch(PDO::FETCH_ASSOC)){
     $statuses[$key]['query_count'] = $row['cnt'];
 }
 
+// Fetch visit_performed status across all visits for this subject
+$stmt_vp = $pdo->prepare("
+    SELECT sf.visit_id, sd.value 
+    FROM subject_data sd
+    JOIN form_fields ff ON sd.field_id = ff.id
+    JOIN study_forms sf ON ff.form_id = sf.id
+    WHERE sd.subject_id = ? AND ff.variable_name = 'visit_performed'
+");
+$stmt_vp->execute([$subject_id]);
+$visit_performed_map = [];
+while ($vp_row = $stmt_vp->fetch(PDO::FETCH_ASSOC)) {
+    $visit_performed_map[$vp_row['visit_id']] = trim((string)$vp_row['value']);
+}
+
 // Fetch Repeating Modules
 $stmt_modules = $pdo->prepare("SELECT * FROM study_repeating_modules WHERE study_id = ? ORDER BY order_index");
 $stmt_modules->execute([$study_id]);
@@ -182,12 +196,16 @@ foreach ($tree_data as $row) {
         $f_id = $row['form_id'];
         $f_stat = $statuses[$f_id . '_0'] ?? ['status' => 'empty', 'progress' => 0];
         
+        $is_v_performed = ($visit_performed_map[$v_id] ?? '') !== 'No';
+        $is_f_disabled = (!$is_v_performed && stripos($row['form_name'], 'Visit Details') === false);
+
         $structure[$v_id]['forms'][] = [
             'id' => $f_id,
             'name' => $row['form_name'],
             'status' => $f_stat['status'],
             'progress' => $f_stat['progress'],
-            'query_count' => $f_stat['query_count'] ?? 0
+            'query_count' => $f_stat['query_count'] ?? 0,
+            'is_disabled' => $is_f_disabled
         ];
         
         $structure[$v_id]['visit_progress_sum'] += $f_stat['progress'];
@@ -305,6 +323,12 @@ if ($current_module_id) {
     }
 }
 
+// Check if current form is disabled due to visit not being performed
+$is_current_visit_performed = ($current_visit_id && isset($visit_performed_map[$current_visit_id])) 
+    ? ($visit_performed_map[$current_visit_id] !== 'No') 
+    : true;
+$is_current_form_disabled = (!$is_current_visit_performed && stripos($current_form_name, 'Visit Details') === false);
+
 // Fetch Fields for the Current Form
 $fields = [];
 if ($current_form_id) {
@@ -405,6 +429,16 @@ if ($current_form_id && $subject_id) {
     $stmt->execute([$subject_id, $current_form_id, $rep_inst_id, $rep_inst_id]);
     $existing_data = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
     
+    // Index existing data and fields by variable name for initial server-side condition evaluation
+    $valuesByVar = [];
+    $fieldsByVar = [];
+    foreach ($fields as $f) {
+        $fieldsByVar[$f['variable_name']] = $f;
+        if (isset($existing_data[$f['id']])) {
+            $valuesByVar[$f['variable_name']] = $existing_data[$f['id']];
+        }
+    }
+    
     // Fetch unified audit trail for this form
     $stmt_audit = $pdo->prepare("
         SELECT a.*, 
@@ -459,6 +493,8 @@ if ($current_form_id && $subject_id) {
         }
         .tree-form:hover { color: var(--accent-color); background: #f8fafc; }
         .tree-form.active { color: var(--accent-color); font-weight: 500; background: rgba(29, 111, 151, 0.08); }
+        .tree-form.form-disabled { opacity: 0.55; background: #f8fafc; }
+        .tree-form.form-disabled:hover { background: #f1f5f9; }
         
         /* Data Entry Form Styles */
         .crf-card { background: white; border: 1px solid var(--border-color); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); margin-bottom: 2rem; max-width: 900px; margin: 0 auto 2rem auto; }
@@ -537,7 +573,7 @@ $sdr_submitted = (bool)($curr_stat['sdr_submitted'] ?? false);
 $monitor_reviewed = (bool)($curr_stat['monitor_reviewed'] ?? false);
 $manager_reviewed = (bool)($curr_stat['manager_reviewed'] ?? false);
 
-if ($sdr_submitted) {
+if ($sdr_submitted || $is_current_form_disabled) {
     $can_edit = false; // Lock editing!
 }
 
@@ -625,22 +661,31 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                                     $f_stat = $statuses[$f_key] ?? ['status' => 'empty', 'progress' => 0];
                                     $q_cnt = $form['query_count'] ?? 0;
                                     $rev_status = getFormReviewStatus($f_stat);
+                                    $is_f_disabled = !empty($form['is_disabled']);
                                 ?>
                                 <a href="?subject_id=<?php echo $subject_id; ?>&visit_id=<?php echo $vid; ?>&form_id=<?php echo $form['id']; ?>" 
-                                   class="tree-form <?php echo ($form['id'] == $current_form_id && !$current_module_id) ? 'active' : ''; ?>">
+                                   class="tree-form <?php echo ($form['id'] == $current_form_id && !$current_module_id) ? 'active' : ''; ?> <?php echo $is_f_disabled ? 'form-disabled' : ''; ?>"
+                                   data-visit-id="<?php echo $vid; ?>"
+                                   data-form-id="<?php echo $form['id']; ?>"
+                                   data-form-name="<?php echo htmlspecialchars($form['name']); ?>"
+                                   style="<?php echo $is_f_disabled ? 'opacity: 0.55;' : ''; ?>">
                                    
-                                   <div style="display: flex; align-items: center; gap: 0.75rem;">
+                                   <div style="display: flex; align-items: center; gap: 0.75rem; flex: 1;">
                                        <!-- Status Icon -->
-                                       <span id="form-icon-<?php echo $form['id']; ?>-0" class="material-icons-round" style="font-size: 1.25rem; color: <?php echo $rev_status['color']; ?>;">
-                                            <?php echo $rev_status['icon']; ?>
+                                       <span id="form-icon-<?php echo $form['id']; ?>-0" class="material-icons-round form-status-icon" style="font-size: 1.25rem; color: <?php echo $is_f_disabled ? '#94a3b8' : $rev_status['color']; ?>;">
+                                            <?php echo $is_f_disabled ? 'block' : $rev_status['icon']; ?>
                                        </span>
                                        
-                                       <span style="font-weight: 500; color: var(--text-main);"><?php echo htmlspecialchars($form['name']); ?></span>
+                                       <span class="tree-form-name" style="font-weight: 500; color: <?php echo $is_f_disabled ? '#64748b' : 'var(--text-main)'; ?>;"><?php echo htmlspecialchars($form['name']); ?></span>
                                        
                                        <?php if($q_cnt > 0): ?>
                                            <span style="background: #ef4444; color: white; font-size: 0.65rem; font-weight: 600; padding: 1px 5px; border-radius: 99px; min-width: 16px; text-align: center;">
                                                 <?php echo $q_cnt; ?>
                                            </span>
+                                       <?php endif; ?>
+
+                                       <?php if($is_f_disabled): ?>
+                                           <span class="badge-disabled" style="font-size: 0.65rem; background: #e2e8f0; color: #64748b; padding: 1px 5px; border-radius: 4px; font-weight: 600; margin-left: auto;">Disabled</span>
                                        <?php endif; ?>
                                    </div>
 
@@ -936,7 +981,13 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                             <div style="display: flex; align-items: center; gap: 1rem;">
                                 <!-- SDR / Review Workflow Buttons -->
                                 <div id="workflow-buttons-container" style="display: inline-flex; align-items: center; gap: 1rem;">
-                                    <?php echo renderWorkflowButtons($is_coordinator, $is_monitor_role, $is_manager_role, $sdr_submitted, $monitor_reviewed, $manager_reviewed, $all_mandatory_completed); ?>
+                                    <?php if ($is_current_form_disabled): ?>
+                                        <span class="badge" style="background: #f1f5f9; color: #64748b; padding: 0.35rem 0.75rem; border-radius: 6px; font-size: 0.8rem; font-weight: 500; display: inline-flex; align-items: center; gap: 0.25rem;">
+                                            <span class="material-icons-round" style="font-size: 1rem;">block</span> Form Disabled (Visit Not Performed)
+                                        </span>
+                                    <?php else: ?>
+                                        <?php echo renderWorkflowButtons($is_coordinator, $is_monitor_role, $is_manager_role, $sdr_submitted, $monitor_reviewed, $manager_reviewed, $all_mandatory_completed); ?>
+                                    <?php endif; ?>
                                 </div>
 
                                 <div style="width: 200px;">
@@ -994,11 +1045,24 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                             </div>
                         </div>
 
+                        <?php if ($is_current_form_disabled): ?>
+                            <div class="alert alert-warning" style="display: flex; align-items: center; gap: 0.85rem; background: #fffbeb; border: 1px solid #fef3c7; border-left: 4px solid #f59e0b; padding: 1rem 1.25rem; border-radius: 8px; margin-bottom: 1.5rem; color: #92400e;">
+                                <span class="material-icons-round" style="font-size: 1.75rem; color: #f59e0b;">block</span>
+                                <div>
+                                    <strong style="font-size: 0.95rem;">Form Disabled — Visit Not Performed</strong>
+                                    <div style="font-size: 0.85rem; color: #b45309; margin-top: 2px;">
+                                        This form (<strong><?php echo htmlspecialchars($current_form_name); ?></strong>) is disabled because <strong>Was this Visit Performed</strong> was answered <strong>No</strong> in Visit Details. Data entry is disabled for this visit.
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+
                         <?php if (empty($fields)): ?>
                             <div style="padding: 3rem; text-align: center; color: var(--text-light);">
                                 <?php echo $current_form_id ? 'No fields defined for this form.' : 'Please select a form.'; ?>
                             </div>
                         <?php else: ?>
+                            <fieldset <?php if($is_current_form_disabled) echo 'disabled style="border: 0; padding: 0; margin: 0; opacity: 0.65; pointer-events: none;"'; else echo 'style="border: 0; padding: 0; margin: 0;"'; ?>>
                             <?php 
                                 // Fetch Query Statuses for this form context
                                 $q_map = [];
@@ -1019,6 +1083,12 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                                 
                                 $f_rules = json_decode($field['validation_rules'] ?? '{}', true);
                                 $f_condition = !empty($f_rules['condition']) ? json_encode($f_rules['condition']) : '';
+                                
+                                // Server-side initial visibility check: hide dependent fields if parent condition is not met
+                                $is_initially_visible = true;
+                                if (!empty($f_rules['condition'])) {
+                                    $is_initially_visible = isFieldApplicable($field, $valuesByVar ?? [], $existing_data ?? [], $fieldsByVar ?? []);
+                                }
 
                                  // Query Logic
                                  $field_queries = $q_map[$field['id']] ?? [];
@@ -1043,7 +1113,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                                      }
                                  }
                             ?>
-                                <div class="crf-field" data-field-id="<?php echo $field['id']; ?>" data-variable-name="<?php echo htmlspecialchars($field['variable_name']); ?>" data-field-type="<?php echo htmlspecialchars($field['type']); ?>" <?php if ($field['is_required']) echo 'data-required="true"'; ?> <?php if ($f_condition) echo 'data-condition="'.htmlspecialchars($f_condition).'"'; ?>>
+                                <div class="crf-field <?php echo !$is_initially_visible ? 'skipped-field' : ''; ?>" <?php echo !$is_initially_visible ? 'style="display: none;"' : ''; ?> data-field-id="<?php echo $field['id']; ?>" data-variable-name="<?php echo htmlspecialchars($field['variable_name']); ?>" data-field-type="<?php echo htmlspecialchars($field['type']); ?>" <?php if ($field['is_required']) echo 'data-required="true"'; ?> <?php if ($f_condition) echo 'data-condition="'.htmlspecialchars($f_condition).'"'; ?>>
                                     <div class="field-label-row">
                                         <!-- Field Status Icon -->
                                         <span class="material-icons-round status-icon" style="color: <?php echo $is_f ? 'var(--accent-color)' : '#94a3b8'; ?>">
@@ -1148,6 +1218,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                                     </div>
                                 </div>
                             <?php endforeach; ?>
+                            </fieldset>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -1967,6 +2038,49 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
         });
 
         handleCalculationsAndFlags();
+        handleVisitDisabledFormsRealtime();
+    }
+
+    function handleVisitDisabledFormsRealtime() {
+        const vpVal = getFieldValueByVar('visit_performed');
+        if (!vpVal) return;
+
+        const visitId = '<?php echo (int)($current_visit_id ?? 0); ?>';
+        if (!visitId || visitId === '0') return;
+
+        const formLinks = document.querySelectorAll(`.tree-form[data-visit-id="${visitId}"]`);
+        formLinks.forEach(link => {
+            const formName = link.getAttribute('data-form-name') || '';
+            if (formName.toLowerCase().includes('visit details')) return;
+
+            const iconEl = link.querySelector('.form-status-icon');
+            let badge = link.querySelector('.badge-disabled');
+
+            if (vpVal === 'No') {
+                link.classList.add('form-disabled');
+                link.style.opacity = '0.55';
+                if (iconEl) {
+                    iconEl.innerText = 'block';
+                    iconEl.style.color = '#94a3b8';
+                }
+                if (!badge) {
+                    badge = document.createElement('span');
+                    badge.className = 'badge-disabled';
+                    badge.style.cssText = 'font-size: 0.65rem; background: #e2e8f0; color: #64748b; padding: 1px 5px; border-radius: 4px; font-weight: 600; margin-left: auto;';
+                    badge.innerText = 'Disabled';
+                    const flexDiv = link.querySelector('div');
+                    if (flexDiv) flexDiv.appendChild(badge);
+                }
+            } else if (vpVal === 'Yes') {
+                link.classList.remove('form-disabled');
+                link.style.opacity = '1';
+                if (badge) badge.remove();
+                if (iconEl && iconEl.innerText === 'block') {
+                    iconEl.innerText = 'radio_button_unchecked';
+                    iconEl.style.color = '#94a3b8';
+                }
+            }
+        });
     }
 
     function handleCalculationsAndFlags() {
