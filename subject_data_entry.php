@@ -1276,6 +1276,10 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
     .modal-overlay.active { display: flex; }
     .modal-box, .modal-card { background: #ffffff !important; border-radius: 8px; padding: 2rem; max-width: 500px; width: 90%; box-shadow: 0 10px 25px rgba(0,0,0,0.2); text-align: center; }
     .modal-card { text-align: left; padding: 0; }
+    #modalCommonFormEditor .modal-card { max-width: 65% !important; width: 65% !important; }
+    @media (max-width: 992px) {
+        #modalCommonFormEditor .modal-card { max-width: 95% !important; width: 95% !important; }
+    }
     .modal-actions { margin-top: 1.5rem; display: flex; justify-content: center; gap: 1rem; }
     .modal-title { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; color: #1e293b; }
     .modal-msg { color: #64748b; font-size: 0.95rem; line-height: 1.5; }
@@ -3262,7 +3266,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
 
 <!-- 1. COMMON FORM EDITOR MODAL -->
 <div class="modal-overlay" id="modalCommonFormEditor" style="z-index: 10050;">
-    <div class="modal-card" style="max-width: 780px; width: 92%; background: #ffffff; border-radius: 12px; overflow: hidden; padding: 0; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.15);">
+    <div class="modal-card" style="max-width: 65%; width: 65%; background: #ffffff; border-radius: 12px; overflow: hidden; padding: 0; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.15);">
         <div class="modal-header" style="background: #f8fafc; padding: 1.25rem 1.5rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
             <div>
                 <div style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;" id="cfEditorSubTitle">Subject Common Form</div>
@@ -4337,41 +4341,27 @@ function setupEditorForm(rec, formType) {
             loadCMLinkableRecords(indType, existingLinks);
         }
     } else if (formType === 'TA') {
+        let existingTlCount = 1;
+        for (let i = 5; i >= 1; i--) {
+            if (
+                (d[`tl${i}_organ`] && d[`tl${i}_organ`].trim() !== '') ||
+                (d[`tl${i}_site`] && d[`tl${i}_site`].trim() !== '') ||
+                (d[`tl${i}_longest_dia`] !== undefined && d[`tl${i}_longest_dia`] !== null && d[`tl${i}_longest_dia`].toString().trim() !== '')
+            ) {
+                existingTlCount = i;
+                break;
+            }
+        }
+        if (existingTlCount < 1) existingTlCount = 1;
+
         let tlRowsHtml = '';
-        for (let i = 1; i <= 5; i++) {
+        for (let i = 1; i <= existingTlCount; i++) {
             const org = d[`tl${i}_organ`] || '';
             const site = d[`tl${i}_site`] || '';
             const axis = d[`tl${i}_axis`] || 'Long';
-            const dia = d[`tl${i}_longest_dia`] || '';
+            const dia = d[`tl${i}_longest_dia`] !== undefined && d[`tl${i}_longest_dia`] !== null ? d[`tl${i}_longest_dia`] : '';
             const st = d[`tl${i}_status`] || 'Measured';
-            tlRowsHtml += `
-                <tr style="border-bottom: 1px solid #e2e8f0;">
-                    <td style="padding: 0.5rem; font-weight: 600; font-size: 0.8rem; color: #475569;">TL ${i}</td>
-                    <td style="padding: 0.5rem;">
-                        <input type="text" id="inp_ta_tl${i}_organ" class="form-input" style="width: 100%; font-size: 0.8rem;" value="${escapeHtml(org)}" placeholder="e.g. Lung, Liver, Lymph Node">
-                    </td>
-                    <td style="padding: 0.5rem;">
-                        <input type="text" id="inp_ta_tl${i}_site" class="form-input" style="width: 100%; font-size: 0.8rem;" value="${escapeHtml(site)}" placeholder="Anatomical location">
-                    </td>
-                    <td style="padding: 0.5rem;">
-                        <select id="inp_ta_tl${i}_axis" class="form-input" style="width: 100%; font-size: 0.8rem;">
-                            <option value="Long" ${axis === 'Long' ? 'selected' : ''}>Long (Non-nodal)</option>
-                            <option value="Short" ${axis === 'Short' ? 'selected' : ''}>Short (Nodal)</option>
-                        </select>
-                    </td>
-                    <td style="padding: 0.5rem;">
-                        <input type="number" step="0.1" id="inp_ta_tl${i}_longest_dia" class="form-input tl-dia-input" oninput="calcTaSumDia()" style="width: 90px; font-size: 0.8rem;" value="${escapeHtml(dia)}" placeholder="mm">
-                    </td>
-                    <td style="padding: 0.5rem;">
-                        <select id="inp_ta_tl${i}_status" class="form-input" style="width: 100%; font-size: 0.8rem;">
-                            <option value="Measured" ${st === 'Measured' ? 'selected' : ''}>Measured</option>
-                            <option value="Absent" ${st === 'Absent' ? 'selected' : ''}>Absent</option>
-                            <option value="Too small to measure" ${st === 'Too small to measure' ? 'selected' : ''}>Too small to measure</option>
-                            <option value="Not assessed" ${st === 'Not assessed' ? 'selected' : ''}>Not assessed</option>
-                        </select>
-                    </td>
-                </tr>
-            `;
+            tlRowsHtml += renderTaTlRowHtml(i, { organ: org, site: site, axis: axis, dia: dia, status: st }, existingTlCount > 1);
         }
 
         let ntlRowsHtml = '';
@@ -4488,21 +4478,32 @@ function setupEditorForm(rec, formType) {
                         <table style="width: 100%; border-collapse: collapse; background: white; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden;">
                             <thead style="background: #f1f5f9; font-size: 0.8rem; color: #475569;">
                                 <tr>
-                                    <th style="padding: 0.5rem; text-align: left; width: 60px;">Lesion</th>
-                                    <th style="padding: 0.5rem; text-align: left;">Organ / Tissue</th>
-                                    <th style="padding: 0.5rem; text-align: left;">Site / Location</th>
-                                    <th style="padding: 0.5rem; text-align: left; width: 140px;">Axis</th>
-                                    <th style="padding: 0.5rem; text-align: left; width: 100px;">Diameter (mm)</th>
-                                    <th style="padding: 0.5rem; text-align: left; width: 140px;">Status</th>
+                                    <th style="padding: 0.6rem 0.5rem; text-align: left; width: 60px;">Lesion</th>
+                                    <th style="padding: 0.6rem 0.5rem; text-align: left;">Organ / Tissue</th>
+                                    <th style="padding: 0.6rem 0.5rem; text-align: left;">Site / Location</th>
+                                    <th style="padding: 0.6rem 0.5rem; text-align: left; width: 160px;">Axis</th>
+                                    <th style="padding: 0.6rem 0.5rem; text-align: left; width: 110px;">Diameter (mm)</th>
+                                    <th style="padding: 0.6rem 0.5rem; text-align: left; width: 160px;">Status</th>
+                                    <th style="padding: 0.6rem 0.5rem; text-align: center; width: 45px;">Action</th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody id="taTlTbody">
                                 ${tlRowsHtml}
                             </tbody>
                         </table>
-                        <div style="display: flex; justify-content: flex-end; align-items: center; gap: 0.75rem; margin-top: 0.75rem;">
-                            <label style="font-weight: 700; font-size: 0.875rem; color: #1e293b;">Sum of Longest Diameters (mm):</label>
-                            <input type="number" step="0.1" id="inp_ta_sum_longest_dia" class="form-input" value="${escapeHtml(d.sum_longest_dia || '')}" placeholder="0.0" style="width: 120px; font-weight: 700; text-align: right; background: #f8fafc;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.85rem; flex-wrap: wrap; gap: 0.75rem;">
+                            <div style="display: flex; align-items: center; gap: 0.6rem;">
+                                <button type="button" id="btnAddTaTlRow" onclick="addTaTlRow()" style="display: inline-flex; align-items: center; gap: 0.35rem; background: #eff6ff; color: #2563eb; border: 1px dashed #3b82f6; padding: 0.45rem 0.9rem; border-radius: 6px; font-weight: 600; font-size: 0.825rem; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#dbeafe'" onmouseout="this.style.background='#eff6ff'">
+                                    <span class="material-icons-round" style="font-size: 1.15rem; font-weight: bold;">add</span> Add Lesion
+                                </button>
+                                <span id="taTlCountBadge" style="font-size: 0.75rem; color: #64748b; font-weight: 500;">
+                                    (${existingTlCount} of max 5 lesions)
+                                </span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                                <label style="font-weight: 700; font-size: 0.875rem; color: #1e293b;">Sum of Longest Diameters (mm):</label>
+                                <input type="number" step="0.1" id="inp_ta_sum_longest_dia" class="form-input" value="${escapeHtml(d.sum_longest_dia || '')}" placeholder="0.0" style="width: 110px; font-weight: 700; text-align: right; background: #f8fafc;" readonly>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -4584,6 +4585,9 @@ function setupEditorForm(rec, formType) {
                 </div>
             </div>
         `;
+        if (formType === 'TA') {
+            reindexTaTlRows();
+        }
     }
 }
 
@@ -4634,6 +4638,140 @@ function onTaNewLesionsChange() {
     if (box) box.style.display = (val === 'Yes') ? 'block' : 'none';
 }
 
+function renderTaTlRowHtml(i, data = {}, canDelete = false) {
+    const org = data.organ || '';
+    const site = data.site || '';
+    const axis = data.axis || 'Long';
+    const dia = data.dia !== undefined && data.dia !== null ? data.dia : '';
+    const st = data.status || 'Measured';
+
+    return `
+        <tr class="ta-tl-row" data-index="${i}" style="border-bottom: 1px solid #e2e8f0; transition: background 0.15s;">
+            <td class="ta-tl-label" style="padding: 0.6rem 0.5rem; font-weight: 700; font-size: 0.85rem; color: #334155; white-space: nowrap;">TL ${i}</td>
+            <td style="padding: 0.5rem;">
+                <input type="text" id="inp_ta_tl${i}_organ" class="form-input ta-tl-organ" style="width: 100%; font-size: 0.85rem;" value="${escapeHtml(org)}" placeholder="e.g. Lung, Liver, Lymph Node">
+            </td>
+            <td style="padding: 0.5rem;">
+                <input type="text" id="inp_ta_tl${i}_site" class="form-input ta-tl-site" style="width: 100%; font-size: 0.85rem;" value="${escapeHtml(site)}" placeholder="Anatomical location">
+            </td>
+            <td style="padding: 0.5rem; width: 160px;">
+                <select id="inp_ta_tl${i}_axis" class="form-input ta-tl-axis" style="width: 100%; font-size: 0.85rem;">
+                    <option value="Long" ${axis === 'Long' ? 'selected' : ''}>Long (Non-nodal)</option>
+                    <option value="Short" ${axis === 'Short' ? 'selected' : ''}>Short (Nodal)</option>
+                </select>
+            </td>
+            <td style="padding: 0.5rem; width: 110px;">
+                <input type="number" step="0.1" id="inp_ta_tl${i}_longest_dia" class="form-input tl-dia-input ta-tl-dia" oninput="calcTaSumDia()" style="width: 100%; font-size: 0.85rem;" value="${escapeHtml(dia)}" placeholder="mm">
+            </td>
+            <td style="padding: 0.5rem; width: 160px;">
+                <select id="inp_ta_tl${i}_status" class="form-input ta-tl-status" style="width: 100%; font-size: 0.85rem;">
+                    <option value="Measured" ${st === 'Measured' ? 'selected' : ''}>Measured</option>
+                    <option value="Absent" ${st === 'Absent' ? 'selected' : ''}>Absent</option>
+                    <option value="Too small to measure" ${st === 'Too small to measure' ? 'selected' : ''}>Too small to measure</option>
+                    <option value="Not assessed" ${st === 'Not assessed' ? 'selected' : ''}>Not assessed</option>
+                </select>
+            </td>
+            <td style="padding: 0.5rem; width: 45px; text-align: center;">
+                <button type="button" class="ta-tl-del-btn" onclick="removeTaTlRow(this)" title="Remove lesion" style="background: none; border: none; color: #ef4444; cursor: pointer; padding: 4px; border-radius: 4px; display: ${canDelete ? 'inline-flex' : 'none'}; align-items: center; justify-content: center; transition: all 0.2s;" onmouseover="this.style.background='#fee2e2'" onmouseout="this.style.background='none'">
+                    <span class="material-icons-round" style="font-size: 1.2rem;">delete_outline</span>
+                </button>
+            </td>
+        </tr>
+    `;
+}
+
+function addTaTlRow() {
+    const tbody = document.getElementById('taTlTbody');
+    if (!tbody) return;
+    const currentRows = tbody.querySelectorAll('tr.ta-tl-row');
+    if (currentRows.length >= 5) {
+        if (typeof showToast === 'function') {
+            showToast('Maximum 5 target lesions allowed per RECIST 1.1', 'warning');
+        } else {
+            alert('Maximum 5 target lesions allowed per RECIST 1.1');
+        }
+        return;
+    }
+    const nextIndex = currentRows.length + 1;
+    const tempDiv = document.createElement('tbody');
+    tempDiv.innerHTML = renderTaTlRowHtml(nextIndex, {}, true);
+    const newRow = tempDiv.firstElementChild;
+    tbody.appendChild(newRow);
+
+    reindexTaTlRows();
+    calcTaSumDia();
+}
+
+function removeTaTlRow(btn) {
+    const row = btn.closest('tr.ta-tl-row');
+    const tbody = document.getElementById('taTlTbody');
+    if (!row || !tbody) return;
+    const currentRows = tbody.querySelectorAll('tr.ta-tl-row');
+    if (currentRows.length <= 1) {
+        if (typeof showToast === 'function') {
+            showToast('At least 1 target lesion row is required', 'warning');
+        }
+        return;
+    }
+    row.remove();
+    reindexTaTlRows();
+    calcTaSumDia();
+}
+
+function reindexTaTlRows() {
+    const tbody = document.getElementById('taTlTbody');
+    if (!tbody) return;
+    const rows = tbody.querySelectorAll('tr.ta-tl-row');
+    const total = rows.length;
+
+    rows.forEach((row, idx) => {
+        const num = idx + 1;
+        row.setAttribute('data-index', num);
+
+        const lbl = row.querySelector('.ta-tl-label');
+        if (lbl) lbl.textContent = `TL ${num}`;
+
+        const inpOrgan = row.querySelector('.ta-tl-organ');
+        if (inpOrgan) inpOrgan.id = `inp_ta_tl${num}_organ`;
+
+        const inpSite = row.querySelector('.ta-tl-site');
+        if (inpSite) inpSite.id = `inp_ta_tl${num}_site`;
+
+        const inpAxis = row.querySelector('.ta-tl-axis');
+        if (inpAxis) inpAxis.id = `inp_ta_tl${num}_axis`;
+
+        const inpDia = row.querySelector('.ta-tl-dia');
+        if (inpDia) inpDia.id = `inp_ta_tl${num}_longest_dia`;
+
+        const inpStatus = row.querySelector('.ta-tl-status');
+        if (inpStatus) inpStatus.id = `inp_ta_tl${num}_status`;
+
+        const delBtn = row.querySelector('.ta-tl-del-btn');
+        if (delBtn) {
+            delBtn.style.display = total > 1 ? 'inline-flex' : 'none';
+        }
+    });
+
+    const addBtn = document.getElementById('btnAddTaTlRow');
+    const countBadge = document.getElementById('taTlCountBadge');
+    if (addBtn) {
+        if (total >= 5) {
+            addBtn.disabled = true;
+            addBtn.style.opacity = '0.5';
+            addBtn.style.cursor = 'not-allowed';
+            addBtn.title = 'Maximum 5 lesions reached';
+        } else {
+            addBtn.disabled = false;
+            addBtn.style.opacity = '1';
+            addBtn.style.cursor = 'pointer';
+            addBtn.title = 'Add target lesion';
+        }
+    }
+    if (countBadge) {
+        countBadge.textContent = `(${total} of max 5 lesions)`;
+    }
+}
+
 function calcTaSumDia() {
     let sum = 0;
     let any = false;
@@ -4645,8 +4783,8 @@ function calcTaSumDia() {
         }
     });
     const sumEl = document.getElementById('inp_ta_sum_longest_dia');
-    if (sumEl && any) {
-        sumEl.value = sum.toFixed(1);
+    if (sumEl) {
+        sumEl.value = any ? sum.toFixed(1) : '0.0';
     }
 }
 
@@ -4927,11 +5065,19 @@ function saveCommonRecord(mode) {
             const axis = document.getElementById(`inp_ta_tl${i}_axis`);
             const dia = document.getElementById(`inp_ta_tl${i}_longest_dia`);
             const st = document.getElementById(`inp_ta_tl${i}_status`);
-            data[`tl${i}_organ`] = org ? org.value.trim() : '';
-            data[`tl${i}_site`] = site ? site.value.trim() : '';
-            data[`tl${i}_axis`] = axis ? axis.value : 'Long';
-            data[`tl${i}_longest_dia`] = dia ? dia.value : '';
-            data[`tl${i}_status`] = st ? st.value : 'Measured';
+            if (org) {
+                data[`tl${i}_organ`] = org.value.trim();
+                data[`tl${i}_site`] = site ? site.value.trim() : '';
+                data[`tl${i}_axis`] = axis ? axis.value : 'Long';
+                data[`tl${i}_longest_dia`] = dia ? dia.value : '';
+                data[`tl${i}_status`] = st ? st.value : 'Measured';
+            } else {
+                data[`tl${i}_organ`] = '';
+                data[`tl${i}_site`] = '';
+                data[`tl${i}_axis`] = '';
+                data[`tl${i}_longest_dia`] = '';
+                data[`tl${i}_status`] = '';
+            }
         }
 
         for (let i = 1; i <= 3; i++) {
