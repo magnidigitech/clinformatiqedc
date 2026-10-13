@@ -184,9 +184,9 @@ function renderHeaderActions($prev_link, $next_link, $can_edit, $is_verified) {
     $html .= '<button class="btn btn-outline" onclick="location.reload()">' . ($can_edit ? 'Discard Changes' : 'Refresh') . '</button> ';
     
     if ($can_edit && !$is_verified) {
-        $html .= '<button class="btn btn-primary" onclick="saveData(false)">Save</button> ';
+        $html .= '<button class="btn btn-primary" onclick="saveData(false, this)">Save</button> ';
         if ($next_link) {
-            $html .= '<button class="btn btn-primary" style="background:#0d8e6f;" onclick="saveData(true)">Save & Next</button> ';
+            $html .= '<button class="btn btn-primary" style="background:#0d8e6f;" onclick="saveData(true, this)">Save & Next</button> ';
         }
     }
     if (!$can_edit && $next_link) {

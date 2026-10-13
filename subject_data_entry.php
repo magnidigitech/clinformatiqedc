@@ -1787,20 +1787,27 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
     let isSaving = false;
     let saveTimeout = null;
 
-    function saveData(goNext = false) {
+    function saveData(goNext = false, callerBtn = null) {
         clearTimeout(saveTimeout);
         saveTimeout = null;
         
-        // If called from button, give feedback
+        // If called from button, give feedback (MUST be an actual button, never input or select!)
         let btn = null;
-        try {
-            if (typeof window !== 'undefined' && window.event && window.event.target) {
-                btn = window.event.target.closest('button, a') || window.event.target;
-            }
-        } catch(e) {}
+        if (callerBtn && (callerBtn.tagName === 'BUTTON' || (callerBtn.tagName === 'A' && callerBtn.classList.contains('btn')))) {
+            btn = callerBtn;
+        } else {
+            try {
+                if (typeof window !== 'undefined' && window.event && window.event.target) {
+                    const candidate = window.event.target.closest('button, a.btn');
+                    if (candidate && (candidate.tagName === 'BUTTON' || candidate.tagName === 'A')) {
+                        btn = candidate;
+                    }
+                }
+            } catch(e) {}
+        }
 
         let originalText = '';
-        if (btn && btn.tagName) {
+        if (btn) {
             originalText = btn.innerText;
             btn.innerText = 'Saving...';
             document.querySelectorAll('.btn-primary').forEach(b => b.disabled = true);
@@ -1892,7 +1899,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                     return res;
                 } else {
                     // Update UI Elements if triggered by button
-                    if (btn && btn.tagName) {
+                    if (btn) {
                         btn.innerText = originalText;
                         document.querySelectorAll('.btn-primary').forEach(b => b.disabled = false);
                     }
@@ -1943,7 +1950,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                 }
             } else {
                 console.error("Save error:", res);
-                if (btn && btn.tagName) {
+                if (btn) {
                     alert("Error saving: " + (res.error || 'Unknown'));
                     btn.innerText = originalText;
                     document.querySelectorAll('.btn-primary').forEach(b => b.disabled = false);
@@ -1954,7 +1961,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
         .catch(err => {
             isSaving = false;
             console.error(err);
-            if (btn && btn.tagName) {
+            if (btn) {
                 alert("Network Error");
                 btn.innerText = originalText;
                 document.querySelectorAll('.btn-primary').forEach(b => b.disabled = false);
