@@ -41,13 +41,13 @@ if (isset($_GET['download_sample']) && $_GET['download_sample'] == '1') {
         'Temporary Password', 
         'Admin', 
         'Data Coordinator', 
-        'Data Entry', 
         'Data Monitor', 
+        'Data Manager', 
         'College Name', 
         'Batch Name'
     ], ',', '"', '\\');
-    fputcsv($output, ['John Doe', 'student1@college.edu', 'REG2026001', 'Welcome2026!', 'NO', 'NO', 'YES', 'NO', 'City Medical College', 'Batch 2026-A'], ',', '"', '\\');
-    fputcsv($output, ['Jane Smith', 'student2@college.edu', 'REG2026002', 'Welcome2026!', 'NO', 'YES', 'NO', 'NO', 'City Medical College', 'Batch 2026-A'], ',', '"', '\\');
+    fputcsv($output, ['John Doe', 'student1@college.edu', 'REG2026001', 'Welcome2026!', 'NO', 'YES', 'NO', 'NO', 'City Medical College', 'Batch 2026-A'], ',', '"', '\\');
+    fputcsv($output, ['Jane Smith', 'student2@college.edu', 'REG2026002', 'Welcome2026!', 'NO', 'NO', 'YES', 'NO', 'City Medical College', 'Batch 2026-A'], ',', '"', '\\');
     fputcsv($output, ['Alex Johnson', 'student3@college.edu', 'REG2026003', 'Welcome2026!', 'YES', 'NO', 'NO', 'YES', 'City Medical College', 'Batch 2026-B'], ',', '"', '\\');
     fclose($output);
     exit();
@@ -64,8 +64,7 @@ function isTruthyRole($val) {
 
 function getPermissionsForRole($role_name) {
     if ($role_name === 'Admin') return 'all';
-    if ($role_name === 'Data Coordinator') return '{"view": true, "add": true, "add_subject": true, "enter_data": true, "edit": true}';
-    if ($role_name === 'Data Entry') return '{"view": true, "add_subject": true, "enter_data": true, "edit": true}';
+    if ($role_name === 'Data Coordinator' || $role_name === 'Data Entry') return '{"view": true, "add": true, "add_subject": true, "enter_data": true, "edit": true}';
     if ($role_name === 'Data Monitor') return '{"view": true, "query": true, "raise_query": true, "verify": true}';
     if ($role_name === 'Data Manager') return '{"view": true, "query": true, "raise_query": true, "verify": true}';
     return '{"view": true}';
@@ -663,8 +662,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                             $map['role_coordinator'] = $idx;
                         } elseif (strpos($col_clean, 'entry') !== false) {
                             $map['role_entry'] = $idx;
-                        } elseif (strpos($col_clean, 'monitor') !== false || strpos($col_clean, 'manager') !== false) {
+                        } elseif (strpos($col_clean, 'monitor') !== false) {
                             $map['role_monitor'] = $idx;
+                        } elseif (strpos($col_clean, 'manager') !== false) {
+                            $map['role_manager'] = $idx;
                         } elseif (strpos($col_clean, 'college') !== false || strpos($col_clean, 'institution') !== false) {
                             $map['college'] = $idx;
                         } elseif (strpos($col_clean, 'batch') !== false) {
@@ -713,18 +714,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                                 if (isset($map['role_admin']) && isTruthyRole($data[$map['role_admin']] ?? '')) {
                                     $assigned_roles[] = 'Admin';
                                 }
-                                if (isset($map['role_coordinator']) && isTruthyRole($data[$map['role_coordinator']] ?? '')) {
+                                if ((isset($map['role_coordinator']) && isTruthyRole($data[$map['role_coordinator']] ?? '')) ||
+                                    (isset($map['role_entry']) && isTruthyRole($data[$map['role_entry']] ?? ''))) {
                                     $assigned_roles[] = 'Data Coordinator';
-                                }
-                                if (isset($map['role_entry']) && isTruthyRole($data[$map['role_entry']] ?? '')) {
-                                    $assigned_roles[] = 'Data Entry';
                                 }
                                 if (isset($map['role_monitor']) && isTruthyRole($data[$map['role_monitor']] ?? '')) {
                                     $assigned_roles[] = 'Data Monitor';
                                 }
+                                if (isset($map['role_manager']) && isTruthyRole($data[$map['role_manager']] ?? '')) {
+                                    $assigned_roles[] = 'Data Manager';
+                                }
 
                                 if (empty($assigned_roles)) {
-                                    $assigned_roles[] = 'Data Entry';
+                                    $assigned_roles[] = 'Data Coordinator';
                                 }
 
                                 $stmt_find->execute(['email' => $email, 'username' => $username]);
@@ -831,8 +833,12 @@ if ($filter_status !== '') {
 }
 
 if ($filter_role !== '') {
-    $where_clauses[] = "su.role_name = :role";
-    $params['role'] = $filter_role;
+    if ($filter_role === 'Data Coordinator') {
+        $where_clauses[] = "(su.role_name = 'Data Coordinator' OR su.role_name = 'Data Entry')";
+    } else {
+        $where_clauses[] = "su.role_name = :role";
+        $params['role'] = $filter_role;
+    }
 }
 
 $where_sql = implode(' AND ', $where_clauses);
@@ -1254,8 +1260,7 @@ $end_item = min($offset + $limit, $total_matching_users);
                             <select name="role" onchange="this.form.submit()" class="filter-control" style="width: auto;">
                                 <option value="">All Roles</option>
                                 <option value="Admin" <?php echo $filter_role === 'Admin' ? 'selected' : ''; ?>>Admin</option>
-                                <option value="Data Coordinator" <?php echo $filter_role === 'Data Coordinator' ? 'selected' : ''; ?>>Data Coordinator</option>
-                                <option value="Data Entry" <?php echo $filter_role === 'Data Entry' ? 'selected' : ''; ?>>Data Entry</option>
+                                <option value="Data Coordinator" <?php echo ($filter_role === 'Data Coordinator' || $filter_role === 'Data Entry') ? 'selected' : ''; ?>>Data Coordinator</option>
                                 <option value="Data Monitor" <?php echo $filter_role === 'Data Monitor' ? 'selected' : ''; ?>>Data Monitor</option>
                                 <option value="Data Manager" <?php echo $filter_role === 'Data Manager' ? 'selected' : ''; ?>>Data Manager</option>
                             </select>
@@ -1366,7 +1371,7 @@ $end_item = min($offset + $limit, $total_matching_users);
                                                 $role_count = count($u['roles']);
                                                 $visible_roles = array_slice($u['roles'], 0, 2);
                                                 foreach ($visible_roles as $r): ?>
-                                                    <span class="role-pill"><?php echo htmlspecialchars($r); ?></span>
+                                                    <span class="role-pill"><?php echo htmlspecialchars($r === 'Data Entry' ? 'Data Coordinator' : $r); ?></span>
                                                 <?php endforeach; ?>
                                                 <?php if ($role_count > 2): ?>
                                                     <span class="role-more" title="<?php echo htmlspecialchars(implode(', ', $u['roles'])); ?>">+<?php echo ($role_count - 2); ?></span>
@@ -1502,13 +1507,13 @@ $end_item = min($offset + $limit, $total_matching_users);
                             <input type="checkbox" name="roles[]" value="Admin"> Admin (Full Access)
                         </label>
                         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
-                            <input type="checkbox" name="roles[]" value="Data Coordinator"> Data Coordinator
-                        </label>
-                        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
-                            <input type="checkbox" name="roles[]" value="Data Entry" checked> Data Entry
+                            <input type="checkbox" name="roles[]" value="Data Coordinator" checked> Data Coordinator
                         </label>
                         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
                             <input type="checkbox" name="roles[]" value="Data Monitor"> Data Monitor
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
+                            <input type="checkbox" name="roles[]" value="Data Manager"> Data Manager
                         </label>
                     </div>
                 </div>
@@ -1577,10 +1582,10 @@ $end_item = min($offset + $limit, $total_matching_users);
                             <input type="checkbox" name="roles[]" value="Data Coordinator" id="role_DataCoordinator"> Data Coordinator
                         </label>
                         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
-                            <input type="checkbox" name="roles[]" value="Data Entry" id="role_DataEntry"> Data Entry
+                            <input type="checkbox" name="roles[]" value="Data Monitor" id="role_DataMonitor"> Data Monitor
                         </label>
                         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
-                            <input type="checkbox" name="roles[]" value="Data Monitor" id="role_DataMonitor"> Data Monitor
+                            <input type="checkbox" name="roles[]" value="Data Manager" id="role_DataManager"> Data Manager
                         </label>
                     </div>
                 </div>
@@ -1627,7 +1632,7 @@ $end_item = min($offset + $limit, $total_matching_users);
                             <li><code>Name</code> & <code>Email</code> (Required)</li>
                             <li><code>Username</code> (Register Number)</li>
                             <li><code>Temporary Password</code></li>
-                            <li>Role Columns: <code>Admin</code>, <code>Data Coordinator</code>, <code>Data Entry</code>, <code>Data Monitor</code> (Values: <code>YES</code>, <code>yes</code>, <code>Yes</code>, <code>YEs</code>, <code>1</code>, or <code>no</code>)</li>
+                            <li>Role Columns: <code>Admin</code>, <code>Data Coordinator</code>, <code>Data Monitor</code>, <code>Data Manager</code> (Values: <code>YES</code>, <code>yes</code>, <code>Yes</code>, <code>YEs</code>, <code>1</code>, or <code>no</code>)</li>
                             <li><code>College Name</code> & <code>Batch Name</code></li>
                         </ul>
                     </div>
@@ -1715,10 +1720,10 @@ $end_item = min($offset + $limit, $total_matching_users);
                             <input type="checkbox" name="roles[]" value="Data Coordinator"> Data Coordinator
                         </label>
                         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
-                            <input type="checkbox" name="roles[]" value="Data Entry"> Data Entry
+                            <input type="checkbox" name="roles[]" value="Data Monitor"> Data Monitor
                         </label>
                         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
-                            <input type="checkbox" name="roles[]" value="Data Monitor"> Data Monitor
+                            <input type="checkbox" name="roles[]" value="Data Manager"> Data Manager
                         </label>
                     </div>
                 </div>
@@ -1861,14 +1866,15 @@ function openEditUserModal(e, id) {
     document.getElementById('editBatch').value = u.batch_name || '';
     document.getElementById('editStatus').value = u.status || 'active';
 
-    ['Admin', 'DataCoordinator', 'DataEntry', 'DataMonitor'].forEach(rKey => {
+    ['Admin', 'DataCoordinator', 'DataMonitor', 'DataManager'].forEach(rKey => {
         const cb = document.getElementById('role_' + rKey);
         if (cb) cb.checked = false;
     });
 
     if (u.roles && Array.isArray(u.roles)) {
         u.roles.forEach(r => {
-            const clean = r.replace(/\s+/g, '');
+            let clean = r.replace(/\s+/g, '');
+            if (clean === 'DataEntry') clean = 'DataCoordinator';
             const cb = document.getElementById('role_' + clean);
             if (cb) cb.checked = true;
         });

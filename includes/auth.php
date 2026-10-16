@@ -108,6 +108,7 @@ function refreshUserAssignments($user_id) {
             if ($assign['id'] == $active_id) {
                 $still_valid = true;
                 // Update active context session values in case permissions/names changed
+                $_SESSION['active_study_id'] = $assign['study_id'];
                 $_SESSION['active_role_name'] = $assign['role_name'];
                 $_SESSION['active_study_name'] = $assign['study_name'];
                 $_SESSION['active_study_code'] = $assign['study_code'] ?? 'None';
@@ -182,17 +183,11 @@ function hasPermission($permission_key) {
         return true;
     }
 
-    // 2. Strict Role Definitions
+    // 2. Strict Role Definitions (Admin, Data Coordinator, Data Monitor, Data Manager)
     
-    // Data Coordinator (previously Data Manager): Can add subjects, enter data, view queries.
-    if ($role_lower === 'data coordinator') {
+    // Data Coordinator (Data Entry maps to Data Coordinator): Can add subjects, enter data, edit, view queries.
+    if ($role_lower === 'data coordinator' || $role_lower === 'data entry') {
         $allowed = ['view', 'add', 'add_subject', 'enter_data', 'edit', 'query'];
-        return in_array($permission_key, $allowed);
-    }
-    
-    // Data Entry: Can view/add subjects, enter/edit data.
-    if ($role_lower === 'data entry') {
-        $allowed = ['view', 'add_subject', 'enter_data', 'edit'];
         return in_array($permission_key, $allowed);
     }
     

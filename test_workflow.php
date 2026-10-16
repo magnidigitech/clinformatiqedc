@@ -14,23 +14,31 @@ $stmt_orig = $pdo->prepare("SELECT role_name, permissions FROM study_users WHERE
 $stmt_orig->execute();
 $original_assignments = $stmt_orig->fetchAll(PDO::FETCH_ASSOC);
 
+// Store original is_required states for form 1
+$orig_req = $pdo->query("SELECT id, is_required FROM form_fields WHERE form_id = 1")->fetchAll(PDO::FETCH_KEY_PAIR);
+
 // Reset helper
 function resetDBState($pdo) {
     $pdo->exec("DELETE FROM subject_form_status WHERE subject_id = 1 AND form_id = 1");
     $pdo->exec("DELETE FROM data_audit_log WHERE subject_id = 1 AND form_id = 1");
     $pdo->exec("DELETE FROM data_queries WHERE subject_id = 1 AND form_id = 1");
     $pdo->exec("DELETE FROM subject_data WHERE subject_id = 1 AND form_id = 1 AND field_id = 5");
-    $pdo->exec("UPDATE form_fields SET is_required = FALSE WHERE id = 5");
 }
 
 // Function to set user role in DB
 function setUserRoleInDB($pdo, $role_name) {
     $pdo->exec("DELETE FROM study_users WHERE user_id = 1 AND study_id = 1");
-    $stmt = $pdo->prepare("INSERT INTO study_users (user_id, study_id, role_name, permissions) VALUES (1, 1, ?, 'all')");
+    $stmt = $pdo->prepare("INSERT INTO study_users (user_id, study_id, role_name, permissions) VALUES (1, 1, ?, 'all') RETURNING id");
     $stmt->execute([$role_name]);
+    $new_id = $stmt->fetchColumn();
+    $GLOBALS['current_assignment_id'] = $new_id;
+    return $new_id;
 }
 
 function runTestCase($post, $session) {
+    if (!empty($GLOBALS['current_assignment_id'])) {
+        $session['active_assignment_id'] = $GLOBALS['current_assignment_id'];
+    }
     $post_serialized = base64_encode(serialize($post));
     $session_serialized = base64_encode(serialize($session));
     
@@ -104,7 +112,8 @@ $manager_session = [
     'active_role_name' => 'Data Manager'
 ];
 
-// Force set field 5 (Name) as is_required = TRUE for testing
+// Set only field 5 as is_required = TRUE for testing
+$pdo->exec("UPDATE form_fields SET is_required = FALSE WHERE form_id = 1");
 $pdo->exec("UPDATE form_fields SET is_required = TRUE WHERE id = 5");
 echo "Form field 5 (Name) set as required/mandatory.\n\n";
 
@@ -190,13 +199,13 @@ if (isset($res['raw_output'])) {
 }
 assertEquals(true, $res['success'] ?? null, "Should successfully save data to form after SDR is revoked");
 
-// Test Case 6: Test Scenario 2 (Coordinator revoking SDR auto-removes Monitor review)
-echo "\nTest Case 6: Test Scenario 2: Coordinator revoke SDR auto-removes Monitor review\n";
+// Test Case 6: Form Locked when Monitor has SDVed (Coordinator cannot revoke SDR)
+echo "\nTest Case 6: Form Locked when Monitor has SDVed (Coordinator cannot revoke SDR)\n";
 // Mark as SDR again
 setUserRoleInDB($pdo, 'Data Coordinator');
 runTestCase($post, $coord_session);
 
-// Monitor reviews
+// Monitor marks as SDVed
 setUserRoleInDB($pdo, 'Data Monitor');
 $post_mon_review = [
     'action' => 'update_review_status',
@@ -210,30 +219,45 @@ $res = runTestCase($post_mon_review, $monitor_session);
 if (isset($res['raw_output'])) {
     echo "Raw output:\n" . $res['raw_output'] . "\n";
 }
-assertEquals(true, $res['success'] ?? null, "Monitor should successfully review form");
+assertEquals(true, $res['success'] ?? null, "Data Monitor should successfully mark form as SDVed");
 
 $stat = $pdo->query("SELECT monitor_reviewed FROM subject_form_status WHERE subject_id = 1 AND form_id = 1")->fetch();
 assertEquals(true, (bool)($stat['monitor_reviewed'] ?? false), "Database monitor_reviewed should be true");
 
-// Coordinator revokes SDR
+// Coordinator attempts to revoke SDR when Monitor has SDVed (Must FAIL - Form is locked)
 setUserRoleInDB($pdo, 'Data Coordinator');
 $res = runTestCase($post_revoke, $coord_session);
-if (isset($res['raw_output'])) {
-    echo "Raw output:\n" . $res['raw_output'] . "\n";
+assertEquals(false, $res['success'] ?? null, "Coordinator should NOT be allowed to revoke SDR when Monitor has SDVed");
+if (isset($res['error'])) {
+    echo "   Expected error: {$res['error']}\n";
 }
-assertEquals(true, $res['success'] ?? null, "Coordinator should successfully revoke SDR");
 
+// Monitor revokes SDVed (succeeds, resets SDR status, requires remarks)
+setUserRoleInDB($pdo, 'Data Monitor');
+$post_mon_revoke = [
+    'action' => 'update_review_status',
+    'workflow_action' => 'monitor_revoke',
+    'subject_id' => 1,
+    'form_id' => 1,
+    'visit_id' => 1,
+    'repeating_instance_id' => 0,
+    'remarks' => 'Monitor revoking SDVed for testing correction'
+];
+$res_mon_rev = runTestCase($post_mon_revoke, $monitor_session);
+assertEquals(true, $res_mon_rev['success'] ?? null, "Monitor should successfully revoke SDVed with remarks");
+
+// Verify that SDR status and monitor_reviewed are reset
 $stat = $pdo->query("SELECT sdr_submitted, monitor_reviewed FROM subject_form_status WHERE subject_id = 1 AND form_id = 1")->fetch();
-assertEquals(false, (bool)($stat['sdr_submitted'] ?? false), "Database sdr_submitted should be false");
-assertEquals(false, (bool)($stat['monitor_reviewed'] ?? false), "Database monitor_reviewed should be automatically set to false");
+assertEquals(false, (bool)($stat['sdr_submitted'] ?? false), "SDR submitted status should be reset to false");
+assertEquals(false, (bool)($stat['monitor_reviewed'] ?? false), "Monitor review status should be reset to false");
 
-// Test Case 7: Scenario 3: Coordinator can revoke SDR if only one role has reviewed
-echo "\nTest Case 7: Scenario 3: Coordinator can revoke SDR if only one role has reviewed\n";
+// Test Case 7: Form Locked when Manager has DM Reviewed (Coordinator cannot revoke SDR)
+echo "\nTest Case 7: Form Locked when Manager has DM Reviewed or Both Done\n";
 // Coordinator marks SDR again
 setUserRoleInDB($pdo, 'Data Coordinator');
 runTestCase($post, $coord_session);
 
-// Manager reviews
+// Manager marks as DM Reviewed
 setUserRoleInDB($pdo, 'Data Manager');
 $post_mgr_review = [
     'action' => 'update_review_status',
@@ -244,29 +268,24 @@ $post_mgr_review = [
     'repeating_instance_id' => 0
 ];
 $res = runTestCase($post_mgr_review, $manager_session);
-assertEquals(true, $res['success'] ?? null, "Manager should successfully review form");
+assertEquals(true, $res['success'] ?? null, "Data Manager should successfully mark form as DM Reviewed");
 
-// Coordinator attempts to revoke SDR (expecting SUCCESS because Monitor has not reviewed)
+// Coordinator attempts to revoke SDR (expecting FAILURE because DM Reviewed is done)
 setUserRoleInDB($pdo, 'Data Coordinator');
 $res = runTestCase($post_revoke, $coord_session);
-assertEquals(true, $res['success'] ?? null, "Coordinator should be allowed to revoke SDR when only Manager has reviewed");
+assertEquals(false, $res['success'] ?? null, "Coordinator should NOT be allowed to revoke SDR when Manager has DM Reviewed");
 
-// Coordinator marks SDR again
-setUserRoleInDB($pdo, 'Data Coordinator');
-runTestCase($post, $coord_session);
-
-// Both Monitor and Manager review the form
+// Monitor also marks as SDVed (Both are now done)
 setUserRoleInDB($pdo, 'Data Monitor');
-runTestCase($post_mon_review, $monitor_session);
-setUserRoleInDB($pdo, 'Data Manager');
-runTestCase($post_mgr_review, $manager_session);
+$res_both = runTestCase($post_mon_review, $monitor_session);
+assertEquals(true, $res_both['success'] ?? null, "Data Monitor should also be allowed to mark as SDVed");
 
-// Coordinator attempts to revoke SDR (expecting FAILURE because both have reviewed)
+// Coordinator attempts to revoke SDR when BOTH are done (expecting FAILURE)
 setUserRoleInDB($pdo, 'Data Coordinator');
 $res = runTestCase($post_revoke, $coord_session);
 assertEquals(false, $res['success'] ?? null, "Coordinator should NOT be allowed to revoke SDR when BOTH reviews are complete");
 
-// Manager revokes review (succeeds, resets SDR status, requires remarks)
+// Manager revokes DM Reviewed (succeeds, resets SDR status, requires remarks)
 setUserRoleInDB($pdo, 'Data Manager');
 $post_mgr_revoke = [
     'action' => 'update_review_status',
@@ -275,12 +294,12 @@ $post_mgr_revoke = [
     'form_id' => 1,
     'visit_id' => 1,
     'repeating_instance_id' => 0,
-    'remarks' => 'Manager revoking review for testing reasons'
+    'remarks' => 'Manager revoking DM Reviewed for testing reasons'
 ];
 $res = runTestCase($post_mgr_revoke, $manager_session);
-assertEquals(true, $res['success'] ?? null, "Manager should successfully revoke review with valid remarks");
+assertEquals(true, $res['success'] ?? null, "Manager should successfully revoke DM Reviewed with valid remarks");
 
-// Verify that SDR status is reset and both reviews are cleared
+// Verify that SDR status and both reviews are cleared
 $stat = $pdo->query("SELECT sdr_submitted, manager_reviewed, monitor_reviewed FROM subject_form_status WHERE subject_id = 1 AND form_id = 1")->fetch();
 assertEquals(false, (bool)($stat['sdr_submitted'] ?? false), "SDR submitted status should be reset to false");
 assertEquals(false, (bool)($stat['manager_reviewed'] ?? false), "Manager review status should be reset to false");
@@ -412,12 +431,67 @@ if (isset($res_invalid2['error'])) {
     echo "   Expected error: {$res_invalid2['error']}\n";
 }
 
+// Test Case 11: Button wordings and visibility for SDVed, DM Reviewed, and SDR locking
+echo "\nTest Case 11: UI Button wordings and SDR Revoke visibility verification\n";
+require_once 'includes/functions.php';
+
+// 1. Coordinator when SDR not submitted -> "Mark as SDR"
+$btn_coord_draft = renderWorkflowButtons(true, false, false, false, false, false, true);
+assertEquals(true, strpos($btn_coord_draft, 'Mark as SDR') !== false, "Coordinator should see 'Mark as SDR'");
+
+// 2. Coordinator when SDR submitted and neither reviewed -> "Revoke SDR"
+$btn_coord_sdr = renderWorkflowButtons(true, false, false, true, false, false, true);
+assertEquals(true, strpos($btn_coord_sdr, 'Revoke SDR') !== false, "Coordinator should see 'Revoke SDR' when neither reviewed");
+
+// 3. Coordinator when Monitor SDVed -> "Revoke SDR" must NOT exist, "Form Locked" badge shown
+$btn_coord_sdved = renderWorkflowButtons(true, false, false, true, true, false, true);
+assertEquals(false, strpos($btn_coord_sdved, 'Revoke SDR'), "Coordinator must NOT see 'Revoke SDR' when Monitor SDVed");
+assertEquals(true, strpos($btn_coord_sdved, 'Form Locked') !== false, "Coordinator should see 'Form Locked' badge when Monitor SDVed");
+
+// 4. Coordinator when Manager DM Reviewed -> "Revoke SDR" must NOT exist, "Form Locked" badge shown
+$btn_coord_dm = renderWorkflowButtons(true, false, false, true, false, true, true);
+assertEquals(false, strpos($btn_coord_dm, 'Revoke SDR'), "Coordinator must NOT see 'Revoke SDR' when Manager DM Reviewed");
+assertEquals(true, strpos($btn_coord_dm, 'Form Locked') !== false, "Coordinator should see 'Form Locked' badge when Manager DM Reviewed");
+
+// 5. Coordinator when BOTH reviewed -> "Revoke SDR" must NOT exist, "Form Locked" badge shown
+$btn_coord_both = renderWorkflowButtons(true, false, false, true, true, true, true);
+assertEquals(false, strpos($btn_coord_both, 'Revoke SDR'), "Coordinator must NOT see 'Revoke SDR' when BOTH reviewed");
+assertEquals(true, strpos($btn_coord_both, 'Form Locked') !== false, "Coordinator should see 'Form Locked' badge when BOTH reviewed");
+
+// 6. Data Monitor buttons: "Mark as SDVed" when unverified, "Revoke SDVed" when verified
+$btn_mon_unverified = renderWorkflowButtons(false, true, false, true, false, false, true);
+assertEquals(true, strpos($btn_mon_unverified, 'Mark as SDVed') !== false, "Data Monitor should see 'Mark as SDVed' button");
+$btn_mon_verified = renderWorkflowButtons(false, true, false, true, true, false, true);
+assertEquals(true, strpos($btn_mon_verified, 'Revoke SDVed') !== false, "Data Monitor should see 'Revoke SDVed' button");
+
+// 7. Data Manager buttons: "Mark as DM Reviewed" when unverified, "Revoke DM Reviewed" when verified
+$btn_mgr_unverified = renderWorkflowButtons(false, false, true, true, false, false, true);
+assertEquals(true, strpos($btn_mgr_unverified, 'Mark as DM Reviewed') !== false, "Data Manager should see 'Mark as DM Reviewed' button");
+$btn_mgr_verified = renderWorkflowButtons(false, false, true, true, false, true, true);
+assertEquals(true, strpos($btn_mgr_verified, 'Revoke DM Reviewed') !== false, "Data Manager should see 'Revoke DM Reviewed' button");
+
+// 8. Review status text checks
+$stat_under_review = getFormReviewStatus(['sdr_submitted' => 1, 'monitor_reviewed' => 0, 'manager_reviewed' => 0]);
+assertEquals('Under Review', $stat_under_review['text'], "Review status should be 'Under Review'");
+
+$stat_sdved = getFormReviewStatus(['sdr_submitted' => 1, 'monitor_reviewed' => 1, 'manager_reviewed' => 0]);
+assertEquals('SDVed', $stat_sdved['text'], "Review status should be 'SDVed' when only Monitor reviewed");
+
+$stat_dm_rev = getFormReviewStatus(['sdr_submitted' => 1, 'monitor_reviewed' => 0, 'manager_reviewed' => 1]);
+assertEquals('DM Reviewed', $stat_dm_rev['text'], "Review status should be 'DM Reviewed' when only Manager reviewed");
+
+$stat_both = getFormReviewStatus(['sdr_submitted' => 1, 'monitor_reviewed' => 1, 'manager_reviewed' => 1]);
+assertEquals('SDVed & DM Reviewed', $stat_both['text'], "Review status should be 'SDVed & DM Reviewed' when both reviewed");
+
 // Clean up database and restore original assignments
 resetDBState($pdo);
 $pdo->exec("DELETE FROM study_users WHERE user_id = 1 AND study_id = 1");
 $stmt_rest = $pdo->prepare("INSERT INTO study_users (user_id, study_id, role_name, permissions) VALUES (1, 1, ?, ?)");
 foreach ($original_assignments as $assign) {
     $stmt_rest->execute([$assign['role_name'], $assign['permissions']]);
+}
+foreach ($orig_req as $fid => $req) {
+    $pdo->prepare("UPDATE form_fields SET is_required = ? WHERE id = ?")->execute([$req ? 1 : 0, $fid]);
 }
 
 echo "\n==================================================\n";

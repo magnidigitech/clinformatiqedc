@@ -117,11 +117,13 @@ function getFormReviewStatus($f_stat) {
         }
     } else {
         if ($monitor && $manager) {
-            return ['text' => 'SDVed & Approved', 'color' => '#0d8e6f', 'bg' => '#f0fdf4', 'icon' => 'verified', 'progress' => 100, 'bar_color' => '#0d8e6f'];
-        } elseif ($monitor || $manager) {
-            return ['text' => 'SDVed', 'color' => '#059669', 'bg' => '#ecfdf5', 'icon' => 'verified', 'progress' => 100, 'bar_color' => '#059669'];
+            return ['text' => 'SDVed & DM Reviewed', 'color' => '#0d8e6f', 'bg' => '#f0fdf4', 'icon' => 'verified', 'progress' => 100, 'bar_color' => '#0d8e6f'];
+        } elseif ($monitor) {
+            return ['text' => 'SDVed', 'color' => '#059669', 'bg' => '#ecfdf5', 'icon' => 'verified', 'progress' => 50, 'bar_color' => '#059669'];
+        } elseif ($manager) {
+            return ['text' => 'DM Reviewed', 'color' => '#059669', 'bg' => '#ecfdf5', 'icon' => 'verified', 'progress' => 50, 'bar_color' => '#059669'];
         } else {
-            return ['text' => 'Under Review', 'color' => '#b45309', 'bg' => '#fef3c7', 'icon' => 'pending_actions', 'progress' => 50, 'bar_color' => '#f59e0b'];
+            return ['text' => 'Under Review', 'color' => '#b45309', 'bg' => '#fef3c7', 'icon' => 'pending_actions', 'progress' => 0, 'bar_color' => '#f59e0b'];
         }
     }
 }
@@ -131,19 +133,24 @@ function getFormReviewStatus($f_stat) {
  */
 function renderWorkflowButtons($is_coordinator, $is_monitor_role, $is_manager_role, $sdr_submitted, $monitor_reviewed, $manager_reviewed, $all_mandatory_completed) {
     $html = '';
+    
+    // Data Coordinator actions
     if ($is_coordinator) {
         if (!$sdr_submitted) {
             $html .= '<button type="button" class="btn btn-primary" style="background-color: #1d6f97; border-color: #1d6f97; display: inline-flex; align-items: center; gap: 0.25rem;" onclick="updateReviewStatus(\'mark_sdr\')">
                         <span class="material-icons-round" style="font-size: 1.1rem;">lock</span>
                         Mark as SDR
                       </button>';
-        } elseif ($sdr_submitted && !($monitor_reviewed && $manager_reviewed)) {
+        } elseif ($sdr_submitted && !$monitor_reviewed && !$manager_reviewed) {
+            // Coordinator can only revoke SDR if neither Monitor SDVed nor Manager DM Reviewed
             $html .= '<button type="button" class="btn btn-outline" style="color: #dc2626; border-color: #dc2626; display: inline-flex; align-items: center; gap: 0.25rem;" onclick="updateReviewStatus(\'revoke_sdr\')">
                         <span class="material-icons-round" style="font-size: 1.1rem;">lock_open</span>
                         Revoke SDR
                       </button>';
         }
     }
+    
+    // Data Monitor actions
     if ($is_monitor_role && $sdr_submitted) {
         if (!$monitor_reviewed) {
             $html .= '<button type="button" class="btn btn-primary" style="background-color: #059669; border-color: #059669; display: inline-flex; align-items: center; gap: 0.25rem;" onclick="updateReviewStatus(\'monitor_review\')">
@@ -151,25 +158,35 @@ function renderWorkflowButtons($is_coordinator, $is_monitor_role, $is_manager_ro
                         Mark as SDVed
                       </button>';
         } else {
-            $html .= '<button type="button" class="btn btn-outline" style="color: #059669; border-color: #059669; display: inline-flex; align-items: center; gap: 0.25rem;" onclick="updateReviewStatus(\'monitor_revoke\')">
+            $html .= '<button type="button" class="btn btn-outline" style="color: #dc2626; border-color: #dc2626; display: inline-flex; align-items: center; gap: 0.25rem;" onclick="updateReviewStatus(\'monitor_revoke\')">
                         <span class="material-icons-round" style="font-size: 1.1rem;">undo</span>
-                        Revoke SDV
+                        Revoke SDVed
                       </button>';
         }
     }
+    
+    // Data Manager actions
     if ($is_manager_role && $sdr_submitted) {
         if (!$manager_reviewed) {
             $html .= '<button type="button" class="btn btn-primary" style="background-color: #059669; border-color: #059669; display: inline-flex; align-items: center; gap: 0.25rem;" onclick="updateReviewStatus(\'manager_review\')">
                         <span class="material-icons-round" style="font-size: 1.1rem;">verified</span>
-                        Mark as SDVed
+                        Mark as DM Reviewed
                       </button>';
         } else {
-            $html .= '<button type="button" class="btn btn-outline" style="color: #059669; border-color: #059669; display: inline-flex; align-items: center; gap: 0.25rem;" onclick="updateReviewStatus(\'manager_revoke\')">
+            $html .= '<button type="button" class="btn btn-outline" style="color: #dc2626; border-color: #dc2626; display: inline-flex; align-items: center; gap: 0.25rem;" onclick="updateReviewStatus(\'manager_revoke\')">
                         <span class="material-icons-round" style="font-size: 1.1rem;">undo</span>
-                        Revoke SDV
+                        Revoke DM Reviewed
                       </button>';
         }
     }
+
+    // Display Form Locked badge when Coordinator views a form where Monitor SDVed or Manager DM Reviewed
+    if ($is_coordinator && !$is_monitor_role && !$is_manager_role && $sdr_submitted && ($monitor_reviewed || $manager_reviewed)) {
+        $html .= '<span class="badge" style="background: #f1f5f9; color: #64748b; padding: 0.35rem 0.75rem; border-radius: 6px; font-size: 0.8rem; font-weight: 500; display: inline-flex; align-items: center; gap: 0.25rem;">
+                    <span class="material-icons-round" style="font-size: 1rem;">lock</span> Form Locked
+                  </span>';
+    }
+
     return $html;
 }
 
@@ -250,15 +267,15 @@ function renderFormAuditTrail($pdo, $study_id, $subject_id, $current_form_id, $r
                 $action_desc .= '<br/><span style="font-size: 0.825rem; color: #475569;">' . htmlspecialchars($audit['reason_for_change']) . '</span>';
             }
         } elseif ($change_type === 'monitor_reviewed') {
-            $action_desc = '<span style="color: #ea580c; font-weight: 600;">Monitor Review Completed</span>';
+            $action_desc = '<span style="color: #059669; font-weight: 600;">Marked as SDVed (Data Monitor)</span>';
         } elseif ($change_type === 'monitor_revoked') {
-            $action_desc = '<span style="color: #ea580c; font-weight: 600;">Monitor Review Revoked</span><br/><span style="font-size: 0.825rem; color: #475569; font-style: italic;">Remarks: ' . htmlspecialchars($audit['reason_for_change']) . '</span>';
+            $action_desc = '<span style="color: #dc2626; font-weight: 600;">Revoked SDVed</span><br/><span style="font-size: 0.825rem; color: #475569; font-style: italic;">Remarks: ' . htmlspecialchars($audit['reason_for_change']) . '</span>';
         } elseif ($change_type === 'manager_reviewed') {
-            $action_desc = '<span style="color: #0d8e6f; font-weight: 600;">Manager Review Completed</span>';
+            $action_desc = '<span style="color: #059669; font-weight: 600;">Marked as DM Reviewed (Data Manager)</span>';
         } elseif ($change_type === 'manager_revoked') {
-            $action_desc = '<span style="color: #0d8e6f; font-weight: 600;">Manager Review Revoked</span><br/><span style="font-size: 0.825rem; color: #475569; font-style: italic;">Remarks: ' . htmlspecialchars($audit['reason_for_change']) . '</span>';
+            $action_desc = '<span style="color: #dc2626; font-weight: 600;">Revoked DM Reviewed</span><br/><span style="font-size: 0.825rem; color: #475569; font-style: italic;">Remarks: ' . htmlspecialchars($audit['reason_for_change']) . '</span>';
         } elseif ($change_type === 'form_srved') {
-            $action_desc = '<span style="color: #0d8e6f; font-weight: 600;">Form SRVed</span>';
+            $action_desc = '<span style="color: #0d8e6f; font-weight: 600;">SDVed & DM Reviewed</span>';
         } elseif ($change_type === 'verify') {
             $action_desc = '<span style="color: #0d8e6f; font-weight: 600;">Source Data Verification</span>';
         } else {

@@ -46,7 +46,7 @@ $is_admin = (strpos($current_role, 'admin') !== false);
 $can_edit = ($current_role === 'data_entry' || strpos($current_role, 'entry') !== false || $current_role === 'investigator' || $is_manager || (strpos($current_role, 'manager') !== false));
 
 // Specific precise roles for workflow
-$is_coordinator = (strpos($current_role, 'coordinator') !== false) || (strpos($current_role, 'investigator') !== false) || (strpos($current_role, 'admin') !== false);
+$is_coordinator = (strpos($current_role, 'coordinator') !== false) || (strpos($current_role, 'entry') !== false) || (strpos($current_role, 'investigator') !== false) || (strpos($current_role, 'admin') !== false);
 $is_monitor_role = (strpos($current_role, 'monitor') !== false) || (strpos($current_role, 'cra') !== false) || (strpos($current_role, 'admin') !== false);
 $is_manager_role = (strpos($current_role, 'manager') !== false) || (strpos($current_role, 'admin') !== false);
 
@@ -176,6 +176,31 @@ if (!empty($modules)) {
 }
 
 
+// Identify Key Visits across study
+$screening_visit_id = null;
+$day1_visit_id = null;
+$eot_visit_id = null;
+$eot_first_form_id = null;
+
+foreach ($tree_data as $row) {
+    $v_name_l = strtolower(trim($row['visit_name'] ?? ''));
+    if (strpos($v_name_l, 'screening') !== false && !$screening_visit_id) {
+        $screening_visit_id = $row['visit_id'];
+    } elseif ((strpos($v_name_l, 'day 1') !== false || strpos($v_name_l, 'day-1') !== false || strpos($v_name_l, 'day1') !== false) && !$day1_visit_id) {
+        $day1_visit_id = $row['visit_id'];
+    } elseif ((strpos($v_name_l, 'end of treatment') !== false || strpos($v_name_l, 'end of study') !== false || strpos($v_name_l, 'eot') !== false || strpos($v_name_l, 'eos') !== false) && !$eot_visit_id) {
+        $eot_visit_id = $row['visit_id'];
+    }
+}
+if (!$screening_visit_id && !empty($tree_data)) {
+    $screening_visit_id = $tree_data[0]['visit_id'];
+}
+
+$is_screening_performed = true;
+if ($screening_visit_id && isset($visit_performed_map[$screening_visit_id])) {
+    $is_screening_performed = (strcasecmp($visit_performed_map[$screening_visit_id], 'No') !== 0);
+}
+
 // Organize into Tree + Calculate Visit Progress
 $structure = [];
 $total_forms_count = 0;
@@ -183,12 +208,14 @@ $total_progress_sum = 0;
 
 foreach ($tree_data as $row) {
     $v_id = $row['visit_id'];
+    $is_day1_visit = ($day1_visit_id && $v_id == $day1_visit_id);
     if (!isset($structure[$v_id])) {
         $structure[$v_id] = [
             'name' => $row['visit_name'],
             'forms' => [],
             'visit_progress_sum' => 0,
-            'visit_forms_count' => 0
+            'visit_forms_count' => 0,
+            'is_disabled' => (!$is_screening_performed && $is_day1_visit)
         ];
     }
     
@@ -197,7 +224,13 @@ foreach ($tree_data as $row) {
         $f_stat = $statuses[$f_id . '_0'] ?? ['status' => 'empty', 'progress' => 0];
         
         $is_v_performed = ($visit_performed_map[$v_id] ?? '') !== 'No';
+
+        // 1. If this visit itself was not performed, disable other forms in it
+        // 2. If Screening visit was not performed, Day 1 Visit is disabled completely!
         $is_f_disabled = (!$is_v_performed && stripos($row['form_name'], 'Visit Details') === false);
+        if (!$is_screening_performed && $is_day1_visit) {
+            $is_f_disabled = true;
+        }
 
         $structure[$v_id]['forms'][] = [
             'id' => $f_id,
@@ -216,6 +249,13 @@ foreach ($tree_data as $row) {
         $total_forms_count++;
     }
 }
+
+if ($eot_visit_id && !empty($structure[$eot_visit_id]['forms'])) {
+    $eot_first_form_id = $structure[$eot_visit_id]['forms'][0]['id'] ?? null;
+}
+$eot_jump_url = ($eot_visit_id && $eot_first_form_id) 
+    ? "?subject_id={$subject_id}&visit_id={$eot_visit_id}&form_id={$eot_first_form_id}" 
+    : null;
 
 // Global Progress (Only for Main Visits for now?)
 // Or include repeating data? Let's stick to main visits for global progress sidebar
@@ -327,7 +367,8 @@ if ($current_module_id) {
 $is_current_visit_performed = ($current_visit_id && isset($visit_performed_map[$current_visit_id])) 
     ? ($visit_performed_map[$current_visit_id] !== 'No') 
     : true;
-$is_current_form_disabled = (!$is_current_visit_performed && stripos($current_form_name, 'Visit Details') === false);
+$is_day1_disabled_by_screening = (!$is_screening_performed && $day1_visit_id && $current_visit_id == $day1_visit_id);
+$is_current_form_disabled = ((!$is_current_visit_performed && stripos($current_form_name, 'Visit Details') === false) || $is_day1_disabled_by_screening);
 
 // Fetch Fields for the Current Form
 $fields = [];
@@ -372,19 +413,29 @@ $flat_forms = [];
 if (!$current_module_id) {
     foreach ($structure as $vid => $visit) {
         foreach ($visit['forms'] as $frm) {
-            $flat_forms[] = ['visit_id' => $vid, 'form_id' => $frm['id']];
+            $flat_forms[] = [
+                'visit_id' => $vid, 
+                'form_id' => $frm['id'],
+                'is_disabled' => !empty($frm['is_disabled'])
+            ];
         }
     }
 
     foreach ($flat_forms as $i => $item) {
         if ($item['form_id'] == $current_form_id) {
-            if (isset($flat_forms[$i - 1])) {
-                $prev = $flat_forms[$i - 1];
-                $prev_link = "?subject_id=$subject_id&visit_id={$prev['visit_id']}&form_id={$prev['form_id']}";
+            for ($p = $i - 1; $p >= 0; $p--) {
+                if (!$flat_forms[$p]['is_disabled']) {
+                    $prev = $flat_forms[$p];
+                    $prev_link = "?subject_id=$subject_id&visit_id={$prev['visit_id']}&form_id={$prev['form_id']}";
+                    break;
+                }
             }
-            if (isset($flat_forms[$i + 1])) {
-                $next = $flat_forms[$i + 1];
-                $next_link = "?subject_id=$subject_id&visit_id={$next['visit_id']}&form_id={$next['form_id']}";
+            for ($n = $i + 1; $n < count($flat_forms); $n++) {
+                if (!$flat_forms[$n]['is_disabled']) {
+                    $next = $flat_forms[$n];
+                    $next_link = "?subject_id=$subject_id&visit_id={$next['visit_id']}&form_id={$next['form_id']}";
+                    break;
+                }
             }
             break;
         }
@@ -572,7 +623,7 @@ $sdr_submitted = (bool)($curr_stat['sdr_submitted'] ?? false);
 $monitor_reviewed = (bool)($curr_stat['monitor_reviewed'] ?? false);
 $manager_reviewed = (bool)($curr_stat['manager_reviewed'] ?? false);
 
-if ($sdr_submitted || $is_current_form_disabled) {
+if ($sdr_submitted || $monitor_reviewed || $manager_reviewed || $is_current_form_disabled) {
     $can_edit = false; // Lock editing!
 }
 
@@ -631,12 +682,15 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                         $is_active = ($vid == $current_visit_id); // Only active if visit selected and NOT in module mode
                     ?>
                     <div class="tree-visit">
-                        <div class="visit-header <?php echo $is_active ? 'active' : ''; ?>" onclick="toggleVisit(this)" style="display: block; position: relative; padding: 0.75rem 1rem;">
+                        <div class="visit-header <?php echo $is_active ? 'active' : ''; ?>" onclick="toggleVisit(this)" style="display: block; position: relative; padding: 0.75rem 1rem; <?php echo !empty($visit['is_disabled']) ? 'opacity: 0.6;' : ''; ?>">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
                                 <div style="display: flex; align-items: center; gap: 0.5rem; font-weight: 600; color: #334155;">
                                      <!-- Simple chevron logic -->
                                      <span class="material-icons-round chevron" style="font-size: 1.25rem; color: #94a3b8; transition: transform 0.2s;">expand_more</span>
                                      <?php echo htmlspecialchars($visit['name']); ?>
+                                     <?php if (!empty($visit['is_disabled'])): ?>
+                                         <span class="badge-disabled day1-disabled-badge" style="font-size: 0.65rem; background: #fee2e2; color: #b91c1c; padding: 2px 6px; border-radius: 4px; font-weight: 600;">Disabled</span>
+                                     <?php endif; ?>
                                 </div>
                                 <span class="material-icons-round" style="font-size: 1.25rem; color: #94a3b8;">more_vert</span>
                             </div>
@@ -1072,13 +1126,28 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                         </div>
 
                         <?php if ($is_current_form_disabled): ?>
-                            <div class="alert alert-warning" style="display: flex; align-items: center; gap: 0.85rem; background: #fffbeb; border: 1px solid #fef3c7; border-left: 4px solid #f59e0b; padding: 1rem 1.25rem; border-radius: 8px; margin-bottom: 1.5rem; color: #92400e;">
-                                <span class="material-icons-round" style="font-size: 1.75rem; color: #f59e0b;">block</span>
-                                <div>
-                                    <strong style="font-size: 0.95rem;">Form Disabled — Visit Not Performed</strong>
-                                    <div style="font-size: 0.85rem; color: #b45309; margin-top: 2px;">
-                                        This form (<strong><?php echo htmlspecialchars($current_form_name); ?></strong>) is disabled because <strong>Was this Visit Performed</strong> was answered <strong>No</strong> in Visit Details. Data entry is disabled for this visit.
-                                    </div>
+                            <div class="alert alert-warning" style="display: flex; align-items: flex-start; gap: 0.85rem; background: #fffbeb; border: 1px solid #fef3c7; border-left: 4px solid #f59e0b; padding: 1rem 1.25rem; border-radius: 8px; margin-bottom: 1.5rem; color: #92400e;">
+                                <span class="material-icons-round" style="font-size: 1.75rem; color: #f59e0b; margin-top: 2px;">block</span>
+                                <div style="flex: 1;">
+                                    <?php if ($is_day1_disabled_by_screening): ?>
+                                        <strong style="font-size: 0.95rem;">Day 1 Visit Disabled — Initial Screening Visit Not Performed</strong>
+                                        <div style="font-size: 0.85rem; color: #b45309; margin-top: 3px; line-height: 1.4;">
+                                            This visit (<strong><?php echo htmlspecialchars($current_visit_name); ?></strong>) is disabled because <strong>Was this Visit Performed</strong> was answered <strong>No</strong> in the initial Screening Visit. Data entry is disabled for Day 1. Please directly proceed to <strong>End of Treatment / End of Study</strong>.
+                                        </div>
+                                        <?php if ($eot_jump_url): ?>
+                                        <div style="margin-top: 0.75rem;">
+                                            <a href="<?php echo $eot_jump_url; ?>" class="btn btn-primary btn-sm" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600;">
+                                                Directly Jump to End of Treatment / End of Study
+                                                <span class="material-icons-round" style="font-size: 16px;">arrow_forward</span>
+                                            </a>
+                                        </div>
+                                        <?php endif; ?>
+                                    <?php else: ?>
+                                        <strong style="font-size: 0.95rem;">Form Disabled — Visit Not Performed</strong>
+                                        <div style="font-size: 0.85rem; color: #b45309; margin-top: 2px;">
+                                            This form (<strong><?php echo htmlspecialchars($current_form_name); ?></strong>) is disabled because <strong>Was this Visit Performed</strong> was answered <strong>No</strong> in Visit Details. Data entry is disabled for this visit.
+                                        </div>
+                                    <?php endif; ?>
                                 </div>
                             </div>
                         <?php endif; ?>
@@ -1169,10 +1238,11 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                                                     $query_tooltip = 'Queries';
                                                     $click_handler = '';
                                                     $is_form_reviewed_for_role = ($is_monitor_role && $monitor_reviewed) || ($is_manager_role && $manager_reviewed);
+                                                    $reviewed_label = ($is_monitor_role && $monitor_reviewed) ? 'SDVed' : 'DM Reviewed';
                                                     
                                                     if ($active_query_count > 0) {
                                                         if ($is_form_reviewed_for_role) {
-                                                            $query_tooltip = "Cannot Raise Query&#10;as the form is marked as review";
+                                                            $query_tooltip = "Cannot Raise Query&#10;as the form is marked as " . $reviewed_label;
                                                         } else {
                                                             $query_tooltip = "Cannot Raise Query&#10;as a query is open";
                                                         }
@@ -1185,7 +1255,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                                                         }
                                                     } else {
                                                         if ($is_form_reviewed_for_role) {
-                                                            $query_tooltip = "Cannot Raise Query&#10;as the form is marked as review";
+                                                            $query_tooltip = "Cannot Raise Query&#10;as the form is marked as " . $reviewed_label;
                                                             $query_color = '#cbd5e1';
                                                             $click_handler = 'style="cursor: not-allowed; opacity: 0.5;"';
                                                         } else {
@@ -1245,6 +1315,25 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                                 </div>
                             <?php endforeach; ?>
                             </fieldset>
+                            <?php if ($current_visit_id == $screening_visit_id && stripos($current_form_name, 'Visit Details') !== false): ?>
+                                <div id="screening_not_performed_callout" style="display: <?php echo (!$is_screening_performed ? 'flex' : 'none'); ?>; align-items: center; justify-content: space-between; gap: 1rem; background: #f0fdf4; border: 1px solid #bbf7d0; border-left: 4px solid #16a34a; padding: 0.9rem 1.25rem; border-radius: 8px; margin-top: 1.25rem;">
+                                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                                        <span class="material-icons-round" style="color: #16a34a; font-size: 1.5rem;">info</span>
+                                        <div>
+                                            <strong style="color: #166534; font-size: 0.9rem;">Screening Visit Not Performed</strong>
+                                            <div style="color: #15803d; font-size: 0.8rem; margin-top: 2px;">
+                                                Day 1 visit is disabled. Saving this form will directly jump to <strong>End of Treatment / End of Study</strong>.
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <?php if ($eot_jump_url): ?>
+                                    <button type="button" class="btn btn-primary btn-sm" onclick="saveData(true, this)" style="background: #16a34a; border-color: #16a34a; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px;">
+                                        Save & Jump to End of Treatment / End of Study
+                                        <span class="material-icons-round" style="font-size: 16px;">arrow_forward</span>
+                                    </button>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endif; ?>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -1309,7 +1398,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
         
         <!-- Revoke Remarks Container -->
         <div id="revokeRemarksContainer" style="display: none; margin-top: 1rem; width: 100%; text-align: left;">
-            <label style="display: block; font-weight: 600; font-size: 0.9rem; color: var(--text-dark); margin-bottom: 0.5rem;">Reason for Revoking Review <span style="color: red;">*</span></label>
+            <label id="revokeRemarksLabel" style="display: block; font-weight: 600; font-size: 0.9rem; color: var(--text-dark); margin-bottom: 0.5rem;">Reason for Revocation <span style="color: red;">*</span></label>
             <textarea id="revokeRemarksText" class="form-input" rows="4" style="width: 100%; border: 1px solid var(--border-color); border-radius: 4px; padding: 0.5rem; resize: vertical; box-sizing: border-box;" placeholder="Enter the reason for revoking this review and mention the changes required." maxlength="500" oninput="validateRevokeRemarks()"></textarea>
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.25rem;">
                 <span id="revokeRemarksValMsg" style="color: #dc2626; font-size: 0.75rem; font-weight: 500;">Please enter a reason before revoking the review.</span>
@@ -1537,25 +1626,25 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
             btnText = 'Yes, Revoke SDR';
             btnBg = '#dc2626';
         } else if (workflowAction === 'monitor_review') {
-            title = 'Complete SDV (Source Data Verification)';
+            title = 'Mark as SDVed';
             message = 'Are you sure you want to verify (SDV) this form against source documents? The form will be marked as SDVed.';
             btnText = 'Yes, Mark as SDVed';
             btnBg = '#059669';
         } else if (workflowAction === 'monitor_revoke') {
-            title = 'Reason for Revoking SDV';
-            message = 'Are you sure you want to revoke this SDV review? The SDR status will be reset, and the Data Coordinator will be able to update and resubmit the record.';
-            btnText = 'Confirm Revoke SDV';
-            btnBg = '#059669';
+            title = 'Revoke SDVed';
+            message = 'Are you sure you want to revoke this SDVed status? The SDR status will be reset, and the Data Coordinator will be able to update and resubmit the record.';
+            btnText = 'Confirm Revoke SDVed';
+            btnBg = '#dc2626';
         } else if (workflowAction === 'manager_review') {
-            title = 'Complete SDV (Source Data Verification)';
-            message = 'Are you sure you want to verify this form? The form will be marked as SDVed.';
-            btnText = 'Yes, Mark as SDVed';
+            title = 'Mark as DM Reviewed';
+            message = 'Are you sure you want to mark this form as DM Reviewed?';
+            btnText = 'Yes, Mark as DM Reviewed';
             btnBg = '#059669';
         } else if (workflowAction === 'manager_revoke') {
-            title = 'Reason for Revoking SDV';
-            message = 'Are you sure you want to revoke this review? The SDR status will be reset, and the Data Coordinator will be able to update and resubmit the record.';
-            btnText = 'Confirm Revoke SDV';
-            btnBg = '#059669';
+            title = 'Revoke DM Reviewed';
+            message = 'Are you sure you want to revoke this DM Reviewed status? The SDR status will be reset, and the Data Coordinator will be able to update and resubmit the record.';
+            btnText = 'Confirm Revoke DM Reviewed';
+            btnBg = '#dc2626';
         }
 
         document.getElementById('workflowModalTitle').textContent = title;
@@ -1568,11 +1657,17 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
         const isRevoke = (workflowAction === 'monitor_revoke' || workflowAction === 'manager_revoke');
         const remarksContainer = document.getElementById('revokeRemarksContainer');
         const remarksText = document.getElementById('revokeRemarksText');
+        const remarksLabel = document.getElementById('revokeRemarksLabel');
         
         if (remarksContainer && remarksText) {
             if (isRevoke) {
                 remarksContainer.style.display = 'block';
                 remarksText.value = '';
+                if (remarksLabel) {
+                    remarksLabel.innerHTML = (workflowAction === 'monitor_revoke') 
+                        ? 'Reason for Revoking SDVed <span style="color: red;">*</span>' 
+                        : 'Reason for Revoking DM Reviewed <span style="color: red;">*</span>';
+                }
                 validateRevokeRemarks(); // disables by default
             } else {
                 remarksContainer.style.display = 'none';
@@ -1791,6 +1886,12 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
     let isSaving = false;
     let saveTimeout = null;
 
+    const SCREENING_VISIT_ID = '<?php echo (int)($screening_visit_id ?? 0); ?>';
+    const DAY1_VISIT_ID = '<?php echo (int)($day1_visit_id ?? 0); ?>';
+    const EOT_VISIT_ID = '<?php echo (int)($eot_visit_id ?? 0); ?>';
+    const EOT_JUMP_URL = '<?php echo $eot_jump_url ? addslashes($eot_jump_url) : ""; ?>';
+    let CURRENT_NEXT_LINK = '<?php echo $next_link ? addslashes($next_link) : ""; ?>';
+
     function saveData(goNext = false, callerBtn = null) {
         clearTimeout(saveTimeout);
         saveTimeout = null;
@@ -1898,9 +1999,16 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
             isSaving = false;
             if (res.success) {
                 hasUnsavedChanges = false;
-                if (goNext && '<?php echo $next_link; ?>') {
-                    window.location.href = '<?php echo $next_link; ?>';
+                if (callerBtn && res.redirect_url) {
+                    window.location.href = res.redirect_url;
                     return res;
+                }
+                if (goNext) {
+                    const dest = res.redirect_url || CURRENT_NEXT_LINK || '<?php echo $next_link; ?>';
+                    if (dest) {
+                        window.location.href = dest;
+                        return res;
+                    }
                 } else {
                     // Update UI Elements if triggered by button
                     if (btn) {
@@ -2152,52 +2260,108 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
         const visitId = '<?php echo (int)($current_visit_id ?? 0); ?>';
         if (!visitId || visitId === '0') return;
 
+        const isScreening = (visitId === SCREENING_VISIT_ID);
+
+        // 1. Current visit other forms
         const formLinks = document.querySelectorAll(`.tree-form[data-visit-id="${visitId}"]`);
         formLinks.forEach(link => {
             const formName = link.getAttribute('data-form-name') || '';
             if (formName.toLowerCase().includes('visit details')) return;
-
-            const iconEl = link.querySelector('.form-status-icon');
-            const nameEl = link.querySelector('.tree-form-name');
-            let badge = link.querySelector('.badge-disabled');
-
-            if (vpVal === 'No') {
-                if (iconEl && !link.getAttribute('data-orig-icon')) {
-                    link.setAttribute('data-orig-icon', iconEl.innerText);
-                    link.setAttribute('data-orig-color', iconEl.style.color || '#94a3b8');
-                }
-                link.classList.add('form-disabled');
-                link.style.opacity = '0.55';
-                link.style.pointerEvents = 'none';
-                link.style.cursor = 'not-allowed';
-                if (nameEl) nameEl.style.color = '#64748b';
-                if (iconEl) {
-                    iconEl.innerText = 'block';
-                    iconEl.style.color = '#94a3b8';
-                }
-                if (!badge) {
-                    badge = document.createElement('span');
-                    badge.className = 'badge-disabled';
-                    badge.style.cssText = 'font-size: 0.65rem; background: #e2e8f0; color: #64748b; padding: 1px 5px; border-radius: 4px; font-weight: 600; margin-left: auto;';
-                    badge.innerText = 'Disabled';
-                    const flexDiv = link.querySelector('div');
-                    if (flexDiv) flexDiv.appendChild(badge);
-                }
-            } else if (vpVal === 'Yes') {
-                link.classList.remove('form-disabled');
-                link.style.opacity = '1';
-                link.style.pointerEvents = '';
-                link.style.cursor = '';
-                if (nameEl) nameEl.style.color = 'var(--text-main)';
-                if (badge) badge.remove();
-                if (iconEl) {
-                    const origIcon = link.getAttribute('data-orig-icon') || 'radio_button_unchecked';
-                    const origColor = link.getAttribute('data-orig-color') || '#94a3b8';
-                    iconEl.innerText = origIcon;
-                    iconEl.style.color = origColor;
-                }
-            }
+            setFormDisabledVisual(link, vpVal === 'No');
         });
+
+        // 2. If Screening visit, handle Day 1 forms and visit header
+        if (isScreening && DAY1_VISIT_ID && DAY1_VISIT_ID !== '0') {
+            const day1Forms = document.querySelectorAll(`.tree-form[data-visit-id="${DAY1_VISIT_ID}"]`);
+            day1Forms.forEach(link => {
+                setFormDisabledVisual(link, vpVal === 'No');
+            });
+
+            // Day 1 Visit Header
+            const day1Headers = document.querySelectorAll(`.tree-visit .visit-header`);
+            day1Headers.forEach(vh => {
+                const titleText = (vh.innerText || '').toLowerCase();
+                if (titleText.includes('day 1') || titleText.includes('day-1') || titleText.includes('day1')) {
+                    let day1Badge = vh.querySelector('.day1-disabled-badge');
+                    if (vpVal === 'No') {
+                        vh.style.opacity = '0.6';
+                        if (!day1Badge) {
+                            day1Badge = document.createElement('span');
+                            day1Badge.className = 'badge-disabled day1-disabled-badge';
+                            day1Badge.style.cssText = 'font-size: 0.65rem; background: #fee2e2; color: #b91c1c; padding: 2px 6px; border-radius: 4px; font-weight: 600; margin-left: 0.5rem;';
+                            day1Badge.innerText = 'Disabled';
+                            const titleDiv = vh.querySelector('div > div');
+                            if (titleDiv) titleDiv.appendChild(day1Badge);
+                        }
+                    } else {
+                        vh.style.opacity = '1';
+                        if (day1Badge) day1Badge.remove();
+                    }
+                }
+            });
+
+            // Toggle screening callout banner
+            const callout = document.getElementById('screening_not_performed_callout');
+            if (callout) {
+                callout.style.display = (vpVal === 'No') ? 'flex' : 'none';
+            }
+
+            // Update Next link in real-time
+            if (vpVal === 'No' && EOT_JUMP_URL) {
+                CURRENT_NEXT_LINK = EOT_JUMP_URL;
+                document.querySelectorAll('a.btn-primary:not([onclick])').forEach(a => {
+                    if (a.innerText.trim() === 'Next') a.href = EOT_JUMP_URL;
+                });
+            } else if (vpVal === 'Yes') {
+                CURRENT_NEXT_LINK = '<?php echo $next_link ? addslashes($next_link) : ""; ?>';
+                document.querySelectorAll('a.btn-primary:not([onclick])').forEach(a => {
+                    if (a.innerText.trim() === 'Next') a.href = CURRENT_NEXT_LINK;
+                });
+            }
+        }
+    }
+
+    function setFormDisabledVisual(link, disabled) {
+        const iconEl = link.querySelector('.form-status-icon');
+        const nameEl = link.querySelector('.tree-form-name');
+        let badge = link.querySelector('.badge-disabled');
+
+        if (disabled) {
+            if (iconEl && !link.getAttribute('data-orig-icon')) {
+                link.setAttribute('data-orig-icon', iconEl.innerText);
+                link.setAttribute('data-orig-color', iconEl.style.color || '#94a3b8');
+            }
+            link.classList.add('form-disabled');
+            link.style.opacity = '0.55';
+            link.style.pointerEvents = 'none';
+            link.style.cursor = 'not-allowed';
+            if (nameEl) nameEl.style.color = '#64748b';
+            if (iconEl) {
+                iconEl.innerText = 'block';
+                iconEl.style.color = '#94a3b8';
+            }
+            if (!badge) {
+                badge = document.createElement('span');
+                badge.className = 'badge-disabled';
+                badge.style.cssText = 'font-size: 0.65rem; background: #e2e8f0; color: #64748b; padding: 1px 5px; border-radius: 4px; font-weight: 600; margin-left: auto;';
+                badge.innerText = 'Disabled';
+                const flexDiv = link.querySelector('div');
+                if (flexDiv) flexDiv.appendChild(badge);
+            }
+        } else {
+            link.classList.remove('form-disabled');
+            link.style.opacity = '1';
+            link.style.pointerEvents = '';
+            link.style.cursor = '';
+            if (nameEl) nameEl.style.color = 'var(--text-main)';
+            if (badge) badge.remove();
+            if (iconEl) {
+                const origIcon = link.getAttribute('data-orig-icon') || 'radio_button_unchecked';
+                const origColor = link.getAttribute('data-orig-color') || '#94a3b8';
+                iconEl.innerText = origIcon;
+                iconEl.style.color = origColor;
+            }
+        }
     }
 
     function handleCalculationsAndFlags() {
@@ -2842,6 +3006,53 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
          } catch(e) { console.error(e); }
     }
     
+    function setClonedFieldValue(value) {
+        const container = document.getElementById('queryFieldEditContainer');
+        if (!container) return;
+        
+        const strVal = (value !== null && value !== undefined) ? String(value) : '';
+        
+        const radios = container.querySelectorAll('input[type="radio"]');
+        if (radios.length > 0) {
+            radios.forEach(r => { r.checked = (r.value === strVal); });
+            return;
+        }
+        
+        const checkboxes = container.querySelectorAll('input[type="checkbox"]');
+        if (checkboxes.length > 0) {
+            const vals = strVal.split(',').map(s => s.trim());
+            checkboxes.forEach(c => { c.checked = vals.includes(c.value); });
+            return;
+        }
+        
+        const select = container.querySelector('select');
+        if (select) {
+            select.value = strVal;
+            return;
+        }
+        
+        const textarea = container.querySelector('textarea');
+        if (textarea) {
+            textarea.value = strVal;
+            return;
+        }
+        
+        const input = container.querySelector('input');
+        if (input) {
+            if (input.type === 'date' && strVal) {
+                if (/^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/.test(strVal)) {
+                    const parts = strVal.split(/[\/\-]/);
+                    input.value = `${parts[2]}-${parts[1]}-${parts[0]}`;
+                } else {
+                    input.value = strVal;
+                }
+            } else {
+                input.value = strVal;
+            }
+            return;
+        }
+    }
+
     function getClonedFieldValue() {
         const container = document.getElementById('queryFieldEditContainer');
         if (!container) return '';
@@ -2931,31 +3142,40 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
         const btnSave = document.getElementById('btnSaveQueryUpdate');
         if (btnSave) btnSave.style.display = hasOptions ? 'block' : 'none';
         
-        // Show Previous Value for Monitors on answered/closed queries
+        // Show Field Value & Previous Value on answered/closed queries or new/open queries
         const isMonitor = <?php echo $is_monitor ? 'true' : 'false'; ?>;
         const prevTextEl = document.getElementById('queryPreviousValueText');
+        const originalWrapper = document.querySelector(`.crf-field[data-field-id="${query.field_id}"] .input-wrapper`);
+        const currentVal = getFieldWrapperValueText(originalWrapper);
         
-        if (isMonitor && ['answered', 'closed'].includes(query.status)) {
-            // Find the audit log entry where the query was resolved (coordinator saved new value)
-            const resolutionAudit = fieldAuditHistory.find(h => 
-                h.change_type === 'update' && 
-                h.reason_for_change && 
-                (h.reason_for_change.includes('Updated via query resolution') || h.reason_for_change.includes('Updated query'))
-            );
+        if (['answered', 'closed'].includes(query.status)) {
+            let newVal = query.query_new_value;
+            let oldVal = query.query_old_value;
             
-            let prevVal = 'Empty';
-            if (resolutionAudit) {
-                prevVal = resolutionAudit.old_value || 'Empty';
+            if (newVal !== undefined && newVal !== null && newVal !== '') {
+                setClonedFieldValue(newVal);
+                prevTextEl.innerHTML = `Previous Value: <span style="font-weight: 600; color: var(--text-dark);">${oldVal || currentVal}</span>`;
             } else {
-                const originalWrapper = document.querySelector(`.crf-field[data-field-id="${query.field_id}"] .input-wrapper`);
-                prevVal = getFieldWrapperValueText(originalWrapper);
+                const resolutionAudit = fieldAuditHistory.find(h => 
+                    h.change_type === 'update' && 
+                    h.reason_for_change && 
+                    (h.reason_for_change.includes('Updated via query resolution') || h.reason_for_change.includes('Updated query'))
+                );
+                if (resolutionAudit && resolutionAudit.new_value) {
+                    setClonedFieldValue(resolutionAudit.new_value);
+                    prevTextEl.innerHTML = `Previous Value: <span style="font-weight: 600; color: var(--text-dark);">${resolutionAudit.old_value || 'Empty'}</span>`;
+                } else {
+                    setClonedFieldValue(currentVal);
+                    prevTextEl.innerHTML = `Previous Value: <span style="font-weight: 600; color: var(--text-dark);">${currentVal}</span>`;
+                }
             }
-            
-            prevTextEl.innerHTML = `Previous Value: <span style="font-weight: 600; color: var(--text-dark);">${prevVal}</span>`;
         } else {
-            // Coordinator view or new/open query: show the current page value as Previous Value
-            const originalWrapper = document.querySelector(`.crf-field[data-field-id="${query.field_id}"] .input-wrapper`);
-            const currentVal = getFieldWrapperValueText(originalWrapper);
+            // Coordinator view or new/open query
+            if (!isMonitor) {
+                setClonedFieldValue(''); // Coordinator starts empty so they can enter new value if desired
+            } else {
+                setClonedFieldValue(currentVal);
+            }
             prevTextEl.innerHTML = `Previous Value: <span style="font-weight: 600; color: var(--text-dark);">${currentVal}</span>`;
         }
 
@@ -2982,6 +3202,16 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
             const data = await res.json();
              if (data.success) {
                   list.innerHTML = '';
+                  
+                  // Also check if history has an answered/closed step with new_value
+                  const answeredStep = data.history.find(h => h.new_value !== null && h.new_value !== undefined && h.new_value !== '');
+                  if (answeredStep && ['answered', 'closed'].includes(query.status)) {
+                      setClonedFieldValue(answeredStep.new_value);
+                      if (answeredStep.old_value) {
+                          prevTextEl.innerHTML = `Previous Value: <span style="font-weight: 600; color: var(--text-dark);">${answeredStep.old_value}</span>`;
+                      }
+                  }
+                  
                   data.history.forEach(h => {
                       const li = document.createElement('li');
                       li.style.cssText = "border-bottom: 1px solid #e2e8f0; padding: 0.5rem 0;";
@@ -3083,11 +3313,14 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
          fd.append('status', status);
          fd.append('remark', remark);
          
-         // Only collect field_value if user can edit
+         // Collect field_value if coordinator answering query or user can edit
+         const isCoordinator = <?php echo ($is_coordinator || hasPermission('enter_data')) ? 'true' : 'false'; ?>;
          const canEdit = <?php echo $can_edit ? 'true' : 'false'; ?>;
-         if (canEdit) {
+         if (status === 'answered' || canEdit || isCoordinator) {
              const fValue = getClonedFieldValue();
-             fd.append('field_value', fValue);
+             if (fValue !== '' && fValue !== null) {
+                 fd.append('field_value', fValue);
+             }
          }
          
          try {

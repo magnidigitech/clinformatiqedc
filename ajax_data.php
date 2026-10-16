@@ -20,7 +20,7 @@ try {
     $study_id = $_SESSION['active_study_id'];
 
     $role_lower = strtolower($_SESSION['active_role_name'] ?? '');
-    $is_coordinator = (strpos($role_lower, 'coordinator') !== false) || (strpos($role_lower, 'admin') !== false);
+    $is_coordinator = (strpos($role_lower, 'coordinator') !== false) || (strpos($role_lower, 'entry') !== false) || (strpos($role_lower, 'admin') !== false);
     $is_monitor = (strpos($role_lower, 'monitor') !== false) || (strpos($role_lower, 'admin') !== false);
     $is_manager = (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'admin') !== false);
 
@@ -69,12 +69,38 @@ try {
         $chk->execute([$subject_id, $study_id]);
         if (!$chk->fetch()) throw new Exception("Invalid subject");
 
-        // Enforce read-only lock if SDR is submitted
-        $stmt_lock = $pdo->prepare("SELECT sdr_submitted FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
+        // Enforce read-only lock if SDR is submitted or form is SDVed/DM Reviewed
+        $stmt_lock = $pdo->prepare("SELECT sdr_submitted, monitor_reviewed, manager_reviewed FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
         $stmt_lock->execute([$subject_id, $form_id, $repeating_instance_id, $repeating_instance_id]);
         $lock_row = $stmt_lock->fetch();
-        if ($lock_row && (bool)$lock_row['sdr_submitted']) {
-            throw new Exception("This form is locked (SDR submitted) and cannot be edited.");
+        if ($lock_row && ((bool)$lock_row['sdr_submitted'] || (bool)$lock_row['monitor_reviewed'] || (bool)$lock_row['manager_reviewed'])) {
+            throw new Exception("This form is locked (SDR submitted / reviewed) and cannot be edited.");
+        }
+
+        // Enforce guard: Day 1 Visit is disabled if Screening Visit was not performed
+        if ($visit_id > 0) {
+            $stmt_check_v = $pdo->prepare("SELECT name FROM study_visits WHERE id = ?");
+            $stmt_check_v->execute([$visit_id]);
+            $v_name = $stmt_check_v->fetchColumn() ?: '';
+
+            if (stripos($v_name, 'day 1') !== false || stripos($v_name, 'day-1') !== false || stripos($v_name, 'day1') !== false) {
+                $stmt_scr = $pdo->prepare("
+                    SELECT sd.value 
+                    FROM subject_data sd
+                    JOIN form_fields ff ON sd.field_id = ff.id
+                    JOIN study_forms sf ON ff.form_id = sf.id
+                    JOIN study_visits sv ON sf.visit_id = sv.id
+                    WHERE sd.subject_id = ? AND sv.study_id = ? 
+                      AND LOWER(sv.name) LIKE '%screening%' 
+                      AND ff.variable_name = 'visit_performed'
+                    LIMIT 1
+                ");
+                $stmt_scr->execute([$subject_id, $study_id]);
+                $scr_perf = $stmt_scr->fetchColumn();
+                if ($scr_perf !== false && strcasecmp(trim($scr_perf), 'No') === 0) {
+                    throw new Exception("Day 1 Visit is disabled because the initial Screening Visit was not performed. Directly proceed to End of Treatment / End of Study.");
+                }
+            }
         }
 
         $pdo->beginTransaction();
@@ -140,9 +166,44 @@ try {
 
             $pdo->commit();
             
+            // Check if this was Screening Visit and visit_performed was saved as 'No' -> provide redirect_url to End of Treatment / End of Study
+            $redirect_url = null;
+            if ($visit_id > 0) {
+                $stmt_vname = $pdo->prepare("SELECT name FROM study_visits WHERE id = ?");
+                $stmt_vname->execute([$visit_id]);
+                $curr_vname = $stmt_vname->fetchColumn() ?: '';
+                if (stripos($curr_vname, 'screening') !== false) {
+                    $stmt_vp_chk = $pdo->prepare("
+                        SELECT sd.value 
+                        FROM subject_data sd
+                        JOIN form_fields ff ON sd.field_id = ff.id
+                        WHERE sd.subject_id = ? AND sd.form_id = ? AND ff.variable_name = 'visit_performed'
+                        LIMIT 1
+                    ");
+                    $stmt_vp_chk->execute([$subject_id, $form_id]);
+                    $vp_saved = $stmt_vp_chk->fetchColumn();
+                    if ($vp_saved !== false && strcasecmp(trim($vp_saved), 'No') === 0) {
+                        $stmt_eot = $pdo->prepare("
+                            SELECT sf.id as form_id, sf.visit_id 
+                            FROM study_forms sf
+                            JOIN study_visits sv ON sf.visit_id = sv.id
+                            WHERE sv.study_id = ? 
+                              AND (LOWER(sv.name) LIKE '%end of treatment%' OR LOWER(sv.name) LIKE '%end of study%' OR LOWER(sv.name) LIKE '%eot%' OR LOWER(sv.name) LIKE '%eos%')
+                            ORDER BY sv.order_index ASC, sf.order_index ASC
+                            LIMIT 1
+                        ");
+                        $stmt_eot->execute([$study_id]);
+                        $eot_target = $stmt_eot->fetch(PDO::FETCH_ASSOC);
+                        if ($eot_target) {
+                            $redirect_url = "subject_data_entry.php?subject_id={$subject_id}&visit_id={$eot_target['visit_id']}&form_id={$eot_target['form_id']}";
+                        }
+                    }
+                }
+            }
+
             // Clean output buffer and return success
             ob_clean();
-            echo json_encode(array_merge(['success' => true], $progress_stats));
+            echo json_encode(array_merge(['success' => true, 'redirect_url' => $redirect_url], $progress_stats));
 
         } catch (Exception $e) {
             $pdo->rollBack();
@@ -190,7 +251,21 @@ try {
         $repeating_instance_id = (int)($_POST['repeating_instance_id'] ?? 0);
         
         // 1. Queries
-        $stmt_q = $pdo->prepare("SELECT q.*, COALESCE(u.name, u.username) as created_by_name FROM data_queries q LEFT JOIN users u ON q.created_by = u.id WHERE subject_id = ? AND form_id = ? AND field_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL)) ORDER BY created_at DESC");
+        $stmt_q = $pdo->prepare("
+            SELECT q.*, COALESCE(u.name, u.username) as created_by_name,
+                   qh.old_value as query_old_value,
+                   qh.new_value as query_new_value
+            FROM data_queries q 
+            LEFT JOIN users u ON q.created_by = u.id 
+            LEFT JOIN LATERAL (
+                SELECT old_value, new_value 
+                FROM data_query_history 
+                WHERE query_id = q.id AND new_value IS NOT NULL 
+                ORDER BY id DESC LIMIT 1
+            ) qh ON true
+            WHERE q.subject_id = ? AND q.form_id = ? AND q.field_id = ? AND (q.repeating_instance_id = ? OR (? = 0 AND q.repeating_instance_id IS NULL)) 
+            ORDER BY q.created_at DESC
+        ");
         $stmt_q->execute([$subject_id, $form_id, $field_id, $repeating_instance_id, $repeating_instance_id]);
         $queries = $stmt_q->fetchAll(PDO::FETCH_ASSOC);
         
@@ -233,8 +308,11 @@ try {
         $monitor_reviewed = $status_row ? (bool)$status_row['monitor_reviewed'] : false;
         $manager_reviewed = $status_row ? (bool)$status_row['manager_reviewed'] : false;
         
-        if (($is_monitor && $monitor_reviewed) || ($is_manager && $manager_reviewed)) {
-            throw new Exception("Cannot Raise Query as the form is marked as review");
+        if ($is_monitor && $monitor_reviewed) {
+            throw new Exception("Cannot Raise Query as the form is marked as SDVed");
+        }
+        if ($is_manager && $manager_reviewed) {
+            throw new Exception("Cannot Raise Query as the form is marked as DM Reviewed");
         }
         
         // Server side check if there is an unresolved query
@@ -293,17 +371,20 @@ try {
             $hist_new_val = null;
             
             if (isset($_POST['field_value'])) {
-                if (!hasPermission('enter_data') && !hasPermission('edit')) {
+                $role_name = strtolower($_SESSION['active_role_name'] ?? '');
+                $is_coord = (strpos($role_name, 'coordinator') !== false || strpos($role_name, 'entry') !== false);
+                if (!hasPermission('enter_data') && !hasPermission('edit') && !$is_coord) {
                     throw new Exception("Unauthorized to edit clinical data");
                 }
                 
                 // Get query information to know context
-                $stmt_qinfo = $pdo->prepare("SELECT subject_id, visit_id, form_id, field_id, COALESCE(repeating_instance_id, 0) as repeating_instance_id FROM data_queries WHERE id = ?");
+                $stmt_qinfo = $pdo->prepare("SELECT study_id, subject_id, visit_id, form_id, field_id, COALESCE(repeating_instance_id, 0) as repeating_instance_id FROM data_queries WHERE id = ?");
                 $stmt_qinfo->execute([$query_id]);
                 $qinfo = $stmt_qinfo->fetch();
                 
                 if ($qinfo) {
-                    $field_value = $_POST['field_value'];
+                    $field_value = trim($_POST['field_value']);
+                    $study_id = $qinfo['study_id'] ?? ($_SESSION['active_study_id'] ?? 0);
                     $sub_id = $qinfo['subject_id'];
                     $vis_id = $qinfo['visit_id'];
                     $frm_id = $qinfo['form_id'];
@@ -314,8 +395,9 @@ try {
                     $stmt_old = $pdo->prepare("SELECT value FROM subject_data WHERE subject_id = ? AND form_id = ? AND field_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
                     $stmt_old->execute([$sub_id, $frm_id, $fld_id, $inst_id, $inst_id]);
                     $old_val = $stmt_old->fetchColumn();
+                    $old_val = ($old_val === false) ? null : $old_val;
                     
-                    if ($old_val !== $field_value) {
+                    if ($field_value !== '' && $old_val !== $field_value) {
                         $hist_old_val = $old_val;
                         $hist_new_val = $field_value;
                         
@@ -365,11 +447,12 @@ try {
             
             // Get query information to log in data_audit_log (when closed or requery)
             if ($new_status === 'closed' || ($new_status === 'open' && $old_status === 'answered')) {
-                $stmt_qinfo = $pdo->prepare("SELECT subject_id, visit_id, form_id, field_id, COALESCE(repeating_instance_id, 0) as repeating_instance_id FROM data_queries WHERE id = ?");
+                $stmt_qinfo = $pdo->prepare("SELECT study_id, subject_id, visit_id, form_id, field_id, COALESCE(repeating_instance_id, 0) as repeating_instance_id FROM data_queries WHERE id = ?");
                 $stmt_qinfo->execute([$query_id]);
                 $qinfo = $stmt_qinfo->fetch();
                 
                 if ($qinfo) {
+                    $study_id = $qinfo['study_id'] ?? ($_SESSION['active_study_id'] ?? 0);
                     $sub_id = $qinfo['subject_id'];
                     $vis_id = $qinfo['visit_id'];
                     $frm_id = $qinfo['form_id'];
@@ -391,6 +474,65 @@ try {
                         $study_id, $sub_id, $vis_id, $frm_id, $fld_id, $inst_id,
                         $reason, $change_type, $user_id
                     ]);
+                    
+                    // IF QUERY IS CLOSED: Check if there was any field value change for this query
+                    if ($new_status === 'closed') {
+                        $stmt_change = $pdo->prepare("
+                            SELECT old_value, new_value 
+                            FROM data_query_history 
+                            WHERE query_id = ? AND new_value IS NOT NULL AND (old_value IS NULL OR old_value != new_value)
+                            ORDER BY id DESC LIMIT 1
+                        ");
+                        $stmt_change->execute([$query_id]);
+                        $val_change = $stmt_change->fetch(PDO::FETCH_ASSOC);
+                        
+                        if ($val_change) {
+                            // Ensure the field in subject_data has the latest new_value
+                            $stmt_cur_val = $pdo->prepare("SELECT value FROM subject_data WHERE subject_id = ? AND form_id = ? AND field_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
+                            $stmt_cur_val->execute([$sub_id, $frm_id, $fld_id, $inst_id, $inst_id]);
+                            $curr_val_db = $stmt_cur_val->fetchColumn();
+                            
+                            if ($curr_val_db !== $val_change['new_value']) {
+                                $stmt_del = $pdo->prepare("DELETE FROM subject_data WHERE subject_id = ? AND form_id = ? AND field_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
+                                $stmt_del->execute([$sub_id, $frm_id, $fld_id, $inst_id, $inst_id]);
+                                
+                                $stmt_ins = $pdo->prepare("INSERT INTO subject_data (study_id, subject_id, visit_id, form_id, repeating_instance_id, field_id, value, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                                $stmt_ins->execute([$study_id, $sub_id, $vis_id, $frm_id, $inst_id, $fld_id, $val_change['new_value'], $user_id]);
+                            }
+                            
+                            // Revoke SDR for the Data Coordinator on this form
+                            $stmt_stat = $pdo->prepare("SELECT * FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
+                            $stmt_stat->execute([$sub_id, $frm_id, $inst_id, $inst_id]);
+                            $stat_row = $stmt_stat->fetch(PDO::FETCH_ASSOC);
+                            
+                            if ($stat_row) {
+                                $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+                                $false_val = ($driver === 'pgsql') ? 'false' : '0';
+                                
+                                $stmt_revoke = $pdo->prepare("
+                                    UPDATE subject_form_status 
+                                    SET sdr_submitted = $false_val, 
+                                        monitor_reviewed = $false_val, 
+                                        manager_reviewed = $false_val, 
+                                        is_verified = $false_val,
+                                        updated_at = NOW()
+                                    WHERE id = ?
+                                ");
+                                $stmt_revoke->execute([$stat_row['id']]);
+                            }
+                            
+                            // Add audit trail for SDR Revocation
+                            $stmt_audit_sdr = $pdo->prepare("INSERT INTO data_audit_log (study_id, subject_id, visit_id, form_id, field_id, repeating_instance_id, old_value, new_value, reason_for_change, change_type, action_by) VALUES (?, ?, ?, ?, NULL, ?, NULL, NULL, ?, 'sdr_revoked', ?)");
+                            $stmt_audit_sdr->execute([
+                                $study_id, $sub_id, $vis_id, $frm_id, $inst_id,
+                                "SDR Revoked: Query #" . $query_id . " closed with updated field value",
+                                $user_id
+                            ]);
+                            
+                            // Recalculate progress for this form and study
+                            calculateAndSaveProgress($pdo, $study_id, $sub_id, $vis_id, $frm_id, $inst_id);
+                        }
+                    }
                 }
             }
             
@@ -600,7 +742,7 @@ try {
              $manager_reviewed = (bool)($f_stat_curr['manager_reviewed'] ?? false);
              $is_verified = ($f_stat_curr['status'] === 'verified' || !empty($f_stat_curr['is_verified']));
              $can_edit = hasPermission('enter_data');
-             if ($sdr_submitted) {
+             if ($sdr_submitted || $monitor_reviewed || $manager_reviewed) {
                  $can_edit = false;
              }
              
@@ -688,33 +830,22 @@ try {
                   if (!$sdr_submitted) {
                       throw new Exception("Form is not marked as SDR.");
                   }
-                  if ($monitor_reviewed && $manager_reviewed) {
-                      throw new Exception("Cannot revoke SDR: The form has completed the full review workflow.");
+                  if ($monitor_reviewed || $manager_reviewed) {
+                      throw new Exception("Cannot revoke SDR: The form is locked because it has already been SDVed by Data Monitor or DM Reviewed by Data Manager.");
                   }
                   
                   $sdr_submitted = false;
                   $audit_logs[] = ['sdr_revoked', 'SDR Revoked'];
-                  
-                  // Automatically remove monitor review if present
-                  if ($monitor_reviewed) {
-                      $monitor_reviewed = false;
-                      $audit_logs[] = ['monitor_revoked', 'Monitor Review Revoked due to SDR Revocation'];
-                  }
-                  // Automatically remove manager review if present
-                  if ($manager_reviewed) {
-                      $manager_reviewed = false;
-                      $audit_logs[] = ['manager_revoked', 'Manager Review Revoked due to SDR Revocation'];
-                  }
                  
              } elseif ($workflow_action === 'monitor_review') {
                  if (!$is_monitor) {
-                     throw new Exception("Unauthorized: Only Monitors can review.");
+                     throw new Exception("Unauthorized: Only Data Monitors can mark as SDVed.");
                  }
                  if (!$sdr_submitted) {
-                     throw new Exception("Cannot review: Form must be SDR submitted first.");
+                     throw new Exception("Cannot mark as SDVed: Form must be SDR submitted first.");
                  }
                  if ($monitor_reviewed) {
-                     throw new Exception("Form is already reviewed by Monitor.");
+                     throw new Exception("Form is already marked as SDVed.");
                  }
                  
                  // Check if there are unresolved queries on this form
@@ -725,19 +856,19 @@ try {
                  }
 
                  $monitor_reviewed = true;
-                 $audit_logs[] = ['monitor_reviewed', 'Source Data Verification (SDV) completed by Monitor'];
+                 $audit_logs[] = ['monitor_reviewed', 'Marked as SDVed by Data Monitor'];
                  
               } elseif ($workflow_action === 'monitor_revoke') {
                   if (!$is_monitor) {
-                      throw new Exception("Unauthorized: Only Monitors can revoke review.");
+                      throw new Exception("Unauthorized: Only Data Monitors can revoke SDVed.");
                   }
                   if (!$monitor_reviewed) {
-                      throw new Exception("Monitor review has not been completed.");
+                      throw new Exception("SDV review has not been completed.");
                   }
                   
                   $remarks = trim($_POST['remarks'] ?? '');
                   if ($remarks === '') {
-                      throw new Exception("Please enter a reason before revoking the review.");
+                      throw new Exception("Please enter a reason before revoking SDVed.");
                   }
                   if (mb_strlen($remarks) < 10) {
                       throw new Exception("Remarks must be at least 10 characters.");
@@ -750,33 +881,33 @@ try {
                   $monitor_reviewed = false;
                   $manager_reviewed = false;
                   $audit_logs[] = ['monitor_revoked', $remarks];
-                  $audit_logs[] = ['sdr_revoked', 'SDR Revoked due to Monitor Review Revocation. Remarks: ' . $remarks];
+                  $audit_logs[] = ['sdr_revoked', 'SDR Revoked due to SDVed Revocation. Remarks: ' . $remarks];
                  
              } elseif ($workflow_action === 'manager_review') {
                  if (!$is_manager) {
-                     throw new Exception("Unauthorized: Only Managers can review.");
+                     throw new Exception("Unauthorized: Only Data Managers can mark as DM Reviewed.");
                  }
                  if (!$sdr_submitted) {
                      throw new Exception("Cannot review: Form must be SDR submitted first.");
                  }
                  if ($manager_reviewed) {
-                     throw new Exception("Form is already reviewed by Manager.");
+                     throw new Exception("Form is already marked as DM Reviewed.");
                  }
                  
                  $manager_reviewed = true;
-                 $audit_logs[] = ['manager_reviewed', 'Reviewed by Manager'];
+                 $audit_logs[] = ['manager_reviewed', 'Marked as DM Reviewed by Data Manager'];
                  
              } elseif ($workflow_action === 'manager_revoke') {
                    if (!$is_manager) {
-                       throw new Exception("Unauthorized: Only Managers can revoke review.");
+                       throw new Exception("Unauthorized: Only Data Managers can revoke DM Reviewed.");
                    }
                    if (!$manager_reviewed) {
-                       throw new Exception("Manager review has not been completed.");
+                       throw new Exception("DM Review has not been completed.");
                    }
                    
                    $remarks = trim($_POST['remarks'] ?? '');
                    if ($remarks === '') {
-                       throw new Exception("Please enter a reason before revoking the review.");
+                       throw new Exception("Please enter a reason before revoking DM Reviewed.");
                    }
                    if (mb_strlen($remarks) < 10) {
                        throw new Exception("Remarks must be at least 10 characters.");
@@ -789,7 +920,7 @@ try {
                    $monitor_reviewed = false;
                    $manager_reviewed = false;
                    $audit_logs[] = ['manager_revoked', $remarks];
-                   $audit_logs[] = ['sdr_revoked', 'SDR Revoked due to Manager Review Revocation. Remarks: ' . $remarks];
+                   $audit_logs[] = ['sdr_revoked', 'SDR Revoked due to DM Reviewed Revocation. Remarks: ' . $remarks];
                  
              } else {
                  throw new Exception("Invalid workflow action: " . htmlspecialchars($workflow_action));
@@ -798,7 +929,7 @@ try {
              $was_srved = $status_row && (bool)$status_row['monitor_reviewed'] && (bool)$status_row['manager_reviewed'];
              $is_srved = $monitor_reviewed && $manager_reviewed;
              if ($is_srved && !$was_srved) {
-                 $audit_logs[] = ['form_srved', 'Form SRVed'];
+                 $audit_logs[] = ['form_srved', 'SDVed & DM Reviewed'];
              }
              
              // Map values for Postgres/MySQL driver
@@ -898,7 +1029,7 @@ try {
              $manager_reviewed = (bool)($f_stat_curr['manager_reviewed'] ?? false);
              $is_verified = ($f_stat_curr['status'] === 'verified' || !empty($f_stat_curr['is_verified']));
              $can_edit = hasPermission('enter_data');
-             if ($sdr_submitted) {
+             if ($sdr_submitted || $monitor_reviewed || $manager_reviewed) {
                  $can_edit = false;
              }
              
@@ -1184,9 +1315,15 @@ function calculateAndSaveProgress($pdo, $study_id, $subject_id, $visit_id, $form
              ->execute([$study_id, $subject_id, $visit_id, $form_id, $repeating_instance_id, $status, $is_complete, $progress]);
     }
 
-    // --- 1.5 Handle Visit Performed Status Cascading to other forms in visit ---
+    // --- 1.5 Handle Visit Performed Status Cascading to other forms in visit & Day 1 ---
     if (isset($valuesByVar['visit_performed']) && $visit_id > 0) {
         $vp_val = trim((string)$valuesByVar['visit_performed']);
+
+        $stmt_vname = $pdo->prepare("SELECT name FROM study_visits WHERE id = ?");
+        $stmt_vname->execute([$visit_id]);
+        $curr_vname = $stmt_vname->fetchColumn() ?: '';
+        $is_screening_visit = (stripos($curr_vname, 'screening') !== false);
+
         if ($vp_val === 'No') {
             // Find all other forms in this visit
             $stmt_other = $pdo->prepare("SELECT id FROM study_forms WHERE visit_id = ? AND id != ?");
@@ -1206,6 +1343,35 @@ function calculateAndSaveProgress($pdo, $study_id, $subject_id, $visit_id, $form
                         ->execute([$study_id, $subject_id, $visit_id, $oth_fid]);
                 }
             }
+
+            // If this is Screening visit, also cascade 'skipped' to all forms in Day 1 visit
+            if ($is_screening_visit) {
+                $stmt_day1 = $pdo->prepare("
+                    SELECT sf.id, sf.visit_id 
+                    FROM study_forms sf
+                    JOIN study_visits sv ON sf.visit_id = sv.id
+                    WHERE sv.study_id = ? 
+                      AND (LOWER(sv.name) LIKE '%day 1%' OR LOWER(sv.name) LIKE '%day-1%' OR LOWER(sv.name) LIKE '%day1%')
+                ");
+                $stmt_day1->execute([$study_id]);
+                $day1_forms = $stmt_day1->fetchAll(PDO::FETCH_ASSOC);
+
+                foreach ($day1_forms as $d1_form) {
+                    $d1_fid = $d1_form['id'];
+                    $d1_vid = $d1_form['visit_id'];
+                    $stmt_chk_stat = $pdo->prepare("SELECT id FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = 0 OR repeating_instance_id IS NULL)");
+                    $stmt_chk_stat->execute([$subject_id, $d1_fid]);
+                    $stat_id = $stmt_chk_stat->fetchColumn();
+
+                    if ($stat_id) {
+                        $pdo->prepare("UPDATE subject_form_status SET status = 'skipped', is_complete = TRUE, progress_percent = 100, updated_at = NOW() WHERE id = ?")
+                            ->execute([$stat_id]);
+                    } else {
+                        $pdo->prepare("INSERT INTO subject_form_status (study_id, subject_id, visit_id, form_id, repeating_instance_id, status, is_complete, progress_percent, updated_at) VALUES (?, ?, ?, ?, 0, 'skipped', TRUE, 100, NOW())")
+                            ->execute([$study_id, $subject_id, $d1_vid, $d1_fid]);
+                    }
+                }
+            }
         } elseif ($vp_val === 'Yes') {
             // If other forms in this visit were marked 'skipped', revert those that have no data, or recalculate if they had data
             $stmt_other = $pdo->prepare("SELECT id FROM study_forms WHERE visit_id = ? AND id != ?");
@@ -1222,6 +1388,34 @@ function calculateAndSaveProgress($pdo, $study_id, $subject_id, $visit_id, $form
                         ->execute([$subject_id, $oth_fid]);
                 } else {
                     calculateAndSaveProgress($pdo, $study_id, $subject_id, $visit_id, $oth_fid, 0);
+                }
+            }
+
+            // If this is Screening visit, revert any Day 1 forms that were marked 'skipped' and have no data
+            if ($is_screening_visit) {
+                $stmt_day1 = $pdo->prepare("
+                    SELECT sf.id, sf.visit_id 
+                    FROM study_forms sf
+                    JOIN study_visits sv ON sf.visit_id = sv.id
+                    WHERE sv.study_id = ? 
+                      AND (LOWER(sv.name) LIKE '%day 1%' OR LOWER(sv.name) LIKE '%day-1%' OR LOWER(sv.name) LIKE '%day1%')
+                ");
+                $stmt_day1->execute([$study_id]);
+                $day1_forms = $stmt_day1->fetchAll(PDO::FETCH_ASSOC);
+
+                foreach ($day1_forms as $d1_form) {
+                    $d1_fid = $d1_form['id'];
+                    $d1_vid = $d1_form['visit_id'];
+                    $stmt_has_data = $pdo->prepare("SELECT COUNT(*) FROM subject_data WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = 0 OR repeating_instance_id IS NULL) AND value IS NOT NULL AND value != ''");
+                    $stmt_has_data->execute([$subject_id, $d1_fid]);
+                    $has_data = ((int)$stmt_has_data->fetchColumn()) > 0;
+
+                    if (!$has_data) {
+                        $pdo->prepare("UPDATE subject_form_status SET status = 'empty', is_complete = FALSE, progress_percent = 0, updated_at = NOW() WHERE subject_id = ? AND form_id = ? AND status = 'skipped' AND (repeating_instance_id = 0 OR repeating_instance_id IS NULL)")
+                            ->execute([$subject_id, $d1_fid]);
+                    } else {
+                        calculateAndSaveProgress($pdo, $study_id, $subject_id, $d1_vid, $d1_fid, 0);
+                    }
                 }
             }
         }
