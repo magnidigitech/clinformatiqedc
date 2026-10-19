@@ -129,7 +129,7 @@ assertTest('Original John Doe', $history_db['old_value'], "History old_value sho
 assertTest('John A. Doe', $history_db['new_value'], "History new_value should be 'John A. Doe'");
 
 $data_db = $pdo->query("SELECT value FROM subject_data WHERE subject_id = 1 AND form_id = 1 AND field_id = 5")->fetchColumn();
-assertTest('John A. Doe', $data_db, "subject_data should contain the updated value 'John A. Doe'");
+assertTest('Original John Doe', $data_db, "subject_data field value should remain UNCHANGED ('Original John Doe') after query is answered");
 
 // Check get_field_details includes query_new_value and query_old_value
 setTestRole($pdo, 'Data Manager');

@@ -118,10 +118,10 @@ function getFormReviewStatus($f_stat) {
     } else {
         if ($monitor && $manager) {
             return ['text' => 'SDVed & DM Reviewed', 'color' => '#0d8e6f', 'bg' => '#f0fdf4', 'icon' => 'verified', 'progress' => 100, 'bar_color' => '#0d8e6f'];
+        } elseif ($manager && !$monitor) {
+            return ['text' => 'DM Reviewed', 'color' => '#6d28d9', 'bg' => '#f5f3ff', 'icon' => 'verified', 'progress' => 50, 'bar_color' => '#6d28d9'];
         } elseif ($monitor) {
             return ['text' => 'SDVed', 'color' => '#059669', 'bg' => '#ecfdf5', 'icon' => 'verified', 'progress' => 50, 'bar_color' => '#059669'];
-        } elseif ($manager) {
-            return ['text' => 'DM Reviewed', 'color' => '#059669', 'bg' => '#ecfdf5', 'icon' => 'verified', 'progress' => 50, 'bar_color' => '#059669'];
         } else {
             return ['text' => 'Under Review', 'color' => '#b45309', 'bg' => '#fef3c7', 'icon' => 'pending_actions', 'progress' => 0, 'bar_color' => '#f59e0b'];
         }
@@ -168,7 +168,7 @@ function renderWorkflowButtons($is_coordinator, $is_monitor_role, $is_manager_ro
     // Data Manager actions
     if ($is_manager_role && $sdr_submitted) {
         if (!$manager_reviewed) {
-            $html .= '<button type="button" class="btn btn-primary" style="background-color: #059669; border-color: #059669; display: inline-flex; align-items: center; gap: 0.25rem;" onclick="updateReviewStatus(\'manager_review\')">
+            $html .= '<button type="button" class="btn btn-primary" style="background-color: #6d28d9; border-color: #6d28d9; display: inline-flex; align-items: center; gap: 0.25rem;" onclick="updateReviewStatus(\'manager_review\')">
                         <span class="material-icons-round" style="font-size: 1.1rem;">verified</span>
                         Mark as DM Reviewed
                       </button>';
@@ -271,7 +271,7 @@ function renderFormAuditTrail($pdo, $study_id, $subject_id, $current_form_id, $r
         } elseif ($change_type === 'monitor_revoked') {
             $action_desc = '<span style="color: #dc2626; font-weight: 600;">Revoked SDVed</span><br/><span style="font-size: 0.825rem; color: #475569; font-style: italic;">Remarks: ' . htmlspecialchars($audit['reason_for_change']) . '</span>';
         } elseif ($change_type === 'manager_reviewed') {
-            $action_desc = '<span style="color: #059669; font-weight: 600;">Marked as DM Reviewed (Data Manager)</span>';
+            $action_desc = '<span style="color: #6d28d9; font-weight: 600;">Marked as DM Reviewed (Data Manager)</span>';
         } elseif ($change_type === 'manager_revoked') {
             $action_desc = '<span style="color: #dc2626; font-weight: 600;">Revoked DM Reviewed</span><br/><span style="font-size: 0.825rem; color: #475569; font-style: italic;">Remarks: ' . htmlspecialchars($audit['reason_for_change']) . '</span>';
         } elseif ($change_type === 'form_srved') {
@@ -470,8 +470,8 @@ function ensureCommonFormsTables($pdo) {
         form_type VARCHAR(10) NOT NULL,
         seq_number INT NOT NULL,
         record_number VARCHAR(50) NOT NULL,
-        status VARCHAR(20) DEFAULT 'draft',
-        sdr_status VARCHAR(20) DEFAULT 'pending',
+        status VARCHAR(50) DEFAULT 'draft',
+        sdr_status VARCHAR(50) DEFAULT 'pending',
         sdr_by INT NULL REFERENCES users(id) ON DELETE SET NULL,
         sdr_at TIMESTAMP NULL,
         sdr_revision INT DEFAULT 0,
@@ -535,6 +535,7 @@ function ensureCommonFormsTables($pdo) {
         old_value TEXT NULL,
         new_value TEXT NULL,
         reason_for_change TEXT NULL,
+        change_type VARCHAR(50) NULL,
         action_by INT NOT NULL REFERENCES users(id) ON DELETE SET NULL,
         action_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
@@ -542,6 +543,31 @@ function ensureCommonFormsTables($pdo) {
 
     try {
         $pdo->exec($sql);
+        // Migrations for 3 roles and query closure value tracking
+        $pdo->exec("ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS sdr_submitted BOOLEAN DEFAULT FALSE");
+        $pdo->exec("ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS monitor_reviewed BOOLEAN DEFAULT FALSE");
+        $pdo->exec("ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS manager_reviewed BOOLEAN DEFAULT FALSE");
+        $pdo->exec("ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS monitor_by INT NULL");
+        $pdo->exec("ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS monitor_at TIMESTAMP NULL");
+        $pdo->exec("ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS manager_by INT NULL");
+        $pdo->exec("ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS manager_at TIMESTAMP NULL");
+        $pdo->exec("ALTER TABLE common_form_query_history ADD COLUMN IF NOT EXISTS old_value TEXT NULL");
+        $pdo->exec("ALTER TABLE common_form_query_history ADD COLUMN IF NOT EXISTS new_value TEXT NULL");
+        $pdo->exec("ALTER TABLE common_form_query_history ADD COLUMN IF NOT EXISTS status_from VARCHAR(50) NULL");
+        $pdo->exec("ALTER TABLE common_form_query_history ADD COLUMN IF NOT EXISTS status_to VARCHAR(50) NULL");
+        $pdo->exec("ALTER TABLE common_form_audit_log ADD COLUMN IF NOT EXISTS change_type VARCHAR(50) NULL");
+
+        // Ensure column sizes are expanded for compound statuses (e.g., 'sdved_and_dm_reviewed')
+        $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+        if ($driver === 'pgsql') {
+            $pdo->exec("ALTER TABLE subject_common_records ALTER COLUMN sdr_status TYPE VARCHAR(50)");
+            $pdo->exec("ALTER TABLE subject_common_records ALTER COLUMN status TYPE VARCHAR(50)");
+            $pdo->exec("ALTER TABLE common_form_queries ALTER COLUMN status TYPE VARCHAR(50)");
+        } else {
+            $pdo->exec("ALTER TABLE subject_common_records MODIFY sdr_status VARCHAR(50)");
+            $pdo->exec("ALTER TABLE subject_common_records MODIFY status VARCHAR(50)");
+            $pdo->exec("ALTER TABLE common_form_queries MODIFY status VARCHAR(50)");
+        }
     } catch (Exception $e) {
         // Ignore if existing
     }

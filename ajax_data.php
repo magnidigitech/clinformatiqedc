@@ -23,8 +23,13 @@ try {
     $is_coordinator = (strpos($role_lower, 'coordinator') !== false) || (strpos($role_lower, 'entry') !== false) || (strpos($role_lower, 'admin') !== false);
     $is_monitor = (strpos($role_lower, 'monitor') !== false) || (strpos($role_lower, 'admin') !== false);
     $is_manager = (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'admin') !== false);
+    // Strict clinical content editor flag: Data Managers and Data Monitors cannot edit clinical content.
+    $is_data_editor = ($is_coordinator || (strpos($role_lower, 'admin') !== false)) && (strpos($role_lower, 'manager') === false) && (strpos($role_lower, 'monitor') === false);
 
     if ($action === 'save_data') {
+        if (!$is_data_editor || (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'monitor') !== false)) {
+            throw new Exception("Unauthorized: Data Managers and Data Monitors cannot edit clinical content.");
+        }
         if (!hasPermission('enter_data') && !hasPermission('edit') && !$is_coordinator) {
             throw new Exception("Unauthorized: Enter Data permission required");
         }
@@ -212,7 +217,9 @@ try {
     } 
     
     elseif ($action === 'create_instance') {
-        if (!hasPermission('enter_data')) throw new Exception("Unauthorized");
+        if (!$is_data_editor || (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'monitor') !== false) || !hasPermission('enter_data')) {
+            throw new Exception("Unauthorized: Data Managers and Data Monitors cannot manage repeating instances.");
+        }
         
         $subject_id = $_POST['subject_id'];
         $module_id = $_POST['module_id'];
@@ -233,7 +240,9 @@ try {
     }
     
     elseif ($action === 'delete_instance') {
-        if (!hasPermission('enter_data')) throw new Exception("Unauthorized");
+        if (!$is_data_editor || (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'monitor') !== false) || !hasPermission('enter_data')) {
+            throw new Exception("Unauthorized: Data Managers and Data Monitors cannot manage repeating instances.");
+        }
         
         $instance_id = $_POST['instance_id'];
         
@@ -401,31 +410,8 @@ try {
                         $hist_old_val = $old_val;
                         $hist_new_val = $field_value;
                         
-                        // Delete existing rows
-                        $stmt_del = $pdo->prepare("DELETE FROM subject_data WHERE subject_id = ? AND form_id = ? AND field_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
-                        $stmt_del->execute([$sub_id, $frm_id, $fld_id, $inst_id, $inst_id]);
-                        
-                        // Insert new value
-                        $stmt_ins = $pdo->prepare("INSERT INTO subject_data (study_id, subject_id, visit_id, form_id, repeating_instance_id, field_id, value, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-                        $stmt_ins->execute([$study_id, $sub_id, $vis_id, $frm_id, $inst_id, $fld_id, $field_value, $user_id]);
-                        
-                        // Log Audit Log entry
-                        $stmt_a = $pdo->prepare("INSERT INTO data_audit_log (study_id, subject_id, visit_id, form_id, field_id, repeating_instance_id, old_value, new_value, reason_for_change, change_type, action_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'update', ?)");
-                        $stmt_a->execute([
-                            $study_id,
-                            $sub_id,
-                            $vis_id,
-                            $frm_id,
-                            $fld_id,
-                            $inst_id,
-                            $old_val,
-                            $field_value,
-                            "Updated query (" . $query_id . ") : Answered: " . $remark,
-                            $user_id
-                        ]);
-                        
-                        // Recalculate Progress
-                        calculateAndSaveProgress($pdo, $study_id, $sub_id, $vis_id, $frm_id, $inst_id);
+                        // NOTE: When a query is answered, the field value in subject_data must remain unchanged
+                        // until a Data Monitor or Manager explicitly clicks "Close Query".
                     }
                 }
             }
@@ -477,60 +463,93 @@ try {
                     
                     // IF QUERY IS CLOSED: Check if there was any field value change for this query
                     if ($new_status === 'closed') {
+                        // Check if the query had an answered step with a proposed new_value
                         $stmt_change = $pdo->prepare("
                             SELECT old_value, new_value 
                             FROM data_query_history 
-                            WHERE query_id = ? AND new_value IS NOT NULL AND (old_value IS NULL OR old_value != new_value)
+                            WHERE query_id = ? AND status_to = 'answered'
                             ORDER BY id DESC LIMIT 1
                         ");
                         $stmt_change->execute([$query_id]);
                         $val_change = $stmt_change->fetch(PDO::FETCH_ASSOC);
                         
-                        if ($val_change) {
-                            // Ensure the field in subject_data has the latest new_value
+                        // Fallback: check any query history entry with new_value
+                        if (!$val_change || $val_change['new_value'] === null) {
+                            $stmt_change = $pdo->prepare("
+                                SELECT old_value, new_value 
+                                FROM data_query_history 
+                                WHERE query_id = ? AND new_value IS NOT NULL AND (old_value IS NULL OR old_value != new_value)
+                                ORDER BY id DESC LIMIT 1
+                            ");
+                            $stmt_change->execute([$query_id]);
+                            $val_change = $stmt_change->fetch(PDO::FETCH_ASSOC);
+                        }
+                        
+                        $target_new_val = $val_change['new_value'] ?? $hist_new_val ?? null;
+                        
+                        if ($target_new_val !== null && $target_new_val !== '') {
+                            // Check the current value in subject_data
                             $stmt_cur_val = $pdo->prepare("SELECT value FROM subject_data WHERE subject_id = ? AND form_id = ? AND field_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
                             $stmt_cur_val->execute([$sub_id, $frm_id, $fld_id, $inst_id, $inst_id]);
                             $curr_val_db = $stmt_cur_val->fetchColumn();
+                            $curr_val_db = ($curr_val_db === false) ? null : $curr_val_db;
                             
-                            if ($curr_val_db !== $val_change['new_value']) {
+                            // Field value has changed only if the proposed value differs from current subject_data
+                            if ($curr_val_db !== $target_new_val) {
+                                // 1. Update subject_data with the updated field value
                                 $stmt_del = $pdo->prepare("DELETE FROM subject_data WHERE subject_id = ? AND form_id = ? AND field_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
                                 $stmt_del->execute([$sub_id, $frm_id, $fld_id, $inst_id, $inst_id]);
                                 
                                 $stmt_ins = $pdo->prepare("INSERT INTO subject_data (study_id, subject_id, visit_id, form_id, repeating_instance_id, field_id, value, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-                                $stmt_ins->execute([$study_id, $sub_id, $vis_id, $frm_id, $inst_id, $fld_id, $val_change['new_value'], $user_id]);
-                            }
-                            
-                            // Revoke SDR for the Data Coordinator on this form
-                            $stmt_stat = $pdo->prepare("SELECT * FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
-                            $stmt_stat->execute([$sub_id, $frm_id, $inst_id, $inst_id]);
-                            $stat_row = $stmt_stat->fetch(PDO::FETCH_ASSOC);
-                            
-                            if ($stat_row) {
-                                $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-                                $false_val = ($driver === 'pgsql') ? 'false' : '0';
+                                $stmt_ins->execute([$study_id, $sub_id, $vis_id, $frm_id, $inst_id, $fld_id, $target_new_val, $user_id]);
                                 
-                                $stmt_revoke = $pdo->prepare("
-                                    UPDATE subject_form_status 
-                                    SET sdr_submitted = $false_val, 
-                                        monitor_reviewed = $false_val, 
-                                        manager_reviewed = $false_val, 
-                                        is_verified = $false_val,
-                                        updated_at = NOW()
-                                    WHERE id = ?
-                                ");
-                                $stmt_revoke->execute([$stat_row['id']]);
+                                // 2. Log clinical update in data_audit_log
+                                $stmt_a = $pdo->prepare("INSERT INTO data_audit_log (study_id, subject_id, visit_id, form_id, field_id, repeating_instance_id, old_value, new_value, reason_for_change, change_type, action_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'update', ?)");
+                                $stmt_a->execute([
+                                    $study_id,
+                                    $sub_id,
+                                    $vis_id,
+                                    $frm_id,
+                                    $fld_id,
+                                    $inst_id,
+                                    $curr_val_db,
+                                    $target_new_val,
+                                    "Updated via query (" . $query_id . ") closure: " . $remark,
+                                    $user_id
+                                ]);
+                                
+                                // 3. Revoke SDR state for this form
+                                $stmt_stat = $pdo->prepare("SELECT * FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
+                                $stmt_stat->execute([$sub_id, $frm_id, $inst_id, $inst_id]);
+                                $stat_row = $stmt_stat->fetch(PDO::FETCH_ASSOC);
+                                
+                                if ($stat_row) {
+                                    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+                                    $false_val = ($driver === 'pgsql') ? 'false' : '0';
+                                    
+                                    $stmt_revoke = $pdo->prepare("
+                                        UPDATE subject_form_status 
+                                        SET sdr_submitted = $false_val, 
+                                            monitor_reviewed = $false_val, 
+                                            manager_reviewed = $false_val, 
+                                            is_verified = $false_val,
+                                            updated_at = NOW()
+                                        WHERE id = ?
+                                    ");
+                                    $stmt_revoke->execute([$stat_row['id']]);
+                                }
+                                
+                                // 4. Add audit trail for SDR Revocation
+                                $stmt_audit_sdr = $pdo->prepare("INSERT INTO data_audit_log (study_id, subject_id, visit_id, form_id, field_id, repeating_instance_id, old_value, new_value, reason_for_change, change_type, action_by) VALUES (?, ?, ?, ?, NULL, ?, NULL, NULL, ?, 'sdr_revoked', ?)");
+                                $stmt_audit_sdr->execute([
+                                    $study_id, $sub_id, $vis_id, $frm_id, $inst_id,
+                                    "SDR Revoked: Query #" . $query_id . " closed with updated field value",
+                                    $user_id
+                                ]);
+                                
+                                // 5. Recalculate progress for this form and study
+                                calculateAndSaveProgress($pdo, $study_id, $sub_id, $vis_id, $frm_id, $inst_id);
                             }
-                            
-                            // Add audit trail for SDR Revocation
-                            $stmt_audit_sdr = $pdo->prepare("INSERT INTO data_audit_log (study_id, subject_id, visit_id, form_id, field_id, repeating_instance_id, old_value, new_value, reason_for_change, change_type, action_by) VALUES (?, ?, ?, ?, NULL, ?, NULL, NULL, ?, 'sdr_revoked', ?)");
-                            $stmt_audit_sdr->execute([
-                                $study_id, $sub_id, $vis_id, $frm_id, $inst_id,
-                                "SDR Revoked: Query #" . $query_id . " closed with updated field value",
-                                $user_id
-                            ]);
-                            
-                            // Recalculate progress for this form and study
-                            calculateAndSaveProgress($pdo, $study_id, $sub_id, $vis_id, $frm_id, $inst_id);
                         }
                     }
                 }
@@ -576,9 +595,9 @@ try {
     }
 
     elseif ($action === 'clear_data') {
-        // Strict data entry permission required
-        if (!hasPermission('enter_data') && !hasPermission('edit')) {
-            throw new Exception("Unauthorized: Edit permission required");
+        // Strict data entry permission required: Managers and Monitors strictly prohibited
+        if (!$is_data_editor || (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'monitor') !== false) || (!hasPermission('enter_data') && !hasPermission('edit'))) {
+            throw new Exception("Unauthorized: Data Managers and Data Monitors cannot edit clinical content.");
         }
         
         $subject_id = $_POST['subject_id'];
@@ -626,9 +645,9 @@ try {
     }
 
     elseif ($action === 'mark_missing') {
-        // Strict data entry permission required
-        if (!hasPermission('enter_data') && !hasPermission('edit')) {
-            throw new Exception("Unauthorized: Edit permission required");
+        // Strict data entry permission required: Managers and Monitors strictly prohibited
+        if (!$is_data_editor || (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'monitor') !== false) || (!hasPermission('enter_data') && !hasPermission('edit'))) {
+            throw new Exception("Unauthorized: Data Managers and Data Monitors cannot edit clinical content.");
         }
         
         $subject_id = $_POST['subject_id'];
@@ -741,7 +760,7 @@ try {
              $monitor_reviewed = (bool)($f_stat_curr['monitor_reviewed'] ?? false);
              $manager_reviewed = (bool)($f_stat_curr['manager_reviewed'] ?? false);
              $is_verified = ($f_stat_curr['status'] === 'verified' || !empty($f_stat_curr['is_verified']));
-             $can_edit = hasPermission('enter_data');
+             $can_edit = $is_data_editor && hasPermission('enter_data');
              if ($sdr_submitted || $monitor_reviewed || $manager_reviewed) {
                  $can_edit = false;
              }
@@ -1028,7 +1047,7 @@ try {
              $monitor_reviewed = (bool)($f_stat_curr['monitor_reviewed'] ?? false);
              $manager_reviewed = (bool)($f_stat_curr['manager_reviewed'] ?? false);
              $is_verified = ($f_stat_curr['status'] === 'verified' || !empty($f_stat_curr['is_verified']));
-             $can_edit = hasPermission('enter_data');
+             $can_edit = $is_data_editor && hasPermission('enter_data');
              if ($sdr_submitted || $monitor_reviewed || $manager_reviewed) {
                  $can_edit = false;
              }

@@ -26,10 +26,12 @@ try {
     ensureCommonFormsTables($pdo);
 
     $role_lower = strtolower($_SESSION['active_role_name'] ?? '');
-    $is_coordinator = (strpos($role_lower, 'coordinator') !== false) || (strpos($role_lower, 'admin') !== false) || (strpos($role_lower, 'entry') !== false) || (strpos($role_lower, 'investigator') !== false);
-    $is_manager = (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'admin') !== false) || (strpos($role_lower, 'monitor') !== false);
+    $is_coordinator = (strpos($role_lower, 'coordinator') !== false) || (strpos($role_lower, 'entry') !== false) || (strpos($role_lower, 'investigator') !== false) || (strpos($role_lower, 'admin') !== false);
+    $is_monitor = (strpos($role_lower, 'monitor') !== false) || (strpos($role_lower, 'cra') !== false) || (strpos($role_lower, 'admin') !== false);
+    $is_manager = (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'admin') !== false);
     $is_admin = (strpos($role_lower, 'admin') !== false);
-    $is_monitor = (strpos($role_lower, 'monitor') !== false) || (strpos($role_lower, 'cra') !== false);
+    // Strict clinical content editor flag: Data Managers and Data Monitors cannot create, edit, or void clinical content.
+    $is_data_editor = ($is_coordinator || $is_admin) && (strpos($role_lower, 'manager') === false) && (strpos($role_lower, 'monitor') === false);
 
     // =========================================================================
     // 1. GET ALL RECORDS FOR A SUBJECT & FORM TYPE
@@ -57,10 +59,14 @@ try {
         $sql = "SELECT r.*, 
                        u_c.name as creator_name, u_c.username as creator_user,
                        u_s.name as sdr_user_name, u_s.username as sdr_user_code,
+                       u_mon.name as monitor_user_name, u_mon.username as monitor_user_code,
+                       u_mgr.name as manager_user_name, u_mgr.username as manager_user_code,
                        (SELECT COUNT(*) FROM common_form_queries q WHERE q.record_id = r.id AND q.status IN ('open', 'answered')) as open_query_count
                 FROM subject_common_records r
                 LEFT JOIN users u_c ON r.created_by = u_c.id
                 LEFT JOIN users u_s ON r.sdr_by = u_s.id
+                LEFT JOIN users u_mon ON r.monitor_by = u_mon.id
+                LEFT JOIN users u_mgr ON r.manager_by = u_mgr.id
                 WHERE r.study_id = :sid AND r.subject_id = :subid AND r.form_type = :ft";
         
         $params = ['sid' => $study_id, 'subid' => $subject_id, 'ft' => $form_type];
@@ -78,7 +84,9 @@ try {
             } elseif ($sdr_filter === 'under_review') {
                 $sql .= " AND r.sdr_status = 'under_review'";
             } elseif ($sdr_filter === 'sdved' || $sdr_filter === 'reviewed') {
-                $sql .= " AND (r.sdr_status = 'sdved' OR r.sdr_status = 'reviewed')";
+                $sql .= " AND (r.sdr_status = 'sdved' OR r.sdr_status = 'reviewed' OR r.monitor_reviewed = TRUE)";
+            } elseif ($sdr_filter === 'dm_reviewed') {
+                $sql .= " AND (r.sdr_status = 'dm_reviewed' OR r.manager_reviewed = TRUE)";
             } elseif ($sdr_filter === 'needs_rereview') {
                 $sql .= " AND r.sdr_status = 'needs_rereview'";
             }
@@ -164,8 +172,15 @@ try {
                 'record_number' => $r['record_number'],
                 'status' => $r['status'],
                 'sdr_status' => $r['sdr_status'],
+                'sdr_submitted' => (bool)($r['sdr_submitted'] ?? false),
+                'monitor_reviewed' => (bool)($r['monitor_reviewed'] ?? false),
+                'manager_reviewed' => (bool)($r['manager_reviewed'] ?? false),
                 'sdr_by_name' => $r['sdr_user_name'] ?? $r['sdr_user_code'] ?? '',
                 'sdr_at' => $r['sdr_at'] ? date('d-M-Y H:i', strtotime($r['sdr_at'])) : null,
+                'monitor_by_name' => $r['monitor_user_name'] ?? $r['monitor_user_code'] ?? '',
+                'monitor_at' => $r['monitor_at'] ? date('d-M-Y H:i', strtotime($r['monitor_at'])) : null,
+                'manager_by_name' => $r['manager_user_name'] ?? $r['manager_user_code'] ?? '',
+                'manager_at' => $r['manager_at'] ? date('d-M-Y H:i', strtotime($r['manager_at'])) : null,
                 'revision' => (int)$r['revision'],
                 'is_voided' => (bool)$r['is_voided'],
                 'void_reason' => $r['void_reason'] ?? '',
@@ -184,6 +199,9 @@ try {
                 COUNT(*) as total_count,
                 SUM(CASE WHEN status = 'complete' THEN 1 ELSE 0 END) as complete_count,
                 SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END) as draft_count,
+                SUM(CASE WHEN sdr_submitted = TRUE THEN 1 ELSE 0 END) as sdr_submitted_count,
+                SUM(CASE WHEN monitor_reviewed = TRUE THEN 1 ELSE 0 END) as monitor_reviewed_count,
+                SUM(CASE WHEN manager_reviewed = TRUE THEN 1 ELSE 0 END) as manager_reviewed_count,
                 SUM(CASE WHEN sdr_status = 'pending' OR sdr_status IS NULL OR sdr_status = '' THEN 1 ELSE 0 END) as sdr_pending_count,
                 SUM(CASE WHEN sdr_status = 'under_review' THEN 1 ELSE 0 END) as sdr_under_review_count,
                 SUM(CASE WHEN sdr_status = 'sdved' OR sdr_status = 'reviewed' THEN 1 ELSE 0 END) as sdr_sdved_count,
@@ -203,6 +221,9 @@ try {
                 'total' => (int)($summary['total_count'] ?? 0),
                 'complete' => (int)($summary['complete_count'] ?? 0),
                 'draft' => (int)($summary['draft_count'] ?? 0),
+                'sdr_submitted' => (int)($summary['sdr_submitted_count'] ?? 0),
+                'monitor_reviewed' => (int)($summary['monitor_reviewed_count'] ?? 0),
+                'manager_reviewed' => (int)($summary['manager_reviewed_count'] ?? 0),
                 'sdr_pending' => (int)($summary['sdr_pending_count'] ?? 0),
                 'sdr_under_review' => (int)($summary['sdr_under_review_count'] ?? 0),
                 'sdr_sdved' => (int)($summary['sdr_sdved_count'] ?? 0),
@@ -261,11 +282,15 @@ try {
             SELECT r.*, 
                    s.subject_code,
                    u_c.name as creator_name, u_c.username as creator_user,
-                   u_s.name as sdr_user_name, u_s.username as sdr_user_code
+                   u_s.name as sdr_user_name, u_s.username as sdr_user_code,
+                   u_mon.name as monitor_user_name, u_mon.username as monitor_user_code,
+                   u_mgr.name as manager_user_name, u_mgr.username as manager_user_code
             FROM subject_common_records r
             JOIN subjects s ON r.subject_id = s.id
             LEFT JOIN users u_c ON r.created_by = u_c.id
             LEFT JOIN users u_s ON r.sdr_by = u_s.id
+            LEFT JOIN users u_mon ON r.monitor_by = u_mon.id
+            LEFT JOIN users u_mgr ON r.manager_by = u_mgr.id
             WHERE r.id = ? AND r.study_id = ?
         ");
         $stmt->execute([$record_id, $study_id]);
@@ -333,6 +358,10 @@ try {
                     return [
                         'action_type' => $h['action_type'],
                         'remark' => $h['remark'],
+                        'old_value' => $h['old_value'] ?? null,
+                        'new_value' => $h['new_value'] ?? null,
+                        'status_from' => $h['status_from'] ?? null,
+                        'status_to' => $h['status_to'] ?? null,
                         'user' => $h['user_name'] ?? $h['user_code'] ?? '',
                         'created_at' => date('d-M-Y H:i', strtotime($h['created_at']))
                     ];
@@ -364,7 +393,7 @@ try {
             FROM common_form_audit_log a
             LEFT JOIN users u ON a.action_by = u.id
             WHERE a.record_id = ?
-            ORDER BY a.action_at DESC
+            ORDER BY a.action_at DESC, a.id DESC
         ");
         $stmt_aud->execute([$record_id]);
         $audit_trail = array_map(function($aud) {
@@ -373,6 +402,7 @@ try {
                 'old_value' => $aud['old_value'] ?? '',
                 'new_value' => $aud['new_value'] ?? '',
                 'reason' => $aud['reason_for_change'] ?? '',
+                'change_type' => $aud['change_type'] ?? '',
                 'user' => $aud['user_name'] ?? $aud['user_code'] ?? '',
                 'action_at' => date('d-M-Y H:i', strtotime($aud['action_at']))
             ];
@@ -390,8 +420,15 @@ try {
                 'record_number' => $rec['record_number'],
                 'status' => $rec['status'],
                 'sdr_status' => $rec['sdr_status'],
+                'sdr_submitted' => (bool)($rec['sdr_submitted'] ?? false),
+                'monitor_reviewed' => (bool)($rec['monitor_reviewed'] ?? false),
+                'manager_reviewed' => (bool)($rec['manager_reviewed'] ?? false),
                 'sdr_by_name' => $rec['sdr_user_name'] ?? $rec['sdr_user_code'] ?? '',
                 'sdr_at' => $rec['sdr_at'] ? date('d-M-Y H:i', strtotime($rec['sdr_at'])) : null,
+                'monitor_by_name' => $rec['monitor_user_name'] ?? $rec['monitor_user_code'] ?? '',
+                'monitor_at' => $rec['monitor_at'] ? date('d-M-Y H:i', strtotime($rec['monitor_at'])) : null,
+                'manager_by_name' => $rec['manager_user_name'] ?? $rec['manager_user_code'] ?? '',
+                'manager_at' => $rec['manager_at'] ? date('d-M-Y H:i', strtotime($rec['manager_at'])) : null,
                 'revision' => (int)$rec['revision'],
                 'is_voided' => (bool)$rec['is_voided'],
                 'void_reason' => $rec['void_reason'] ?? '',
@@ -411,8 +448,8 @@ try {
     // 4. SAVE RECORD (CREATE OR EDIT - SAVE DRAFT / MARK COMPLETE)
     // =========================================================================
     elseif ($action === 'save_record') {
-        if (!$is_coordinator && !$is_admin && !hasPermission('enter_data') && !hasPermission('edit')) {
-            throw new Exception("Unauthorized: Enter Data / Edit permission required.");
+        if (!$is_data_editor || (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'monitor') !== false) || (!$is_coordinator && !$is_admin && !hasPermission('enter_data') && !hasPermission('edit'))) {
+            throw new Exception("Unauthorized: Data Managers and Data Monitors cannot create or edit clinical records directly.");
         }
 
         $record_id = (int)($_POST['record_id'] ?? 0);
@@ -625,10 +662,10 @@ try {
 
                 // Log Audit
                 $stmt_aud = $pdo->prepare("
-                    INSERT INTO common_form_audit_log (study_id, subject_id, record_id, field_name, old_value, new_value, reason_for_change, action_by)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO common_form_audit_log (study_id, subject_id, record_id, field_name, old_value, new_value, reason_for_change, change_type, action_by)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
-                $stmt_aud->execute([$study_id, $subject_id, $target_record_id, 'RECORD_CREATED', null, $record_number, 'Initial Record Creation', $user_id]);
+                $stmt_aud->execute([$study_id, $subject_id, $target_record_id, 'RECORD_CREATED', null, $record_number, 'Initial Record Creation', 'create', $user_id]);
 
             } else {
                 $target_record_id = $record_id;
@@ -647,8 +684,8 @@ try {
 
                 // Audit Changed Fields
                 $stmt_aud = $pdo->prepare("
-                    INSERT INTO common_form_audit_log (study_id, subject_id, record_id, field_name, old_value, new_value, reason_for_change, action_by)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO common_form_audit_log (study_id, subject_id, record_id, field_name, old_value, new_value, reason_for_change, change_type, action_by)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
 
                 $all_keys = array_unique(array_merge(array_keys($old_data), array_keys($data)));
@@ -660,7 +697,7 @@ try {
 
                     if ($val_old !== $val_new) {
                         $has_clinical_change = true;
-                        $stmt_aud->execute([$study_id, $subject_id, $target_record_id, $k, $val_old, $val_new, $change_reason, $user_id]);
+                        $stmt_aud->execute([$study_id, $subject_id, $target_record_id, $k, $val_old, $val_new, $change_reason, 'update', $user_id]);
                     }
                 }
 
@@ -679,31 +716,55 @@ try {
                         $stmt_aud->execute([
                             $study_id, $subject_id, $target_record_id, 'LINKED_RECORDS', 
                             implode(',', $old_linked_ids), implode(',', $curr_linked_ids), 
-                            $change_reason, $user_id
+                            $change_reason, 'update', $user_id
                         ]);
                     }
                 }
 
                 $new_revision = $old_revision;
                 $new_sdr_status = $old_sdr_status;
+                $new_sdr_submitted = (bool)($old_rec['sdr_submitted'] ?? false);
+                $new_monitor_reviewed = (bool)($old_rec['monitor_reviewed'] ?? false);
+                $new_manager_reviewed = (bool)($old_rec['manager_reviewed'] ?? false);
 
-                // SDR STATUS TRANSITION IF CLINICAL DATA CHANGED AFTER SDR REVIEW
-                if ($has_clinical_change && $old_sdr_status === 'reviewed') {
+                // SDR STATUS TRANSITION IF CLINICAL DATA CHANGED AFTER SDR SUBMISSION OR REVIEW
+                $was_submitted_or_reviewed = $new_sdr_submitted || $new_monitor_reviewed || $new_manager_reviewed || in_array($old_sdr_status, ['under_review', 'sdved', 'reviewed'], true);
+                if ($has_clinical_change && $was_submitted_or_reviewed) {
                     $new_revision = $old_revision + 1;
-                    $new_sdr_status = 'needs_rereview';
+                    $new_sdr_status = 'pending';
+                    $new_sdr_submitted = false;
+                    $new_monitor_reviewed = false;
+                    $new_manager_reviewed = false;
 
                     // Log SDR Status Update History
                     $stmt_sdr_hist = $pdo->prepare("
                         INSERT INTO common_form_sdr_history (record_id, action, reviewed_revision, action_by)
-                        VALUES (?, 'needs_rereview', ?, ?)
+                        VALUES (?, 'sdr_revoked', ?, ?)
                     ");
                     $stmt_sdr_hist->execute([$target_record_id, $new_revision, $user_id]);
+
+                    $stmt_aud->execute([
+                        $study_id, $subject_id, $target_record_id, 'sdr_status',
+                        $old_sdr_status, 'pending', 'SDR Revoked due to record update', 'sdr_revoked', $user_id
+                    ]);
                 }
+
+                $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+                $sdr_val = $new_sdr_submitted ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
+                $mon_val = $new_monitor_reviewed ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
+                $mgr_val = $new_manager_reviewed ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
 
                 // Update Record
                 $stmt_upd = $pdo->prepare("
                     UPDATE subject_common_records 
-                    SET status = :st, sdr_status = :sdrst, revision = :rev, data_json = :json, updated_at = CURRENT_TIMESTAMP
+                    SET status = :st, 
+                        sdr_status = :sdrst, 
+                        sdr_submitted = $sdr_val, 
+                        monitor_reviewed = $mon_val, 
+                        manager_reviewed = $mgr_val, 
+                        revision = :rev, 
+                        data_json = :json, 
+                        updated_at = CURRENT_TIMESTAMP
                     WHERE id = :id
                 ");
                 $stmt_upd->execute([
@@ -746,37 +807,23 @@ try {
     }
 
     // =========================================================================
-    // 5. MARK SDR / SDV STATUS
+    // 5. UPDATE REVIEW STATUS (3 ROLES WORKFLOW)
     // =========================================================================
-    elseif ($action === 'mark_sdr') {
+    elseif ($action === 'mark_sdr' || $action === 'update_review_status') {
         $record_id = (int)($_POST['record_id'] ?? 0);
-        $sdr_action = trim($_POST['sdr_action'] ?? '');
+        $workflow_action = trim($_POST['workflow_action'] ?? $_POST['sdr_action'] ?? '');
 
         if ($record_id <= 0) throw new Exception("Invalid record ID");
 
-        // Normalize 'reviewed' to 'sdved'
-        if ($sdr_action === 'reviewed') {
-            $sdr_action = 'sdved';
+        // Map legacy action names
+        if ($workflow_action === 'under_review') $workflow_action = 'mark_sdr';
+        elseif ($workflow_action === 'sdved' || $workflow_action === 'reviewed') {
+            if ($is_monitor) $workflow_action = 'monitor_review';
+            elseif ($is_manager) $workflow_action = 'manager_review';
+            else $workflow_action = 'monitor_review';
         }
-
-        if (!in_array($sdr_action, ['under_review', 'sdved', 'pending', 'needs_rereview'], true)) {
-            throw new Exception("Invalid SDR/SDV action: " . htmlspecialchars($sdr_action));
-        }
-
-        // Role-based permission validation
-        if ($sdr_action === 'sdved') {
-            if (!$is_manager && !$is_monitor && !$is_admin && !hasPermission('verify')) {
-                throw new Exception("Unauthorized: Only Data Manager or Data Monitor can mark as SDVed.");
-            }
-        } elseif ($sdr_action === 'under_review') {
-            if (!$is_coordinator && !$is_manager && !$is_monitor && !$is_admin && !hasPermission('enter_data')) {
-                throw new Exception("Unauthorized: Permission required to mark as SDR.");
-            }
-        } else {
-            // Pending / Revoke / Needs Re-review
-            if (!$is_coordinator && !$is_manager && !$is_monitor && !$is_admin) {
-                throw new Exception("Unauthorized action.");
-            }
+        elseif ($workflow_action === 'pending') {
+            $workflow_action = 'revoke_sdr';
         }
 
         $stmt = $pdo->prepare("SELECT * FROM subject_common_records WHERE id = ?");
@@ -786,57 +833,240 @@ try {
         if ($study_id > 0 && (int)$rec['study_id'] !== (int)$study_id) {
             throw new Exception("Unauthorized: Record belongs to another study.");
         }
-        if (!empty($rec['is_voided'])) throw new Exception("Cannot update SDR status on a voided record.");
+        if (!empty($rec['is_voided'])) throw new Exception("Cannot update review status on a voided record.");
 
+        $sdr_submitted = (bool)($rec['sdr_submitted'] ?? false);
+        $monitor_reviewed = (bool)($rec['monitor_reviewed'] ?? false);
+        $manager_reviewed = (bool)($rec['manager_reviewed'] ?? false);
         $curr_revision = (int)($rec['revision'] ?? 1);
         $curr_user_id = $user_id > 0 ? $user_id : (int)($_SESSION['user_id'] ?? $_SESSION['id'] ?? 1);
 
         $pdo->beginTransaction();
         try {
+            $audit_logs = []; // [field_name, old_value, new_value, reason, change_type]
+            $sdr_hist_action = '';
+
+            if ($workflow_action === 'mark_sdr') {
+                if (!$is_coordinator) {
+                    throw new Exception("Unauthorized: Only Data Coordinators can mark a form as SDR.");
+                }
+                if ($sdr_submitted) {
+                    throw new Exception("Record is already marked as SDR.");
+                }
+                if ($rec['status'] !== 'complete') {
+                    throw new Exception("Cannot mark as SDR: Record must be marked complete first.");
+                }
+
+                $sdr_submitted = true;
+                $sdr_hist_action = 'mark_sdr';
+                $audit_logs[] = ['sdr_status', $rec['sdr_status'] ?? 'pending', 'under_review', 'Form marked as SDR', 'sdr_submitted'];
+
+            } elseif ($workflow_action === 'revoke_sdr') {
+                if (!$is_coordinator) {
+                    throw new Exception("Unauthorized: Only Data Coordinators can revoke SDR.");
+                }
+                if (!$sdr_submitted) {
+                    throw new Exception("Record is not marked as SDR.");
+                }
+                if ($monitor_reviewed || $manager_reviewed) {
+                    throw new Exception("Cannot revoke SDR: The form is locked because it has already been SDVed by Data Monitor or DM Reviewed by Data Manager.");
+                }
+
+                $sdr_submitted = false;
+                $sdr_hist_action = 'revoke_sdr';
+                $audit_logs[] = ['sdr_status', $rec['sdr_status'] ?? 'under_review', 'pending', 'SDR Revoked', 'sdr_revoked'];
+
+            } elseif ($workflow_action === 'monitor_review') {
+                if (!$is_monitor) {
+                    throw new Exception("Unauthorized: Only Data Monitors can mark as SDVed.");
+                }
+                if (!$sdr_submitted) {
+                    throw new Exception("Cannot mark as SDVed: Form must be SDR submitted first.");
+                }
+                if ($monitor_reviewed) {
+                    throw new Exception("Record is already marked as SDVed.");
+                }
+
+                // Check open/unresolved queries
+                $stmt_open_q = $pdo->prepare("SELECT COUNT(*) FROM common_form_queries WHERE record_id = ? AND status != 'closed'");
+                $stmt_open_q->execute([$record_id]);
+                if ((int)$stmt_open_q->fetchColumn() > 0) {
+                    throw new Exception("Cannot mark as SDVed: All open queries on this form must be answered and closed before SDV verification.");
+                }
+
+                $monitor_reviewed = true;
+                $rec['monitor_by'] = $curr_user_id;
+                $rec['monitor_at'] = date('Y-m-d H:i:s');
+                $sdr_hist_action = 'monitor_review';
+                $audit_logs[] = ['monitor_reviewed', 'false', 'true', 'Marked as SDVed by Data Monitor', 'monitor_reviewed'];
+
+            } elseif ($workflow_action === 'monitor_revoke') {
+                if (!$is_monitor) {
+                    throw new Exception("Unauthorized: Only Data Monitors can revoke SDVed.");
+                }
+                if (!$monitor_reviewed) {
+                    throw new Exception("SDV review has not been completed.");
+                }
+
+                $remarks = trim($_POST['remarks'] ?? '');
+                if ($remarks === '') {
+                    throw new Exception("Please enter a reason before revoking SDVed.");
+                }
+                if (mb_strlen($remarks) < 10) {
+                    throw new Exception("Remarks must be at least 10 characters.");
+                }
+                if (mb_strlen($remarks) > 500) {
+                    throw new Exception("Remarks cannot exceed 500 characters.");
+                }
+
+                $sdr_submitted = false;
+                $monitor_reviewed = false;
+                $manager_reviewed = false;
+                $sdr_hist_action = 'monitor_revoke';
+                $audit_logs[] = ['monitor_reviewed', 'true', 'false', $remarks, 'monitor_revoked'];
+                $audit_logs[] = ['sdr_status', $rec['sdr_status'], 'pending', 'SDR Revoked due to SDVed Revocation. Remarks: ' . $remarks, 'sdr_revoked'];
+
+            } elseif ($workflow_action === 'manager_review') {
+                if (!$is_manager) {
+                    throw new Exception("Unauthorized: Only Data Managers can mark as DM Reviewed.");
+                }
+                if (!$sdr_submitted) {
+                    throw new Exception("Cannot review: Form must be SDR submitted first.");
+                }
+                if ($manager_reviewed) {
+                    throw new Exception("Record is already marked as DM Reviewed.");
+                }
+
+                $manager_reviewed = true;
+                $rec['manager_by'] = $curr_user_id;
+                $rec['manager_at'] = date('Y-m-d H:i:s');
+                $sdr_hist_action = 'manager_review';
+                $audit_logs[] = ['manager_reviewed', 'false', 'true', 'Marked as DM Reviewed by Data Manager', 'manager_reviewed'];
+
+            } elseif ($workflow_action === 'manager_revoke') {
+                if (!$is_manager) {
+                    throw new Exception("Unauthorized: Only Data Managers can revoke DM Reviewed.");
+                }
+                if (!$manager_reviewed) {
+                    throw new Exception("DM Review has not been completed.");
+                }
+
+                $remarks = trim($_POST['remarks'] ?? '');
+                if ($remarks === '') {
+                    throw new Exception("Please enter a reason before revoking DM Reviewed.");
+                }
+                if (mb_strlen($remarks) < 10) {
+                    throw new Exception("Remarks must be at least 10 characters.");
+                }
+                if (mb_strlen($remarks) > 500) {
+                    throw new Exception("Remarks cannot exceed 500 characters.");
+                }
+
+                $sdr_submitted = false;
+                $monitor_reviewed = false;
+                $manager_reviewed = false;
+                $sdr_hist_action = 'manager_revoke';
+                $audit_logs[] = ['manager_reviewed', 'true', 'false', $remarks, 'manager_revoked'];
+                $audit_logs[] = ['sdr_status', $rec['sdr_status'], 'pending', 'SDR Revoked due to DM Reviewed Revocation. Remarks: ' . $remarks, 'sdr_revoked'];
+
+            } else {
+                throw new Exception("Invalid workflow action: " . htmlspecialchars($workflow_action));
+            }
+
+            $was_srved = $rec && (bool)$rec['monitor_reviewed'] && (bool)$rec['manager_reviewed'];
+            $is_srved = $monitor_reviewed && $manager_reviewed;
+            if ($is_srved && !$was_srved) {
+                $audit_logs[] = ['sdr_status', $rec['sdr_status'] ?? '', 'sdved', 'SDVed & DM Reviewed', 'form_srved'];
+            }
+
+            $final_sdr_status = 'pending';
+            if ($monitor_reviewed && $manager_reviewed) {
+                $final_sdr_status = 'sdved_and_dm_reviewed';
+            } elseif ($monitor_reviewed) {
+                $final_sdr_status = 'sdved';
+            } elseif ($manager_reviewed) {
+                $final_sdr_status = 'dm_reviewed';
+            } elseif ($sdr_submitted) {
+                $final_sdr_status = 'under_review';
+            }
+
+            $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+            $sdr_val = $sdr_submitted ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
+            $mon_val = $monitor_reviewed ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
+            $mgr_val = $manager_reviewed ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
+
             $stmt_upd = $pdo->prepare("
                 UPDATE subject_common_records
-                SET sdr_status = :sdrst, sdr_by = :uid, sdr_at = CURRENT_TIMESTAMP, sdr_revision = :rev
+                SET sdr_submitted = $sdr_val,
+                    monitor_reviewed = $mon_val,
+                    manager_reviewed = $mgr_val,
+                    monitor_by = :monby,
+                    monitor_at = :monat,
+                    manager_by = :mgrby,
+                    manager_at = :mgrat,
+                    sdr_status = :sdrst,
+                    sdr_by = :uid,
+                    sdr_at = CURRENT_TIMESTAMP,
+                    sdr_revision = :rev,
+                    updated_at = CURRENT_TIMESTAMP
                 WHERE id = :id
             ");
             $stmt_upd->execute([
-                'sdrst' => $sdr_action,
+                'monby' => $monitor_reviewed ? ($rec['monitor_by'] ?? $curr_user_id) : null,
+                'monat' => $monitor_reviewed ? ($rec['monitor_at'] ?? date('Y-m-d H:i:s')) : null,
+                'mgrby' => $manager_reviewed ? ($rec['manager_by'] ?? $curr_user_id) : null,
+                'mgrat' => $manager_reviewed ? ($rec['manager_at'] ?? date('Y-m-d H:i:s')) : null,
+                'sdrst' => $final_sdr_status,
                 'uid' => $curr_user_id,
                 'rev' => $curr_revision,
                 'id' => $record_id
             ]);
 
-            $stmt_hist = $pdo->prepare("
-                INSERT INTO common_form_sdr_history (record_id, action, reviewed_revision, action_by)
-                VALUES (?, ?, ?, ?)
-            ");
-            $stmt_hist->execute([$record_id, $sdr_action, $curr_revision, $curr_user_id]);
+            if ($sdr_hist_action) {
+                $stmt_hist = $pdo->prepare("
+                    INSERT INTO common_form_sdr_history (record_id, action, reviewed_revision, action_by)
+                    VALUES (?, ?, ?, ?)
+                ");
+                $stmt_hist->execute([$record_id, $sdr_hist_action, $curr_revision, $curr_user_id]);
+            }
 
-            // Regulatory Audit Trail
+            // Insert audit logs
             $stmt_aud = $pdo->prepare("
-                INSERT INTO common_form_audit_log (study_id, subject_id, record_id, field_name, old_value, new_value, reason_for_change, action_by)
-                VALUES (?, ?, ?, 'sdr_status', ?, ?, 'SDR / SDV Status Changed', ?)
+                INSERT INTO common_form_audit_log (study_id, subject_id, record_id, field_name, old_value, new_value, reason_for_change, change_type, action_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
-            $stmt_aud->execute([
-                $rec['study_id'],
-                $rec['subject_id'],
-                $record_id,
-                $rec['sdr_status'] ?? 'pending',
-                $sdr_action,
-                $curr_user_id
-            ]);
+            foreach ($audit_logs as $log) {
+                $stmt_aud->execute([
+                    $rec['study_id'],
+                    $rec['subject_id'],
+                    $record_id,
+                    $log[0],
+                    $log[1],
+                    $log[2],
+                    $log[3],
+                    $log[4],
+                    $curr_user_id
+                ]);
+            }
 
             $pdo->commit();
 
-            $msg = "SDR status updated";
-            if ($sdr_action === 'under_review') $msg = "Record marked as SDR (Under Review)";
-            elseif ($sdr_action === 'sdved') $msg = "Record marked as SDVed successfully";
-            elseif ($sdr_action === 'pending') $msg = "Status reset to Pending";
-            elseif ($sdr_action === 'needs_rereview') $msg = "Status updated to Needs Re-review";
+            $msg = "Review status updated successfully.";
+            if ($workflow_action === 'mark_sdr') $msg = "Record marked as SDR (Under Review)";
+            elseif ($workflow_action === 'revoke_sdr') $msg = "SDR submission revoked";
+            elseif ($workflow_action === 'monitor_review') $msg = "Record marked as SDVed successfully";
+            elseif ($workflow_action === 'monitor_revoke') $msg = "SDVed review revoked";
+            elseif ($workflow_action === 'manager_review') $msg = "Record marked as DM Reviewed successfully";
+            elseif ($workflow_action === 'manager_revoke') $msg = "DM Review revoked";
 
             ob_clean();
             echo json_encode([
                 'success' => true,
-                'sdr_status' => $sdr_action,
+                'workflow_action' => $workflow_action,
+                'sdr_submitted' => $sdr_submitted,
+                'monitor_reviewed' => $monitor_reviewed,
+                'manager_reviewed' => $manager_reviewed,
+                'sdr_status' => $final_sdr_status,
                 'form_type' => $rec['form_type'],
                 'message' => $msg
             ]);
@@ -852,6 +1082,9 @@ try {
     // 6. VOID RECORD WITH REASON (COORDINATOR / ADMIN)
     // =========================================================================
     elseif ($action === 'void_record') {
+        if (!$is_data_editor || (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'monitor') !== false)) {
+            throw new Exception("Unauthorized: Data Managers and Data Monitors cannot void clinical records.");
+        }
         if (!$is_coordinator && !$is_admin) {
             throw new Exception("Unauthorized: Voiding records requires Data Coordinator or Admin permissions.");
         }
@@ -878,8 +1111,8 @@ try {
             $stmt_upd->execute(['reason' => $reason, 'uid' => $user_id, 'id' => $record_id]);
 
             $stmt_aud = $pdo->prepare("
-                INSERT INTO common_form_audit_log (study_id, subject_id, record_id, field_name, old_value, new_value, reason_for_change, action_by)
-                VALUES (?, ?, ?, 'RECORD_VOIDED', 'Active', 'Voided', ?, ?)
+                INSERT INTO common_form_audit_log (study_id, subject_id, record_id, field_name, old_value, new_value, reason_for_change, change_type, action_by)
+                VALUES (?, ?, ?, 'RECORD_VOIDED', 'Active', 'Voided', ?, 'void', ?)
             ");
             $stmt_aud->execute([$study_id, $rec['subject_id'], $record_id, $reason, $user_id]);
 
@@ -896,11 +1129,11 @@ try {
     }
 
     // =========================================================================
-    // 7. RAISE QUERY ON RECORD / FIELD (DATA MANAGER / ADMIN ONLY)
+    // 7. RAISE QUERY ON RECORD / FIELD (DATA MONITOR / DATA MANAGER / ADMIN)
     // =========================================================================
-    elseif ($action === 'raise_query') {
-        if (!$is_manager) {
-            throw new Exception("Unauthorized: Raising queries is restricted to Data Managers and Administrators.");
+    elseif ($action === 'raise_query' || $action === 'add_query') {
+        if (!$is_manager && !$is_monitor && !$is_admin && !hasPermission('raise_query')) {
+            throw new Exception("Unauthorized: Raising queries requires Data Monitor, Data Manager, or Administrator permissions.");
         }
 
         $record_id = (int)($_POST['record_id'] ?? 0);
@@ -915,6 +1148,28 @@ try {
         $rec = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$rec) throw new Exception("Record not found.");
 
+        if ($is_monitor && (bool)$rec['monitor_reviewed']) {
+            throw new Exception("Cannot Raise Query as the form is marked as SDVed");
+        }
+        if ($is_manager && (bool)$rec['manager_reviewed']) {
+            throw new Exception("Cannot Raise Query as the form is marked as DM Reviewed");
+        }
+
+        // Server side check if there is an unresolved query on this field / record
+        if ($field_name !== '') {
+            $stmt_open = $pdo->prepare("SELECT COUNT(*) FROM common_form_queries WHERE record_id = ? AND field_name = ? AND status != 'closed'");
+            $stmt_open->execute([$record_id, $field_name]);
+            if ((int)$stmt_open->fetchColumn() > 0) {
+                throw new Exception("Cannot Raise Query as a query is open on this field");
+            }
+        } else {
+            $stmt_open = $pdo->prepare("SELECT COUNT(*) FROM common_form_queries WHERE record_id = ? AND (field_name IS NULL OR field_name = '') AND status != 'closed'");
+            $stmt_open->execute([$record_id]);
+            if ((int)$stmt_open->fetchColumn() > 0) {
+                throw new Exception("Cannot Raise Query as a query is open on this record");
+            }
+        }
+
         $pdo->beginTransaction();
         try {
             $stmt_q = $pdo->prepare("
@@ -925,10 +1180,24 @@ try {
             $query_id = (int)$pdo->lastInsertId();
 
             $stmt_qh = $pdo->prepare("
-                INSERT INTO common_form_query_history (query_id, action_type, remark, created_by)
-                VALUES (?, 'raised', ?, ?)
+                INSERT INTO common_form_query_history (query_id, action_type, remark, status_from, status_to, created_by)
+                VALUES (?, 'raised', ?, NULL, 'open', ?)
             ");
             $stmt_qh->execute([$query_id, $query_text, $user_id]);
+
+            // Regulatory Audit Trail
+            $stmt_aud = $pdo->prepare("
+                INSERT INTO common_form_audit_log (study_id, subject_id, record_id, field_name, old_value, new_value, reason_for_change, change_type, action_by)
+                VALUES (?, ?, ?, ?, NULL, NULL, ?, 'query_raised', ?)
+            ");
+            $stmt_aud->execute([
+                $study_id,
+                $rec['subject_id'],
+                $record_id,
+                $field_name ?: 'RECORD_QUERY',
+                "Query Raised (" . $query_id . "): " . $query_text,
+                $user_id
+            ]);
 
             $pdo->commit();
 
@@ -946,20 +1215,37 @@ try {
     // 8. ANSWER QUERY (COORDINATOR / ADMIN)
     // =========================================================================
     elseif ($action === 'answer_query') {
-        if (!$is_coordinator && !$is_admin) {
+        if (!$is_coordinator && !$is_admin && !hasPermission('enter_data')) {
             throw new Exception("Unauthorized: Answering queries requires Data Coordinator permissions.");
         }
 
         $query_id = (int)($_POST['query_id'] ?? 0);
         $remark = trim($_POST['remark'] ?? $_POST['response_text'] ?? $_POST['response'] ?? '');
+        $proposed_field_value = isset($_POST['field_value']) ? trim($_POST['field_value']) : null;
 
         if ($query_id <= 0) throw new Exception("Invalid query ID");
         if ($remark === '') throw new Exception("Response remark cannot be empty.");
 
-        $stmt = $pdo->prepare("SELECT * FROM common_form_queries WHERE id = ? AND study_id = ?");
+        $stmt = $pdo->prepare("SELECT q.*, r.data_json FROM common_form_queries q JOIN subject_common_records r ON q.record_id = r.id WHERE q.id = ? AND q.study_id = ?");
         $stmt->execute([$query_id, $study_id]);
         $q = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$q) throw new Exception("Query not found.");
+
+        $hist_old_val = null;
+        $hist_new_val = null;
+
+        // Check if there is a proposed field value update for the queried field
+        if ($proposed_field_value !== null && !empty($q['field_name'])) {
+            $rec_data = json_decode($q['data_json'] ?? '{}', true) ?: [];
+            $curr_val = is_array($rec_data[$q['field_name']] ?? null) ? implode(', ', $rec_data[$q['field_name']]) : (string)($rec_data[$q['field_name']] ?? '');
+
+            if ($proposed_field_value !== '' && $curr_val !== $proposed_field_value) {
+                $hist_old_val = $curr_val;
+                $hist_new_val = $proposed_field_value;
+                // NOTE: When a query is answered, the field value in data_json must remain unchanged
+                // until a Data Monitor or Manager explicitly clicks "Close Query".
+            }
+        }
 
         $pdo->beginTransaction();
         try {
@@ -967,10 +1253,26 @@ try {
             $stmt_upd->execute([$query_id]);
 
             $stmt_qh = $pdo->prepare("
-                INSERT INTO common_form_query_history (query_id, action_type, remark, created_by)
-                VALUES (?, 'answered', ?, ?)
+                INSERT INTO common_form_query_history (query_id, action_type, remark, old_value, new_value, status_from, status_to, created_by)
+                VALUES (?, 'answered', ?, ?, ?, 'open', 'answered', ?)
             ");
-            $stmt_qh->execute([$query_id, $remark, $user_id]);
+            $stmt_qh->execute([$query_id, $remark, $hist_old_val, $hist_new_val, $user_id]);
+
+            // Regulatory Audit Trail
+            $stmt_aud = $pdo->prepare("
+                INSERT INTO common_form_audit_log (study_id, subject_id, record_id, field_name, old_value, new_value, reason_for_change, change_type, action_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'query_answered', ?)
+            ");
+            $stmt_aud->execute([
+                $study_id,
+                $q['subject_id'],
+                $q['record_id'],
+                $q['field_name'] ?: 'RECORD_QUERY',
+                $hist_old_val,
+                $hist_new_val,
+                "Query Answered (" . $query_id . "): " . $remark,
+                $user_id
+            ]);
 
             $pdo->commit();
 
@@ -985,24 +1287,31 @@ try {
     }
 
     // =========================================================================
-    // 9. CLOSE OR REOPEN QUERY (DATA MANAGER / ADMIN ONLY)
+    // 9. CLOSE OR REOPEN QUERY (DATA MONITOR / DATA MANAGER / ADMIN)
     // =========================================================================
-    elseif ($action === 'close_query') {
-        if (!$is_manager) {
-            throw new Exception("Unauthorized: Closing / reopening queries is restricted to Data Managers and Administrators.");
+    elseif ($action === 'close_query' || $action === 'update_query_status') {
+        if (!$is_manager && !$is_monitor && !$is_admin) {
+            throw new Exception("Unauthorized: Closing or reopening queries is restricted to Data Monitors, Data Managers, and Administrators.");
         }
 
         $query_id = (int)($_POST['query_id'] ?? 0);
-        $query_action = trim($_POST['query_action'] ?? 'close'); // 'close' or 'reopen'
+        $query_action = trim($_POST['query_action'] ?? $_POST['status'] ?? 'close');
         $remark = trim($_POST['remark'] ?? '');
 
         if ($query_id <= 0) throw new Exception("Invalid query ID");
-        $new_status = ($query_action === 'reopen') ? 'open' : 'closed';
+        if ($query_action === 'reopen' || $query_action === 'open') {
+            $new_status = 'open';
+        } else {
+            $new_status = 'closed';
+        }
 
         $stmt = $pdo->prepare("SELECT * FROM common_form_queries WHERE id = ? AND study_id = ?");
         $stmt->execute([$query_id, $study_id]);
         $q = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$q) throw new Exception("Query not found.");
+
+        $old_status = $q['status'];
+        $record_id = (int)$q['record_id'];
 
         $pdo->beginTransaction();
         try {
@@ -1010,10 +1319,143 @@ try {
             $stmt_upd->execute([$new_status, $query_id]);
 
             $stmt_qh = $pdo->prepare("
-                INSERT INTO common_form_query_history (query_id, action_type, remark, created_by)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO common_form_query_history (query_id, action_type, remark, status_from, status_to, created_by)
+                VALUES (?, ?, ?, ?, ?, ?)
             ");
-            $stmt_qh->execute([$query_id, $new_status, $remark ?: ($new_status === 'closed' ? 'Query closed' : 'Query reopened'), $user_id]);
+            $stmt_qh->execute([
+                $query_id, 
+                $new_status === 'closed' ? 'closed' : 'reopened', 
+                $remark ?: ($new_status === 'closed' ? 'Query closed' : 'Query reopened'), 
+                $old_status, 
+                $new_status, 
+                $user_id
+            ]);
+
+            // Audit log for status change
+            $reason = '';
+            $change_type = '';
+            if ($new_status === 'closed') {
+                $reason = "Query (" . $query_id . ") Closed: " . ($remark ?: 'Closed by reviewer');
+                $change_type = 'query_closed';
+            } else {
+                $reason = "Requery (" . $query_id . "): " . ($remark ?: 'Reopened by reviewer');
+                $change_type = 'query_reopened';
+            }
+
+            $stmt_aud = $pdo->prepare("
+                INSERT INTO common_form_audit_log (study_id, subject_id, record_id, field_name, old_value, new_value, reason_for_change, change_type, action_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $stmt_aud->execute([
+                $study_id,
+                $q['subject_id'],
+                $record_id,
+                $q['field_name'] ?: 'RECORD_QUERY',
+                null,
+                null,
+                $reason,
+                $change_type,
+                $user_id
+            ]);
+
+            // IF QUERY IS CLOSED: Check if there was any field value change for this query
+            if ($new_status === 'closed' && !empty($q['field_name'])) {
+                // Check if the query had an answered step with a proposed new_value
+                $stmt_change = $pdo->prepare("
+                    SELECT old_value, new_value 
+                    FROM common_form_query_history 
+                    WHERE query_id = ? AND status_to = 'answered'
+                    ORDER BY id DESC LIMIT 1
+                ");
+                $stmt_change->execute([$query_id]);
+                $val_change = $stmt_change->fetch(PDO::FETCH_ASSOC);
+
+                // Fallback: check any query history entry with new_value
+                if (!$val_change || $val_change['new_value'] === null) {
+                    $stmt_change = $pdo->prepare("
+                        SELECT old_value, new_value 
+                        FROM common_form_query_history 
+                        WHERE query_id = ? AND new_value IS NOT NULL AND (old_value IS NULL OR old_value != new_value)
+                        ORDER BY id DESC LIMIT 1
+                    ");
+                    $stmt_change->execute([$query_id]);
+                    $val_change = $stmt_change->fetch(PDO::FETCH_ASSOC);
+                }
+
+                $target_new_val = $val_change['new_value'] ?? null;
+
+                if ($target_new_val !== null && $target_new_val !== '') {
+                    // Fetch current record
+                    $stmt_rec = $pdo->prepare("SELECT * FROM subject_common_records WHERE id = ? FOR UPDATE");
+                    $stmt_rec->execute([$record_id]);
+                    $current_rec = $stmt_rec->fetch(PDO::FETCH_ASSOC);
+
+                    if ($current_rec) {
+                        $current_data = json_decode($current_rec['data_json'] ?? '{}', true) ?: [];
+                        $curr_val_db = is_array($current_data[$q['field_name']] ?? null) 
+                            ? implode(', ', $current_data[$q['field_name']]) 
+                            : (string)($current_data[$q['field_name']] ?? '');
+
+                        // Field value has changed only if the proposed value differs from current record data
+                        if ($curr_val_db !== $target_new_val) {
+                            // 1. Update data_json with the new value
+                            $current_data[$q['field_name']] = $target_new_val;
+                            $new_revision = (int)$current_rec['revision'] + 1;
+
+                            // 2. Revoke SDR state and update record
+                            $stmt_update_rec = $pdo->prepare("
+                                UPDATE subject_common_records 
+                                SET data_json = :json, 
+                                    revision = :rev, 
+                                    sdr_submitted = FALSE, 
+                                    monitor_reviewed = FALSE, 
+                                    manager_reviewed = FALSE, 
+                                    sdr_status = 'pending', 
+                                    updated_at = CURRENT_TIMESTAMP
+                                WHERE id = :id
+                            ");
+                            $stmt_update_rec->execute([
+                                'json' => json_encode($current_data),
+                                'rev' => $new_revision,
+                                'id' => $record_id
+                            ]);
+
+                            // 3. Log clinical update in common_form_audit_log
+                            $stmt_aud->execute([
+                                $study_id,
+                                $q['subject_id'],
+                                $record_id,
+                                $q['field_name'],
+                                $curr_val_db,
+                                $target_new_val,
+                                "Updated via query (" . $query_id . ") closure: " . ($remark ?: 'Closed with value update'),
+                                'update',
+                                $user_id
+                            ]);
+
+                            // 4. Log SDR Revocation in common_form_audit_log
+                            $stmt_aud->execute([
+                                $study_id,
+                                $q['subject_id'],
+                                $record_id,
+                                'sdr_status',
+                                $current_rec['sdr_status'],
+                                'pending',
+                                "SDR Revoked: Query #" . $query_id . " closed with updated field value",
+                                'sdr_revoked',
+                                $user_id
+                            ]);
+
+                            // 5. Log SDR history
+                            $stmt_sdr_hist = $pdo->prepare("
+                                INSERT INTO common_form_sdr_history (record_id, action, reviewed_revision, action_by)
+                                VALUES (?, 'sdr_revoked', ?, ?)
+                            ");
+                            $stmt_sdr_hist->execute([$record_id, $new_revision, $user_id]);
+                        }
+                    }
+                }
+            }
 
             $pdo->commit();
 

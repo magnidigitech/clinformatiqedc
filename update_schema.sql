@@ -37,8 +37,8 @@ CREATE TABLE IF NOT EXISTS subject_common_records (
     form_type VARCHAR(10) NOT NULL,
     seq_number INT NOT NULL,
     record_number VARCHAR(50) NOT NULL,
-    status VARCHAR(20) DEFAULT 'draft',
-    sdr_status VARCHAR(20) DEFAULT 'pending',
+    status VARCHAR(50) DEFAULT 'draft',
+    sdr_status VARCHAR(50) DEFAULT 'pending',
     sdr_by INT NULL REFERENCES users(id) ON DELETE SET NULL,
     sdr_at TIMESTAMP NULL,
     sdr_revision INT DEFAULT 0,
@@ -105,6 +105,7 @@ CREATE TABLE IF NOT EXISTS common_form_audit_log (
     action_by INT NOT NULL REFERENCES users(id) ON DELETE SET NULL,
     action_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
-
-
+-- Column size expansions
+ALTER TABLE subject_common_records ALTER COLUMN sdr_status TYPE VARCHAR(50);
+ALTER TABLE subject_common_records ALTER COLUMN status TYPE VARCHAR(50);
+ALTER TABLE common_form_queries ALTER COLUMN status TYPE VARCHAR(50);
