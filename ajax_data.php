@@ -654,8 +654,19 @@ try {
         $form_id = $_POST['form_id'];
         $field_id = $_POST['field_id'];
         $repeating_instance_id = (int)($_POST['repeating_instance_id'] ?? 0);
-        $code = $_POST['code']; // e.g. -95
+        $code = trim($_POST['code'] ?? '');
         $comment = trim($_POST['comment'] ?? '');
+        
+        $missing_map = [
+            '-95' => 'Measurement failed',
+            '-96' => 'Not applicable',
+            '-97' => 'Not asked',
+            '-98' => 'Asked but unknown',
+            '-99' => 'Not done'
+        ];
+        if (isset($missing_map[$code])) {
+            $code = $missing_map[$code];
+        }
         
         if (!$code) throw new Exception("Missing code required");
         
@@ -678,12 +689,12 @@ try {
             $stmt_del = $pdo->prepare("DELETE FROM subject_data WHERE subject_id = ? AND form_id = ? AND field_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
             $stmt_del->execute([$subject_id, $form_id, $field_id, $repeating_instance_id, $repeating_instance_id]);
             
-            // Insert Missing Code
+            // Insert Missing Value
             $stmt_ins = $pdo->prepare("INSERT INTO subject_data (study_id, subject_id, visit_id, form_id, repeating_instance_id, field_id, value, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
             $stmt_ins->execute([$study_id, $subject_id, $_POST['visit_id'], $form_id, $repeating_instance_id, $field_id, $code, $_SESSION['user_id']]);
             
             // Log Audit
-            $reason = "Marked missing ($code). " . $comment;
+            $reason = "Marked missing: $code" . (!empty($comment) ? ". " . $comment : "");
             $stmt_a = $pdo->prepare("INSERT INTO data_audit_log (study_id, subject_id, visit_id, form_id, field_id, repeating_instance_id, old_value, new_value, reason_for_change, change_type, action_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'missing_code', ?)");
             $stmt_a->execute([$study_id, $subject_id, $_POST['visit_id'], $form_id, $field_id, $repeating_instance_id, $old_val, $code, $reason, $_SESSION['user_id']]);
             

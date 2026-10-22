@@ -290,7 +290,15 @@ function renderFormAuditTrail($pdo, $study_id, $subject_id, $current_form_id, $r
             } elseif ($change_type === 'clear') {
                 $action_desc = "Field <strong>\"{$field_lbl}\"</strong> cleared. Reason: <em>\"" . htmlspecialchars($audit['reason_for_change']) . "\"</em>";
             } elseif ($change_type === 'missing_code') {
-                $action_desc = "Field <strong>\"{$field_lbl}\"</strong> marked as missing (code: <code>\"{$new_val}\"</code>). Reason: <em>\"" . htmlspecialchars($audit['reason_for_change']) . "\"</em>";
+                $missing_map = [
+                    '-95' => 'Measurement failed',
+                    '-96' => 'Not applicable',
+                    '-97' => 'Not asked',
+                    '-98' => 'Asked but unknown',
+                    '-99' => 'Not done'
+                ];
+                $disp_val = $missing_map[(string)$new_val] ?? $new_val;
+                $action_desc = "Field <strong>\"{$field_lbl}\"</strong> marked as missing: <code>\"{$disp_val}\"</code>. Reason: <em>\"" . htmlspecialchars($audit['reason_for_change']) . "\"</em>";
             } else {
                 $action_desc = htmlspecialchars($audit['reason_for_change']);
             }
@@ -681,6 +689,19 @@ function renderFieldInput($field, $saved_value = '', $choices_map = []) {
         $saved_value = 'RECIST 1.1';
     }
 
+    // Missing Value mapping (-95 to -99 or label normalization)
+    $missing_labels = [
+        '-95' => 'Measurement failed',
+        '-96' => 'Not applicable',
+        '-97' => 'Not asked',
+        '-98' => 'Asked but unknown',
+        '-99' => 'Not done'
+    ];
+    if (isset($missing_labels[(string)$saved_value])) {
+        $saved_value = $missing_labels[(string)$saved_value];
+    }
+    $is_missing = in_array((string)$saved_value, ['Measurement failed', 'Not applicable', 'Not asked', 'Asked but unknown', 'Not done'], true);
+
     $value = htmlspecialchars((string)$saved_value); 
     
     // Check Global Edit Permission
@@ -694,6 +715,12 @@ function renderFieldInput($field, $saved_value = '', $choices_map = []) {
     // Custom Readonly for RECIST method
     if ($var === 'recist_method') {
         echo '<input type="text" name="'.$name.'" data-var="'.$var.'" class="crf-input" value="RECIST 1.1" readonly style="background:#f8fafc; font-weight:600; color:#1e293b; cursor:default;">';
+        return;
+    }
+
+    // If marked missing on types that cannot display text (number, date, time), render as text input with styling
+    if ($is_missing && in_array($type, ['number', 'year', 'date', 'datetime', 'time', 'slider'])) {
+        echo '<input type="text" name="'.$name.'" data-var="'.$var.'" class="crf-input" value="'.$value.'" '.$disabled.' style="background: #f8fafc; font-weight: 500; color: #475569;">';
         return;
     }
 
@@ -740,6 +767,13 @@ function renderFieldInput($field, $saved_value = '', $choices_map = []) {
              echo '<select name="'.$name.'" data-var="'.$var.'" class="crf-input" '.$disabled.'>';
              echo '<option value="">Select option</option>';
              if (!empty($options)) {
+                 $has_match = false;
+                 foreach ($options as $opt) {
+                     if ((string)$value === (string)$opt['value']) $has_match = true;
+                 }
+                 if (!$has_match && $value !== '' && $value !== null) {
+                     echo '<option value="'.$value.'" selected>'.$value.'</option>';
+                 }
                  foreach ($options as $opt) {
                      $sel = ($value == $opt['value']) ? 'selected' : '';
                      echo '<option value="'.htmlspecialchars($opt['value']).'" '.$sel.'>'.htmlspecialchars($opt['label']).'</option>';
@@ -751,6 +785,14 @@ function renderFieldInput($field, $saved_value = '', $choices_map = []) {
              break;
              
         case 'radio':
+            if ($is_missing) {
+                echo '<div style="display:flex; align-items:center; gap:0.5rem; padding:0.4rem 0.75rem; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; font-size:0.9rem; color:#475569;">';
+                echo '<span class="material-icons-round" style="font-size:1.1rem; color:#64748b;">block</span>';
+                echo '<span>Marked as: <strong>'.$value.'</strong></span>';
+                echo '<input type="hidden" name="'.$name.'" data-var="'.$var.'" value="'.$value.'">';
+                echo '</div>';
+                break;
+            }
             echo '<div style="display:flex; flex-direction:column; gap:0.5rem;">';
             if (!empty($options)) {
                 foreach ($options as $opt) {
@@ -770,6 +812,14 @@ function renderFieldInput($field, $saved_value = '', $choices_map = []) {
             break;
 
         case 'checkbox':
+            if ($is_missing) {
+                echo '<div style="display:flex; align-items:center; gap:0.5rem; padding:0.4rem 0.75rem; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; font-size:0.9rem; color:#475569;">';
+                echo '<span class="material-icons-round" style="font-size:1.1rem; color:#64748b;">block</span>';
+                echo '<span>Marked as: <strong>'.$value.'</strong></span>';
+                echo '<input type="hidden" name="'.$name.'[]" data-var="'.$var.'" value="'.$value.'">';
+                echo '</div>';
+                break;
+            }
             $saved_vals = [];
             if (($value !== '' && $value !== null) && strpos($value, '[') === 0) {
                  $saved_vals = json_decode(htmlspecialchars_decode($value), true) ?? [];

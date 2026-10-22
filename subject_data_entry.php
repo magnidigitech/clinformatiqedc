@@ -520,7 +520,7 @@ if ($current_form_id && $subject_id) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Data Entry - <?php echo htmlspecialchars($current_form_name); ?></title>
-    <link rel="stylesheet" href="assets/css/style.css?v=<?php echo time(); ?>">
+    <link rel="stylesheet" href="assets/css/style.css?v=20261022">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
     <style>
         body { margin: 0; padding: 0; overflow: hidden; }
@@ -2692,11 +2692,11 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
             <div class="form-group">
                 <label>Reason <span style="color:red">*</span></label>
                 <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem;">
-                    <label><input type="radio" name="missingReason" value="-95"> Measurement failed (-95)</label>
-                    <label><input type="radio" name="missingReason" value="-96"> Not applicable (-96)</label>
-                    <label><input type="radio" name="missingReason" value="-97"> Not asked (-97)</label>
-                    <label><input type="radio" name="missingReason" value="-98"> Asked but unknown (-98)</label>
-                    <label><input type="radio" name="missingReason" value="-99"> Not done (-99)</label>
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;"><input type="radio" name="missingReason" value="Measurement failed"> Measurement failed</label>
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;"><input type="radio" name="missingReason" value="Not applicable"> Not applicable</label>
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;"><input type="radio" name="missingReason" value="Not asked"> Not asked</label>
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;"><input type="radio" name="missingReason" value="Asked but unknown"> Asked but unknown</label>
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;"><input type="radio" name="missingReason" value="Not done"> Not done</label>
                 </div>
             </div>
             
