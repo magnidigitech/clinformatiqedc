@@ -582,10 +582,19 @@ function getVitalSignsFields($defaultTimepoint = 'Screening') {
         [
             'var' => 'sbp_reason',
             'label' => 'Reason SBP not obtained',
-            'type' => 'text',
+            'type' => 'dropdown',
+            'opt_group' => 'vitals_not_assessed_reason',
             'required' => true,
             'condition' => ['field' => 'sbp_obtained', 'operator' => '==', 'value' => 'No'],
-            'help' => 'Record clinical reason measurement was omitted.'
+            'help' => 'Subject declined / Equipment unavailable / Subject unable to undergo assessment / Other.'
+        ],
+        [
+            'var' => 'sbp_reason_other',
+            'label' => 'Reason SBP not obtained — Please specify',
+            'type' => 'text',
+            'required' => true,
+            'condition' => ['field' => 'sbp_reason', 'operator' => '==', 'value' => 'Other'],
+            'help' => 'Required when reason is Other.'
         ],
         
         // Diastolic Blood Pressure
@@ -609,9 +618,19 @@ function getVitalSignsFields($defaultTimepoint = 'Screening') {
         [
             'var' => 'dbp_reason',
             'label' => 'Reason DBP not obtained',
+            'type' => 'dropdown',
+            'opt_group' => 'vitals_not_assessed_reason',
+            'required' => true,
+            'condition' => ['field' => 'dbp_obtained', 'operator' => '==', 'value' => 'No'],
+            'help' => 'Subject declined / Equipment unavailable / Subject unable to undergo assessment / Other.'
+        ],
+        [
+            'var' => 'dbp_reason_other',
+            'label' => 'Reason DBP not obtained — Please specify',
             'type' => 'text',
             'required' => true,
-            'condition' => ['field' => 'dbp_obtained', 'operator' => '==', 'value' => 'No']
+            'condition' => ['field' => 'dbp_reason', 'operator' => '==', 'value' => 'Other'],
+            'help' => 'Required when reason is Other.'
         ],
         
         // Heart Rate
@@ -634,9 +653,19 @@ function getVitalSignsFields($defaultTimepoint = 'Screening') {
         [
             'var' => 'hr_reason',
             'label' => 'Reason Heart rate not obtained',
+            'type' => 'dropdown',
+            'opt_group' => 'vitals_not_assessed_reason',
+            'required' => true,
+            'condition' => ['field' => 'hr_obtained', 'operator' => '==', 'value' => 'No'],
+            'help' => 'Subject declined / Equipment unavailable / Subject unable to undergo assessment / Other.'
+        ],
+        [
+            'var' => 'hr_reason_other',
+            'label' => 'Reason Heart rate not obtained — Please specify',
             'type' => 'text',
             'required' => true,
-            'condition' => ['field' => 'hr_obtained', 'operator' => '==', 'value' => 'No']
+            'condition' => ['field' => 'hr_reason', 'operator' => '==', 'value' => 'Other'],
+            'help' => 'Required when reason is Other.'
         ],
         
         // Respiratory Rate
@@ -659,9 +688,19 @@ function getVitalSignsFields($defaultTimepoint = 'Screening') {
         [
             'var' => 'rr_reason',
             'label' => 'Reason Respiratory rate not obtained',
+            'type' => 'dropdown',
+            'opt_group' => 'vitals_not_assessed_reason',
+            'required' => true,
+            'condition' => ['field' => 'rr_obtained', 'operator' => '==', 'value' => 'No'],
+            'help' => 'Subject declined / Equipment unavailable / Subject unable to undergo assessment / Other.'
+        ],
+        [
+            'var' => 'rr_reason_other',
+            'label' => 'Reason Respiratory rate not obtained — Please specify',
             'type' => 'text',
             'required' => true,
-            'condition' => ['field' => 'rr_obtained', 'operator' => '==', 'value' => 'No']
+            'condition' => ['field' => 'rr_reason', 'operator' => '==', 'value' => 'Other'],
+            'help' => 'Required when reason is Other.'
         ],
         
         // Temperature
@@ -684,9 +723,19 @@ function getVitalSignsFields($defaultTimepoint = 'Screening') {
         [
             'var' => 'temp_reason',
             'label' => 'Reason Temperature not obtained',
+            'type' => 'dropdown',
+            'opt_group' => 'vitals_not_assessed_reason',
+            'required' => true,
+            'condition' => ['field' => 'temp_obtained', 'operator' => '==', 'value' => 'No'],
+            'help' => 'Subject declined / Equipment unavailable / Subject unable to undergo assessment / Other.'
+        ],
+        [
+            'var' => 'temp_reason_other',
+            'label' => 'Reason Temperature not obtained — Please specify',
             'type' => 'text',
             'required' => true,
-            'condition' => ['field' => 'temp_obtained', 'operator' => '==', 'value' => 'No']
+            'condition' => ['field' => 'temp_reason', 'operator' => '==', 'value' => 'Other'],
+            'help' => 'Required when reason is Other.'
         ],
         
         // Weight
@@ -709,9 +758,19 @@ function getVitalSignsFields($defaultTimepoint = 'Screening') {
         [
             'var' => 'weight_reason',
             'label' => 'Reason Weight not obtained',
+            'type' => 'dropdown',
+            'opt_group' => 'vitals_not_assessed_reason',
+            'required' => true,
+            'condition' => ['field' => 'weight_obtained', 'operator' => '==', 'value' => 'No'],
+            'help' => 'Subject declined / Equipment unavailable / Subject unable to undergo assessment / Other.'
+        ],
+        [
+            'var' => 'weight_reason_other',
+            'label' => 'Reason Weight not obtained — Please specify',
             'type' => 'text',
             'required' => true,
-            'condition' => ['field' => 'weight_obtained', 'operator' => '==', 'value' => 'No']
+            'condition' => ['field' => 'weight_reason', 'operator' => '==', 'value' => 'Other'],
+            'help' => 'Required when reason is Other.'
         ]
     ];
 }
@@ -732,9 +791,19 @@ function getHematologyFields($timepoint = 'Screening') {
         [
             'var' => 'hema_not_collected_reason',
             'label' => 'Hematology Panel — Reason sample not collected',
+            'type' => 'dropdown',
+            'opt_group' => 'lab_not_collected_reason',
+            'required' => true,
+            'condition' => ['field' => 'hema_panel_collected', 'operator' => '==', 'value' => 'No'],
+            'help' => 'Subject unavailable / Subject declined / Vein access failed / Equipment unavailable / Other.'
+        ],
+        [
+            'var' => 'hema_not_collected_other',
+            'label' => 'Hematology Panel — Reason sample not collected (Please specify)',
             'type' => 'text',
             'required' => true,
-            'condition' => ['field' => 'hema_panel_collected', 'operator' => '==', 'value' => 'No']
+            'condition' => ['field' => 'hema_not_collected_reason', 'operator' => '==', 'value' => 'Other'],
+            'help' => 'Required when reason is Other.'
         ],
         [
             'var' => 'hema_collection_date',
@@ -814,9 +883,19 @@ function getChemistryFields($timepoint = 'Screening') {
         [
             'var' => 'chem_not_collected_reason',
             'label' => 'Chemistry Panel — Reason sample not collected',
+            'type' => 'dropdown',
+            'opt_group' => 'lab_not_collected_reason',
+            'required' => true,
+            'condition' => ['field' => 'chem_panel_collected', 'operator' => '==', 'value' => 'No'],
+            'help' => 'Subject unavailable / Subject declined / Vein access failed / Equipment unavailable / Other.'
+        ],
+        [
+            'var' => 'chem_not_collected_other',
+            'label' => 'Chemistry Panel — Reason sample not collected (Please specify)',
             'type' => 'text',
             'required' => true,
-            'condition' => ['field' => 'chem_panel_collected', 'operator' => '==', 'value' => 'No']
+            'condition' => ['field' => 'chem_not_collected_reason', 'operator' => '==', 'value' => 'Other'],
+            'help' => 'Required when reason is Other.'
         ],
         [
             'var' => 'chem_collection_date',

@@ -2260,61 +2260,64 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
     function evaluateSkipLogic() {
         const fields = document.querySelectorAll('.crf-field');
         
-        fields.forEach(fieldEl => {
-            const condAttr = fieldEl.getAttribute('data-condition');
-            if (!condAttr) return;
+        // Run 2 passes to ensure deep multi-level nested conditional logic (e.g. Yes/No -> Reason dropdown -> Other text) cascades cleanly
+        for (let pass = 0; pass < 2; pass++) {
+            fields.forEach(fieldEl => {
+                const condAttr = fieldEl.getAttribute('data-condition');
+                if (!condAttr) return;
 
-            try {
-                const cond = JSON.parse(condAttr);
-                if (!cond || !cond.field) return;
+                try {
+                    const cond = JSON.parse(condAttr);
+                    if (!cond || !cond.field) return;
 
-                const parentVal = getFieldValueByVar(cond.field);
-                let isVisible = false;
-                const op = cond.operator || '==';
-                const targetVal = cond.value;
+                    const parentVal = getFieldValueByVar(cond.field);
+                    let isVisible = false;
+                    const op = cond.operator || '==';
+                    const targetVal = cond.value;
 
-                if (op === '==' || op === 'equals') {
-                    isVisible = (String(parentVal).trim() === String(targetVal).trim());
-                } else if (op === '!=' || op === 'not_equals') {
-                    isVisible = (String(parentVal).trim() !== String(targetVal).trim() && parentVal !== '');
-                } else if (op === 'in') {
-                    const arr = Array.isArray(targetVal) ? targetVal : [targetVal];
-                    isVisible = arr.map(v => String(v).trim()).includes(String(parentVal).trim());
-                }
+                    if (op === '==' || op === 'equals') {
+                        isVisible = (String(parentVal).trim() === String(targetVal).trim());
+                    } else if (op === '!=' || op === 'not_equals') {
+                        isVisible = (String(parentVal).trim() !== String(targetVal).trim() && parentVal !== '');
+                    } else if (op === 'in') {
+                        const arr = Array.isArray(targetVal) ? targetVal : [targetVal];
+                        isVisible = arr.map(v => String(v).trim()).includes(String(parentVal).trim());
+                    }
 
-                // If parent field itself is currently skipped/hidden, cascade hide child
-                const parentFieldEl = document.querySelector(`.crf-field[data-variable-name="${cond.field}"]`);
-                if (parentFieldEl && (parentFieldEl.classList.contains('skipped-field') || parentFieldEl.style.display === 'none')) {
-                    isVisible = false;
-                }
+                    // If parent field itself is currently skipped/hidden, cascade hide child
+                    const parentFieldEl = document.querySelector(`.crf-field[data-variable-name="${cond.field}"]`);
+                    if (parentFieldEl && (parentFieldEl.classList.contains('skipped-field') || parentFieldEl.style.display === 'none')) {
+                        isVisible = false;
+                    }
 
-                const inputs = fieldEl.querySelectorAll('input, select, textarea');
-                if (isVisible) {
-                    fieldEl.style.display = 'block';
-                    fieldEl.classList.remove('skipped-field');
-                    if (fieldEl.getAttribute('data-required') === 'true') {
+                    const inputs = fieldEl.querySelectorAll('input, select, textarea');
+                    if (isVisible) {
+                        fieldEl.style.display = 'block';
+                        fieldEl.classList.remove('skipped-field');
+                        if (fieldEl.getAttribute('data-required') === 'true') {
+                            inputs.forEach(inp => {
+                                if (inp.type !== 'radio' && inp.type !== 'checkbox') {
+                                    inp.required = true;
+                                }
+                            });
+                        }
+                    } else {
+                        fieldEl.style.display = 'none';
+                        fieldEl.classList.add('skipped-field');
                         inputs.forEach(inp => {
-                            if (inp.type !== 'radio' && inp.type !== 'checkbox') {
-                                inp.required = true;
+                            inp.required = false;
+                            if (inp.type === 'radio' || inp.type === 'checkbox') {
+                                inp.checked = false;
+                            } else {
+                                inp.value = '';
                             }
                         });
                     }
-                } else {
-                    fieldEl.style.display = 'none';
-                    fieldEl.classList.add('skipped-field');
-                    inputs.forEach(inp => {
-                        inp.required = false;
-                        if (inp.type === 'radio' || inp.type === 'checkbox') {
-                            inp.checked = false;
-                        } else {
-                            inp.value = '';
-                        }
-                    });
+                } catch(e) {
+                    console.error('Error evaluating condition:', e);
                 }
-            } catch(e) {
-                console.error('Error evaluating condition:', e);
-            }
-        });
+            });
+        }
 
         handleCalculationsAndFlags();
         handleVisitDisabledFormsRealtime();
