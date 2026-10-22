@@ -5,6 +5,8 @@
  */
 session_start();
 require_once __DIR__ . '/config/db.php';
+require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/id_generation.php';
 
 $pdo = getDB();
 
@@ -379,6 +381,11 @@ $stmt_studies = $pdo->query("
     ORDER BY s.id DESC
 ");
 $studies = $stmt_studies->fetchAll(PDO::FETCH_ASSOC);
+
+// Automatically heal any duplicate subject codes across studies
+foreach ($studies as $std) {
+    fixDuplicateSubjectCodes($pdo, $std['id']);
+}
 
 // Fetch All Subjects with Study Info
 $filter_study_id = (int)($_GET['study_id'] ?? 0);

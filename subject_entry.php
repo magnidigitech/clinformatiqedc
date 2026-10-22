@@ -1,6 +1,7 @@
 <?php
 require_once 'includes/functions.php';
 require_once 'includes/auth.php';
+require_once 'includes/id_generation.php';
 
 requireLogin();
 $pdo = getDB();
@@ -18,7 +19,6 @@ $study_name = $_SESSION['active_study_name'];
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $subject_code = $_POST['subject_code'] ?? '';
     $site_name = $_POST['site_name'] ?? 'General Hospital'; // Default for now
     
     // Generate Subject ID logic
@@ -27,81 +27,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $s_config = $study_config_stmt->fetch();
     $method = $s_config['participant_id_method'] ?? 'incremental';
     
-    // If method is NOT free text, we generate it
+    // If method is NOT free text, generate next available unique ID that fills gaps and prevents duplicates
     if ($method !== 'free_text') {
-        // fetch site details for codes
-        $site_stmt = $pdo->prepare("SELECT * FROM sites WHERE name = ? AND study_id = ?");
-        $site_stmt->execute([$site_name, $study_id]);
-        $site_data = $site_stmt->fetch();
-        
-        $country_code = getCountryCode($site_data['country'] ?? 'India', 2); // Default to IN if missing
-        $site_code = $site_data['site_code'] ?? '01'; // Default
-        $site_abbr = $site_data['abbreviation'] ?? 'SITE'; 
-        
-        // Count existing subjects to determine sequence
-        // We need to count based on the pattern effectively, or just global count for this site/study
-        // Simple incremental: Count in study + 1
-        // Per site: Count in site + 1
-        
-        $count_sql = "SELECT COUNT(*) FROM subjects WHERE study_id = ?";
-        $params = [$study_id];
-        
-        if (strpos($method, 'site') !== false || strpos($method, 'abbr') !== false) {
-             $count_sql .= " AND site_name = ?";
-             $params[] = $site_name;
-        }
-        
-        $count_stmt = $pdo->prepare($count_sql);
-        $count_stmt->execute($params);
-        $seq = $count_stmt->fetchColumn() + 1;
-        $seq_pad = str_pad($seq, 3, '0', STR_PAD_LEFT); // Default 3 digits
-        
-        $generated_code = '';
-        
-        switch ($method) {
-            case 'incremental':
-                $generated_code = str_pad($seq, 4, '0', STR_PAD_LEFT);
-                break;
-            case 'random':
-                $generated_code = rand(100000, 999999);
-                break;
-            case 'incremental_site':
-                $generated_code = $site_code . '-' . str_pad($seq, 4, '0', STR_PAD_LEFT);
-                break;
-            case 'country_site_2': // Country(2) - Site(2) - Seq(3) e.g. IN-01-001
-                $generated_code = $country_code . '-' . substr($site_code, 0, 2) . '-' . str_pad($seq, 3, '0', STR_PAD_LEFT);
-                break;
-            case 'country_site_3': // Country(2) - Site(3) - Seq(3)
-                $generated_code = $country_code . '-' . substr($site_code, 0, 3) . '-' . str_pad($seq, 3, '0', STR_PAD_LEFT);
-                break;
-            case 'country_abbr_2': // Country(2) - Abbr(2) - Seq(3)
-                $generated_code = $country_code . '-' . substr($site_abbr, 0, 2) . '-' . str_pad($seq, 3, '0', STR_PAD_LEFT);
-                break;
-            default:
-                $generated_code = str_pad($seq, 4, '0', STR_PAD_LEFT);
-        }
-        
-        $subject_code = strtoupper($generated_code);
+        $subject_code = getNextAvailableSubjectCode($pdo, $study_id, $site_name);
+    } else {
+        $subject_code = strtoupper(trim($_POST['subject_code'] ?? ''));
     }
 
     if (empty($subject_code)) {
         $error = "Subject ID is required";
     } else {
-        $pdo = getDB();
-        try {
-            $stmt = $pdo->prepare("INSERT INTO subjects (study_id, subject_code, site_name, status, created_by) VALUES (:sid, :code, :site, 'Screening', :uid)");
-            $stmt->execute([
-                'sid' => $study_id,
-                'code' => $subject_code,
-                'site' => $site_name,
-                'uid' => $_SESSION['user_id']
-            ]);
-            redirect('subjects_list.php');
-        } catch (PDOException $e) {
-            if ($e->getCode() == 23000) { // Duplicate entry
-                $error = "Subject ID $subject_code already exists. Please try again.";
-            } else {
-                $error = "Database Error: " . $e->getMessage();
+        // Enforce uniqueness
+        $chk = $pdo->prepare("SELECT id FROM subjects WHERE study_id = ? AND UPPER(subject_code) = UPPER(?)");
+        $chk->execute([$study_id, $subject_code]);
+        if ($chk->fetch()) {
+            $error = "Subject ID $subject_code already exists in this study. Please use a unique ID.";
+        } else {
+            try {
+                $stmt = $pdo->prepare("INSERT INTO subjects (study_id, subject_code, site_name, status, created_by) VALUES (:sid, :code, :site, 'Screening', :uid)");
+                $stmt->execute([
+                    'sid' => $study_id,
+                    'code' => $subject_code,
+                    'site' => $site_name,
+                    'uid' => $_SESSION['user_id']
+                ]);
+                redirect('subjects_list.php');
+            } catch (PDOException $e) {
+                if ($e->getCode() == 23000) { // Duplicate entry
+                    $error = "Subject ID $subject_code already exists. Please try again.";
+                } else {
+                    $error = "Database Error: " . $e->getMessage();
+                }
             }
         }
     }

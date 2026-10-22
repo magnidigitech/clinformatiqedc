@@ -1,6 +1,7 @@
 <?php
 require_once 'includes/functions.php';
 require_once 'includes/auth.php';
+require_once 'includes/id_generation.php';
 
 requireLogin();
 
@@ -17,6 +18,9 @@ $study_name = $_SESSION['active_study_name'];
 $active_role = $_SESSION['active_role_name'];
 
 $pdo = getDB();
+
+// Automatically resolve and heal any existing duplicate subject codes
+fixDuplicateSubjectCodes($pdo, $study_id);
 
 // Check for Site Restrictions
 $user_id = $_SESSION['user_id'];
