@@ -512,6 +512,7 @@ function ensureCommonFormsTables($pdo) {
         query_text TEXT NOT NULL,
         status VARCHAR(20) DEFAULT 'open',
         created_by INT NOT NULL REFERENCES users(id) ON DELETE SET NULL,
+        raised_by_role VARCHAR(50) DEFAULT 'Data Monitor',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
@@ -564,6 +565,8 @@ function ensureCommonFormsTables($pdo) {
         $pdo->exec("ALTER TABLE common_form_query_history ADD COLUMN IF NOT EXISTS status_from VARCHAR(50) NULL");
         $pdo->exec("ALTER TABLE common_form_query_history ADD COLUMN IF NOT EXISTS status_to VARCHAR(50) NULL");
         $pdo->exec("ALTER TABLE common_form_audit_log ADD COLUMN IF NOT EXISTS change_type VARCHAR(50) NULL");
+        $pdo->exec("ALTER TABLE data_queries ADD COLUMN IF NOT EXISTS raised_by_role VARCHAR(50)");
+        $pdo->exec("ALTER TABLE common_form_queries ADD COLUMN IF NOT EXISTS raised_by_role VARCHAR(50)");
 
         // Ensure column sizes are expanded for compound statuses (e.g., 'sdved_and_dm_reviewed')
         $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);

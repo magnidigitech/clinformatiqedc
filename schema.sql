@@ -199,6 +199,7 @@ CREATE TABLE IF NOT EXISTS data_queries (
     query_text TEXT NOT NULL,
     status VARCHAR(50) DEFAULT 'new',
     created_by INT NOT NULL REFERENCES users(id) ON DELETE SET NULL,
+    raised_by_role VARCHAR(50) DEFAULT 'Data Monitor',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     current_assignee_role VARCHAR(50) DEFAULT 'investigator',
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

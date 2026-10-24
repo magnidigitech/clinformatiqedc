@@ -109,3 +109,5 @@ CREATE TABLE IF NOT EXISTS common_form_audit_log (
 ALTER TABLE subject_common_records ALTER COLUMN sdr_status TYPE VARCHAR(50);
 ALTER TABLE subject_common_records ALTER COLUMN status TYPE VARCHAR(50);
 ALTER TABLE common_form_queries ALTER COLUMN status TYPE VARCHAR(50);
+ALTER TABLE data_queries ADD COLUMN IF NOT EXISTS raised_by_role VARCHAR(50);
+ALTER TABLE common_form_queries ADD COLUMN IF NOT EXISTS raised_by_role VARCHAR(50);

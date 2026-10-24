@@ -72,7 +72,8 @@ $sql = "
         f.name as form_name,
         f.repeating_module_id,
         ff.label as field_label,
-        COALESCE(u.name, u.username) as created_by_name
+        COALESCE(u.name, u.username) as created_by_name,
+        COALESCE(q.raised_by_role, (SELECT role_name FROM study_users WHERE user_id = q.created_by AND study_id = q.study_id LIMIT 1), 'Data Monitor') as raised_by_role
     FROM data_queries q
     JOIN subjects s ON q.subject_id = s.id
     LEFT JOIN study_forms f ON q.form_id = f.id
@@ -227,7 +228,8 @@ else $page_title = ucfirst($status_filter) . " Queries";
                                     </div>
                                 </td>
                                 <td style="padding: 1rem; font-size: 0.8rem;">
-                                    <div><?php echo htmlspecialchars($q['created_by_name']); ?></div>
+                                    <div><strong><?php echo htmlspecialchars($q['created_by_name']); ?></strong></div>
+                                    <div style="font-size: 0.72rem; color: #475569; font-weight: 600; margin: 1px 0;"><?php echo htmlspecialchars($q['raised_by_role'] ?? ''); ?></div>
                                     <div style="color: var(--text-light);"><?php echo formatDate($q['created_at']); ?></div>
                                 </td>
                                 <td style="padding: 1rem;">

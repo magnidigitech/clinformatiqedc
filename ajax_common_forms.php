@@ -325,7 +325,8 @@ try {
 
         // Queries
         $stmt_q = $pdo->prepare("
-            SELECT q.*, u.name as created_by_name, u.username as created_by_user
+            SELECT q.*, u.name as created_by_name, u.username as created_by_user,
+                   COALESCE(q.raised_by_role, (SELECT role_name FROM study_users WHERE user_id = q.created_by AND study_id = q.study_id LIMIT 1), 'Data Monitor') AS effective_raised_by_role
             FROM common_form_queries q
             LEFT JOIN users u ON q.created_by = u.id
             WHERE q.record_id = ?
@@ -353,6 +354,7 @@ try {
                 'query_text' => $q['query_text'],
                 'status' => $q['status'],
                 'created_by' => $q['created_by_name'] ?? $q['created_by_user'] ?? '',
+                'raised_by_role' => $q['effective_raised_by_role'] ?? 'Data Monitor',
                 'created_at' => date('d-M-Y H:i', strtotime($q['created_at'])),
                 'history' => array_map(function($h) {
                     return [
@@ -1170,13 +1172,25 @@ try {
             }
         }
 
+        $role_lower = strtolower($_SESSION['active_role_name'] ?? '');
+        $raised_by_role = 'Data Monitor';
+        if (strpos($role_lower, 'manager') !== false) {
+            $raised_by_role = 'Data Manager';
+        } elseif (strpos($role_lower, 'monitor') !== false) {
+            $raised_by_role = 'Data Monitor';
+        } elseif (strpos($role_lower, 'admin') !== false) {
+            $raised_by_role = 'Admin';
+        } else {
+            $raised_by_role = $_SESSION['active_role_name'] ?? 'Data Monitor';
+        }
+
         $pdo->beginTransaction();
         try {
             $stmt_q = $pdo->prepare("
-                INSERT INTO common_form_queries (study_id, subject_id, record_id, field_name, query_text, status, created_by)
-                VALUES (?, ?, ?, ?, ?, 'open', ?)
+                INSERT INTO common_form_queries (study_id, subject_id, record_id, field_name, query_text, status, created_by, raised_by_role)
+                VALUES (?, ?, ?, ?, ?, 'open', ?, ?)
             ");
-            $stmt_q->execute([$study_id, $rec['subject_id'], $record_id, $field_name ?: null, $query_text, $user_id]);
+            $stmt_q->execute([$study_id, $rec['subject_id'], $record_id, $field_name ?: null, $query_text, $user_id, $raised_by_role]);
             $query_id = (int)$pdo->lastInsertId();
 
             $stmt_qh = $pdo->prepare("
@@ -1305,10 +1319,46 @@ try {
             $new_status = 'closed';
         }
 
-        $stmt = $pdo->prepare("SELECT * FROM common_form_queries WHERE id = ? AND study_id = ?");
+        $stmt = $pdo->prepare("
+            SELECT q.*, 
+                   COALESCE(q.raised_by_role, (SELECT role_name FROM study_users WHERE user_id = q.created_by AND study_id = q.study_id LIMIT 1), 'Data Monitor') AS effective_raised_by_role
+            FROM common_form_queries q 
+            WHERE q.id = ? AND q.study_id = ?
+        ");
         $stmt->execute([$query_id, $study_id]);
         $q = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$q) throw new Exception("Query not found.");
+
+        $user_role_lower = strtolower($_SESSION['active_role_name'] ?? '');
+        $is_curr_monitor = (strpos($user_role_lower, 'monitor') !== false);
+        $is_curr_manager = (strpos($user_role_lower, 'manager') !== false);
+        $is_curr_admin = (strpos($user_role_lower, 'admin') !== false);
+
+        $raised_role_lower = strtolower($q['effective_raised_by_role'] ?? '');
+        $is_query_monitor = (strpos($raised_role_lower, 'monitor') !== false);
+        $is_query_manager = (strpos($raised_role_lower, 'manager') !== false);
+
+        if ($new_status === 'closed') {
+            if (!$is_curr_monitor && !$is_curr_manager && !$is_curr_admin) {
+                throw new Exception("Unauthorized: Closing queries is restricted to Data Monitors, Data Managers, and Administrators.");
+            }
+            if ($is_query_monitor && !$is_curr_monitor && !$is_curr_admin) {
+                throw new Exception("Unauthorized: This query was raised by Data Monitor and can only be closed by a Data Monitor.");
+            }
+            if ($is_query_manager && !$is_curr_manager && !$is_curr_admin) {
+                throw new Exception("Unauthorized: This query was raised by Data Manager and can only be closed by a Data Manager.");
+            }
+        } elseif ($new_status === 'open') {
+            if (!$is_curr_monitor && !$is_curr_manager && !$is_curr_admin) {
+                throw new Exception("Unauthorized: Re-querying is restricted to Data Monitors, Data Managers, and Administrators.");
+            }
+            if ($is_query_monitor && !$is_curr_monitor && !$is_curr_admin) {
+                throw new Exception("Unauthorized: This query was raised by Data Monitor and can only be re-queried by a Data Monitor.");
+            }
+            if ($is_query_manager && !$is_curr_manager && !$is_curr_admin) {
+                throw new Exception("Unauthorized: This query was raised by Data Manager and can only be re-queried by a Data Manager.");
+            }
+        }
 
         $old_status = $q['status'];
         $record_id = (int)$q['record_id'];
@@ -1399,7 +1449,11 @@ try {
                         // Field value has changed only if the proposed value differs from current record data
                         if ($curr_val_db !== $target_new_val) {
                             // 1. Update data_json with the new value
-                            $current_data[$q['field_name']] = $target_new_val;
+                            if ($q['field_name'] === 'seriousness_criteria') {
+                                $current_data[$q['field_name']] = array_values(array_filter(array_map('trim', explode(',', (string)$target_new_val))));
+                            } else {
+                                $current_data[$q['field_name']] = $target_new_val;
+                            }
                             $new_revision = (int)$current_rec['revision'] + 1;
 
                             // 2. Revoke SDR state and update record

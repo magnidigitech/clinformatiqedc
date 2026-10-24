@@ -262,6 +262,7 @@ try {
         // 1. Queries
         $stmt_q = $pdo->prepare("
             SELECT q.*, COALESCE(u.name, u.username) as created_by_name,
+                   COALESCE(q.raised_by_role, (SELECT role_name FROM study_users WHERE user_id = q.created_by AND study_id = q.study_id LIMIT 1), 'Data Monitor') as raised_by_role,
                    qh.old_value as query_old_value,
                    qh.new_value as query_new_value
             FROM data_queries q 
@@ -335,11 +336,23 @@ try {
             $query_text = 'Query raised';
         }
 
+        $role_lower = strtolower($_SESSION['active_role_name'] ?? '');
+        $raised_by_role = 'Data Monitor';
+        if (strpos($role_lower, 'manager') !== false) {
+            $raised_by_role = 'Data Manager';
+        } elseif (strpos($role_lower, 'monitor') !== false) {
+            $raised_by_role = 'Data Monitor';
+        } elseif (strpos($role_lower, 'admin') !== false) {
+            $raised_by_role = 'Admin';
+        } else {
+            $raised_by_role = $_SESSION['active_role_name'] ?? 'Data Monitor';
+        }
+
         $pdo->beginTransaction();
         try {
             // Create Query
-            $stmt = $pdo->prepare("INSERT INTO data_queries (study_id, subject_id, visit_id, form_id, field_id, repeating_instance_id, query_text, status, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, 'new', ?)");
-            $stmt->execute([$study_id, $subject_id, $visit_id, $form_id, $field_id, $repeating_instance_id, $query_text, $user_id]);
+            $stmt = $pdo->prepare("INSERT INTO data_queries (study_id, subject_id, visit_id, form_id, field_id, repeating_instance_id, query_text, status, created_by, raised_by_role) VALUES (?, ?, ?, ?, ?, ?, ?, 'new', ?, ?)");
+            $stmt->execute([$study_id, $subject_id, $visit_id, $form_id, $field_id, $repeating_instance_id, $query_text, $user_id, $raised_by_role]);
             $query_id = $pdo->lastInsertId();
             
             // Log History (Initial creation)
@@ -416,12 +429,48 @@ try {
                 }
             }
             
-            // Get Current Status
-            $stmt_curr = $pdo->prepare("SELECT status FROM data_queries WHERE id = ?");
+            // Get Current Status & Raised Role
+            $stmt_curr = $pdo->prepare("
+                SELECT q.*, 
+                       COALESCE(q.raised_by_role, (SELECT role_name FROM study_users WHERE user_id = q.created_by AND study_id = q.study_id LIMIT 1), 'Data Monitor') AS effective_raised_by_role 
+                FROM data_queries q 
+                WHERE q.id = ?
+            ");
             $stmt_curr->execute([$query_id]);
-            $curr = $stmt_curr->fetch();
+            $curr = $stmt_curr->fetch(PDO::FETCH_ASSOC);
             if (!$curr) throw new Exception("Query not found");
             $old_status = $curr['status'];
+            
+            $user_role_lower = strtolower($_SESSION['active_role_name'] ?? '');
+            $is_curr_monitor = (strpos($user_role_lower, 'monitor') !== false);
+            $is_curr_manager = (strpos($user_role_lower, 'manager') !== false);
+            $is_curr_admin = (strpos($user_role_lower, 'admin') !== false);
+
+            $raised_role_lower = strtolower($curr['effective_raised_by_role'] ?? '');
+            $is_query_monitor = (strpos($raised_role_lower, 'monitor') !== false);
+            $is_query_manager = (strpos($raised_role_lower, 'manager') !== false);
+
+            if ($new_status === 'closed') {
+                if (!$is_curr_monitor && !$is_curr_manager && !$is_curr_admin) {
+                    throw new Exception("Unauthorized: Closing queries is restricted to Data Monitors, Data Managers, and Administrators.");
+                }
+                if ($is_query_monitor && !$is_curr_monitor && !$is_curr_admin) {
+                    throw new Exception("Unauthorized: This query was raised by Data Monitor and can only be closed by a Data Monitor.");
+                }
+                if ($is_query_manager && !$is_curr_manager && !$is_curr_admin) {
+                    throw new Exception("Unauthorized: This query was raised by Data Manager and can only be closed by a Data Manager.");
+                }
+            } elseif ($new_status === 'open' && $old_status === 'answered') {
+                if (!$is_curr_monitor && !$is_curr_manager && !$is_curr_admin) {
+                    throw new Exception("Unauthorized: Re-querying is restricted to Data Monitors, Data Managers, and Administrators.");
+                }
+                if ($is_query_monitor && !$is_curr_monitor && !$is_curr_admin) {
+                    throw new Exception("Unauthorized: This query was raised by Data Monitor and can only be re-queried by a Data Monitor.");
+                }
+                if ($is_query_manager && !$is_curr_manager && !$is_curr_admin) {
+                    throw new Exception("Unauthorized: This query was raised by Data Manager and can only be re-queried by a Data Manager.");
+                }
+            }
             
             // Update Query status
             $stmt_upd = $pdo->prepare("UPDATE data_queries SET status = ? WHERE id = ?");
@@ -1160,6 +1209,12 @@ function ensureTablesExist($pdo) {
             } catch (Exception $e) {}
             try {
                 $pdo->exec("ALTER TABLE data_audit_log ALTER COLUMN field_id DROP NOT NULL");
+            } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE data_queries ADD COLUMN IF NOT EXISTS raised_by_role VARCHAR(50)");
+            } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE common_form_queries ADD COLUMN IF NOT EXISTS raised_by_role VARCHAR(50)");
             } catch (Exception $e) {}
             
             // Create trigger/function if not exists

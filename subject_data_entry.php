@@ -2627,8 +2627,16 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
             <div id="queryDetailsSection" style="display: none;">
                 <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 1.5rem 0;">
                 
-                <div style="margin-bottom: 1rem;">
-                    <label style="font-size: 0.85rem; color: #64748b;">Current status: <span id="queryCurrentStatus" style="font-weight: 600; color: var(--text-dark);"></span></label>
+                <div style="margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+                    <div>
+                        <label style="font-size: 0.85rem; color: #64748b;">Current status: <span id="queryCurrentStatus" style="font-weight: 600; color: var(--text-dark);"></span></label>
+                    </div>
+                    <div id="queryRaisedByContainer" style="font-size: 0.825rem; color: #475569;">
+                        <!-- JS fills: Raised by: User (Role) -->
+                    </div>
+                </div>
+
+                <div id="queryRoleRestrictionNotice" style="display: none; font-size: 0.8rem; padding: 0.6rem 0.85rem; border-radius: 6px; background: #fef2f2; border: 1px solid #fee2e2; color: #991b1b; margin-bottom: 1rem;">
                 </div>
                 
                 <div class="form-group">
@@ -3183,21 +3191,61 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
             statusSpan.style.color = 'var(--text-dark)';
         }
         
+        // Display raised by information
+        const raisedByEl = document.getElementById('queryRaisedByContainer');
+        if (raisedByEl) {
+            const raisedRole = query.raised_by_role || 'Data Monitor';
+            const raisedName = query.created_by_name || 'Reviewer';
+            raisedByEl.innerHTML = `<span style="color: #64748b;">Raised by:</span> <strong>${escapeHtml(raisedName)}</strong> <span style="background: #e2e8f0; color: #334155; padding: 2px 7px; border-radius: 99px; font-size: 0.72rem; font-weight: 600; margin-left: 4px;">${escapeHtml(raisedRole)}</span>`;
+        }
+        
+        // Check permissions: query raised by Data Monitor can only be closed by Data Monitor;
+        // query raised by Data Manager can only be closed by Data Manager.
+        const qRoleLower = (query.raised_by_role || '').toLowerCase();
+        const isQMonitor = qRoleLower.includes('monitor');
+        const isQManager = qRoleLower.includes('manager');
+
+        const currentUserIsMonitor = <?php echo (strpos($current_role, 'monitor') !== false) ? 'true' : 'false'; ?>;
+        const currentUserIsManager = <?php echo (strpos($current_role, 'manager') !== false) ? 'true' : 'false'; ?>;
+        const currentUserIsAdmin = <?php echo $is_admin ? 'true' : 'false'; ?>;
+
+        let canManageQuery = currentUserIsAdmin;
+        if (currentUserIsMonitor && isQMonitor) {
+            canManageQuery = true;
+        } else if (currentUserIsManager && isQManager) {
+            canManageQuery = true;
+        } else if (!isQMonitor && !isQManager && (currentUserIsMonitor || currentUserIsManager)) {
+            // Fallback for legacy queries with unknown role
+            canManageQuery = true;
+        }
+
+        // Restriction notice if user is reviewer but doesn't match the query creator's role
+        const noticeEl = document.getElementById('queryRoleRestrictionNotice');
+        if (noticeEl) {
+            if ((currentUserIsMonitor || currentUserIsManager) && !canManageQuery && query.status !== 'closed') {
+                const targetRoleText = isQMonitor ? 'Data Monitor' : 'Data Manager';
+                noticeEl.style.display = 'block';
+                noticeEl.innerHTML = `<span class="material-icons-round" style="font-size: 15px; vertical-align: middle;">lock</span> This query was raised by <strong>${escapeHtml(query.raised_by_role || targetRoleText)}</strong>. Only a <strong>${targetRoleText}</strong> can close or re-query it.`;
+            } else {
+                noticeEl.style.display = 'none';
+            }
+        }
+
         // Dynamic Status Options based on Role and Current Status
         const statusSelect = document.getElementById('queryNewStatus');
         statusSelect.innerHTML = '<option value="">Please select</option>';
         
-        <?php if ($is_monitor): ?>
-            // Monitor can select Close Query (if new, open, or answered) and Re Query (if answered)
+        // Reviewer can select Close Query (if new, open, or answered) and Re Query (if answered) ONLY if permitted
+        if (canManageQuery) {
             if (['new', 'open', 'answered', 'unconfirmed'].includes(query.status)) {
                  statusSelect.add(new Option('Close Query', 'closed'));
             }
             if (query.status === 'answered') {
                  statusSelect.add(new Option('Re Query', 'open'));
             }
-        <?php endif; ?>
+        }
 
-        <?php if ($is_manager || $current_role === 'data_entry' || strpos($current_role, 'entry') !== false): ?>
+        <?php if ($is_coordinator || $current_role === 'data_entry' || strpos($current_role, 'entry') !== false): ?>
             // Coordinator can only select Answered Query if status is new or open
              if (['new', 'open'].includes(query.status)) {
                   statusSelect.add(new Option('Answered Query', 'answered'));
@@ -5895,50 +5943,157 @@ let currentCommonQueryTargetLabel = null;
 
 const COMMON_FORM_FIELD_MAP = {
     'MH': [
-        { key: 'mh_term', label: '1. MH Term / Condition' },
-        { key: 'ongoing', label: '2. Ongoing / Continuing' },
-        { key: 'start_date', label: '3. Start Date' },
-        { key: 'end_date', label: '4. End Date' },
-        { key: 'comments', label: '5. Comments / Additional Details' },
-        { key: 'medication_given', label: '6. Medication Given' }
+        { key: 'mh_term', label: '1. MH Term / Condition', type: 'text', placeholder: 'e.g. Type 2 Diabetes Mellitus' },
+        { key: 'ongoing', label: '2. Ongoing / Continuing', type: 'select', options: ['Yes', 'No'] },
+        { key: 'start_date', label: '3. Start Date', type: 'date' },
+        { key: 'end_date', label: '4. End Date', type: 'date' },
+        { key: 'comments', label: '5. Comments / Additional Details', type: 'textarea', placeholder: 'Enter additional details...' },
+        { key: 'medication_given', label: '6. Medication Given', type: 'select', options: ['Yes', 'No'] }
     ],
     'AE': [
-        { key: 'ae_term', label: '1. AE Term / Verbatim' },
-        { key: 'start_date', label: '2. Start Date' },
-        { key: 'end_date', label: '3. End Date' },
-        { key: 'severity', label: '4. Severity / Intensity' },
-        { key: 'seriousness', label: '5. Serious Adverse Event (SAE)' },
-        { key: 'seriousness_criteria', label: '6. Seriousness Criteria' },
-        { key: 'causality', label: '7. Causality / Relationship to Study Drug' },
-        { key: 'action_taken', label: '8. Action Taken with Study Treatment' },
-        { key: 'outcome', label: '9. Outcome' },
-        { key: 'concomitant_treatment', label: '10. Concomitant Treatment Given' }
+        { key: 'ae_term', label: '1. AE Term / Verbatim', type: 'text', placeholder: 'e.g. Severe Headache' },
+        { key: 'start_date', label: '2. Start Date', type: 'date' },
+        { key: 'end_date', label: '3. End Date', type: 'date' },
+        { key: 'severity', label: '4. Severity / Intensity', type: 'select', options: ['Mild', 'Moderate', 'Severe'] },
+        { key: 'seriousness', label: '5. Serious Adverse Event (SAE)', type: 'select', options: ['Yes', 'No'] },
+        { key: 'seriousness_criteria', label: '6. Seriousness Criteria', type: 'checkbox_group', options: ['Death', 'Life-threatening', 'Hospitalization / prolongation of hospitalization', 'Disability / incapacity', 'Congenital anomaly', 'Other medically important event'] },
+        { key: 'causality', label: '7. Causality / Relationship to Study Drug', type: 'select', options: ['Unrelated', 'Unlikely', 'Possible', 'Probable', 'Definite'] },
+        { key: 'action_taken', label: '8. Action Taken with Study Treatment', type: 'select', options: ['None', 'Dose Reduced', 'Dose Interrupted', 'Drug Withdrawn', 'Not Applicable'] },
+        { key: 'outcome', label: '9. Outcome', type: 'select', options: ['Recovered / Resolved', 'Recovering / Resolving', 'Not Recovered / Not Resolved', 'Recovered with Sequelae', 'Fatal', 'Unknown'] },
+        { key: 'concomitant_treatment', label: '10. Concomitant Treatment Given', type: 'select', options: ['Yes', 'No'] }
     ],
     'CM': [
-        { key: 'medication_name', label: '1. Medication Name' },
-        { key: 'start_date', label: '2. Start Date' },
-        { key: 'stop_date', label: '3. Stop Date' },
-        { key: 'indication_type', label: '4. Medication Taken For (Indication Type)' },
-        { key: 'linked_records', label: '5. Linked Condition / Event' },
-        { key: 'specify_other', label: '6. Specify Other Indication' }
+        { key: 'medication_name', label: '1. Medication Name', type: 'text', placeholder: 'e.g. Metformin 500mg' },
+        { key: 'start_date', label: '2. Start Date', type: 'date' },
+        { key: 'stop_date', label: '3. Stop Date', type: 'date' },
+        { key: 'indication_type', label: '4. Medication Taken For (Indication Type)', type: 'select', options: [ { value: 'MH', label: 'Medical History (MH)' }, { value: 'AE', label: 'Adverse Event (AE)' }, { value: 'Other', label: 'Other Indication' } ] },
+        { key: 'linked_records', label: '5. Linked Condition / Event', type: 'text', placeholder: 'Linked Condition / Event' },
+        { key: 'specify_other', label: '6. Specify Other Indication', type: 'text', placeholder: 'Enter indication...' }
     ],
     'TA': [
-        { key: 'recist_method', label: 'Assessment Method' },
-        { key: 'tumor_assessed', label: 'Was Tumor Assessment Performed?' },
-        { key: 'tumor_not_assessed_reason', label: 'Reason Tumor Assessment Not Performed' },
-        { key: 'tumor_timepoint', label: 'Assessment Time Point' },
-        { key: 'imaging_date', label: 'Imaging Assessment Date' },
-        { key: 'imaging_modality', label: 'Imaging Modality' },
-        { key: 'imaging_modality_other', label: 'Other Modality — Specify' },
-        { key: 'target_lesions_present', label: 'Target Lesions Present' },
-        { key: 'sum_longest_dia', label: 'Sum of Longest Diameters (mm)' },
-        { key: 'nontarget_lesions_present', label: 'Non-Target Present' },
-        { key: 'new_lesions_present', label: 'New Lesions Identified?' },
-        { key: 'new_lesions_details', label: 'New Lesion Details / Anatomical Location' },
-        { key: 'recist_overall_response', label: 'RECIST 1.1 Overall Response' },
-        { key: 'comments', label: 'Clinical Comments / Radiology Notes' }
+        { key: 'recist_method', label: 'Assessment Method', type: 'text', placeholder: 'RECIST 1.1' },
+        { key: 'tumor_assessed', label: 'Was Tumor Assessment Performed?', type: 'select', options: ['Yes', 'No'] },
+        { key: 'tumor_not_assessed_reason', label: 'Reason Tumor Assessment Not Performed', type: 'text', placeholder: 'Enter clinical reason...' },
+        { key: 'tumor_timepoint', label: 'Assessment Time Point', type: 'text', placeholder: 'e.g. Screening, Cycle 2 Day 1, Week 6' },
+        { key: 'imaging_date', label: 'Imaging Assessment Date', type: 'date' },
+        { key: 'imaging_modality', label: 'Imaging Modality', type: 'select', options: ['CT', 'MRI', 'CT and MRI', 'PET-CT', 'Other'] },
+        { key: 'imaging_modality_other', label: 'Other Modality — Specify', type: 'text', placeholder: 'Specify imaging technique...' },
+        { key: 'target_lesions_present', label: 'Target Lesions Present', type: 'select', options: ['Yes', 'No'] },
+        { key: 'sum_longest_dia', label: 'Sum of Longest Diameters (mm)', type: 'number', step: '0.1', placeholder: '0.0' },
+        { key: 'nontarget_lesions_present', label: 'Non-Target Present', type: 'select', options: ['Yes', 'No'] },
+        { key: 'new_lesions_present', label: 'New Lesions Identified?', type: 'select', options: ['No', 'Yes', 'Indeterminate'] },
+        { key: 'new_lesions_details', label: 'New Lesion Details / Anatomical Location', type: 'text', placeholder: 'Specify organ and location of new lesion...' },
+        { key: 'recist_overall_response', label: 'RECIST 1.1 Overall Response', type: 'select', options: ['CR — Complete Response', 'PR — Partial Response', 'SD — Stable Disease', 'PD — Progressive Disease', 'NE — Not Evaluable'] },
+        { key: 'comments', label: 'Clinical Comments / Radiology Notes', type: 'textarea', placeholder: 'Enter additional radiological remarks...' }
     ]
 };
+
+// Generates appropriate input control matching the queried field type
+function renderCommonQueryProposedInput(formType, fieldName, queryId, currentVal) {
+    const fMap = (COMMON_FORM_FIELD_MAP[formType] || []);
+    let fieldDef = fMap.find(f => f.key === fieldName);
+    
+    // Fallback heuristic if not explicitly found in map
+    if (!fieldDef) {
+        let fallbackType = 'text';
+        if (fieldName && (fieldName.endsWith('_date') || fieldName.includes('date'))) fallbackType = 'date';
+        else if (fieldName && (fieldName.includes('comment') || fieldName.includes('note') || fieldName.includes('desc'))) fallbackType = 'textarea';
+        else if (fieldName && (fieldName.includes('dia') || fieldName.includes('count') || fieldName.includes('num'))) fallbackType = 'number';
+        fieldDef = { key: fieldName, label: fieldName, type: fallbackType };
+    }
+
+    const fType = fieldDef.type || 'text';
+    const strCurr = (currentVal !== null && currentVal !== undefined) ? (Array.isArray(currentVal) ? currentVal.join(', ') : String(currentVal)).trim() : '';
+
+    if (fType === 'select') {
+        const options = fieldDef.options || [];
+        let optsHtml = `<option value="">-- Keep Current Value / Select Proposed Value --</option>`;
+        options.forEach(opt => {
+            const val = (typeof opt === 'object' && opt !== null) ? opt.value : opt;
+            const lbl = (typeof opt === 'object' && opt !== null) ? opt.label : opt;
+            const isCurrent = (val === strCurr || (strCurr !== '' && (val.startsWith(strCurr + ' ') || val.startsWith(strCurr + '—') || val.startsWith(strCurr + ' -'))));
+            const currentTag = isCurrent ? ' (Current Value)' : '';
+            optsHtml += `<option value="${escapeHtml(val)}">${escapeHtml(lbl)}${currentTag}</option>`;
+        });
+        return `
+            <select id="inp_ans_val_${queryId}" class="form-input" style="width: 100%; font-size: 0.85rem; padding: 0.45rem 0.6rem; border-color: #cbd5e1; background: #fff;">
+                ${optsHtml}
+            </select>
+            <div style="font-size: 0.7rem; color: #64748b; margin-top: 3px;">Leave unselected if field value remains unchanged. Selected option will be proposed to reviewer.</div>
+        `;
+    }
+
+    if (fType === 'date') {
+        return `
+            <input type="date" id="inp_ans_val_${queryId}" class="form-input" style="width: 100%; font-size: 0.85rem; padding: 0.45rem 0.6rem; border-color: #cbd5e1; background: #fff;">
+            <div style="font-size: 0.7rem; color: #64748b; margin-top: 3px;">Select proposed date (leave blank if date remains unchanged).</div>
+        `;
+    }
+
+    if (fType === 'textarea') {
+        return `
+            <textarea id="inp_ans_val_${queryId}" class="form-input" rows="2" placeholder="${escapeHtml(fieldDef.placeholder || 'Proposed New Value (Leave blank if unchanged)...')}" style="width: 100%; font-size: 0.85rem; padding: 0.45rem 0.6rem; resize: vertical;"></textarea>
+            <div style="font-size: 0.7rem; color: #64748b; margin-top: 3px;">Leave blank if comments remain unchanged. Proposed text will be applied upon closure.</div>
+        `;
+    }
+
+    if (fType === 'number') {
+        return `
+            <input type="number" step="${fieldDef.step || 'any'}" id="inp_ans_val_${queryId}" class="form-input" placeholder="${escapeHtml(fieldDef.placeholder || 'Proposed New Value (Leave blank if unchanged)')}" style="width: 100%; font-size: 0.85rem; padding: 0.45rem 0.6rem;">
+            <div style="font-size: 0.7rem; color: #64748b; margin-top: 3px;">Enter proposed numeric value (leave blank if unchanged).</div>
+        `;
+    }
+
+    if (fType === 'checkbox_group') {
+        const options = fieldDef.options || [];
+        const currList = Array.isArray(currentVal) ? currentVal : (typeof currentVal === 'string' ? currentVal.split(',').map(s => s.trim()) : []);
+        let cbsHtml = '';
+        options.forEach(opt => {
+            const isCurrent = currList.includes(opt);
+            cbsHtml += `
+                <label style="display: flex; align-items: flex-start; gap: 6px; font-size: 0.78rem; color: #334155; margin: 0; cursor: pointer; line-height: 1.3;">
+                    <input type="checkbox" class="inp_crit_cb_${queryId}" value="${escapeHtml(opt)}" onchange="syncCommonQueryCritCheckboxes(${queryId})" style="accent-color: #2563eb; margin-top: 2px;">
+                    <span>${escapeHtml(opt)}${isCurrent ? ' <em style="color: #047857; font-size: 0.7rem;">(Current)</em>' : ''}</span>
+                </label>
+            `;
+        });
+        return `
+            <div style="background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.6rem 0.75rem;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.45rem;">
+                    ${cbsHtml}
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem; padding-top: 0.4rem; border-top: 1px dashed #e2e8f0; font-size: 0.72rem;">
+                    <span style="color: #64748b;">Select all proposed criteria (leave all unchecked if unchanged).</span>
+                    <button type="button" onclick="clearCommonQueryCritCheckboxes(${queryId})" style="background: none; border: none; color: #dc2626; font-size: 0.72rem; cursor: pointer; padding: 0; text-decoration: underline;">Clear Selection</button>
+                </div>
+            </div>
+            <input type="hidden" id="inp_ans_val_${queryId}" value="">
+        `;
+    }
+
+    // Default / text input
+    return `
+        <input type="text" id="inp_ans_val_${queryId}" class="form-input" placeholder="${escapeHtml(fieldDef.placeholder || 'Proposed New Value (Leave blank if field value remains unchanged)')}" style="width: 100%; font-size: 0.85rem; padding: 0.45rem 0.6rem;">
+        <div style="font-size: 0.7rem; color: #64748b; margin-top: 3px;">Leave blank if field value remains unchanged. Value will be applied when reviewer closes the query.</div>
+    `;
+}
+
+function syncCommonQueryCritCheckboxes(queryId) {
+    const cbs = document.querySelectorAll('.inp_crit_cb_' + queryId + ':checked');
+    const vals = Array.from(cbs).map(cb => cb.value);
+    const hiddenInp = document.getElementById('inp_ans_val_' + queryId);
+    if (hiddenInp) {
+        hiddenInp.value = vals.join(', ');
+    }
+}
+
+function clearCommonQueryCritCheckboxes(queryId) {
+    document.querySelectorAll('.inp_crit_cb_' + queryId).forEach(cb => cb.checked = false);
+    const hiddenInp = document.getElementById('inp_ans_val_' + queryId);
+    if (hiddenInp) {
+        hiddenInp.value = '';
+    }
+}
 
 // Helper to refresh editor field query counters in real time
 function refreshEditorRecordData(recordId) {
@@ -6136,7 +6291,11 @@ function openCommonQueryModal(recordId, targetFieldKey = null, targetFieldLabel 
                             <span style="background: ${statusBg}; color: ${statusColor}; padding: 2px 8px; border-radius: 99px; font-weight: 700; font-size: 0.75rem;">${q.status.toUpperCase()}</span>
                         </div>
                         <p style="margin: 0 0 0.5rem 0; color: #334155; font-size: 0.875rem;">${escapeHtml(q.query_text)}</p>
-                        <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.75rem;">Raised by ${escapeHtml(q.created_by)} on ${q.created_at}</div>
+                        <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 0.75rem;">
+                            Raised by <strong>${escapeHtml(q.created_by)}</strong> 
+                            <span style="background: #e2e8f0; color: #334155; padding: 1px 7px; border-radius: 99px; font-weight: 600; font-size: 0.7rem; margin-left: 4px;">${escapeHtml(q.raised_by_role || 'Data Monitor')}</span> 
+                            on ${q.created_at}
+                        </div>
 
                         <!-- Thread history -->
                         <div style="padding-left: 0.85rem; border-left: 3px solid #e2e8f0; display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.75rem;">
@@ -6166,20 +6325,29 @@ function openCommonQueryModal(recordId, targetFieldKey = null, targetFieldLabel 
 
                 // Coordinator Answer Form
                 if (q.status !== 'closed' && (USER_IS_COORDINATOR || USER_IS_ADMIN)) {
-                    const currentVal = (q.field_name && rec.data) ? (rec.data[q.field_name] || '') : '';
+                    const rawVal = (q.field_name && rec.data) ? (rec.data[q.field_name] !== undefined ? rec.data[q.field_name] : '') : '';
+                    const currentValDisplay = Array.isArray(rawVal) ? rawVal.join(', ') : String(rawVal || '');
                     html += `
                         <div style="margin-top: 0.75rem; padding: 0.85rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
                             <label style="font-weight: 600; font-size: 0.8rem; color: #1e293b; display: block; margin-bottom: 0.35rem;">
                                 Respond to Query #${q.id}
                             </label>
                             ${q.field_name ? `
-                                <div style="margin-bottom: 0.5rem;">
-                                    <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 2px;">Current Value for <strong>${escapeHtml(fieldDisplay)}</strong>: <code style="background: #e2e8f0; padding: 1px 5px; border-radius: 3px; color: #0f172a;">${escapeHtml(currentVal || '(empty)')}</code></div>
-                                    <input type="text" id="inp_ans_val_${q.id}" class="form-input" placeholder="Proposed New Value (Leave blank if field value remains unchanged)" style="width: 100%; font-size: 0.8rem;">
-                                    <div style="font-size: 0.7rem; color: #64748b; margin-top: 2px;">Note: Value will NOT change clinical data immediately. It will be applied only when reviewer closes the query.</div>
+                                <div style="margin-bottom: 0.6rem;">
+                                    <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 4px;">
+                                        Current Value for <strong>${escapeHtml(fieldDisplay)}</strong>: 
+                                        <code style="background: #e2e8f0; padding: 1px 6px; border-radius: 4px; color: #0f172a; font-weight: 600;">${escapeHtml(currentValDisplay || '(empty)')}</code>
+                                        ${latestProposedValue !== null ? ` &bull; Latest Proposed: <code style="background: #fef3c7; color: #92400e; padding: 1px 6px; border-radius: 4px; font-weight: 600;">${escapeHtml(latestProposedValue)}</code>` : ''}
+                                    </div>
+                                    <div style="margin-bottom: 2px;">
+                                        <label style="font-size: 0.72rem; font-weight: 600; color: #475569; display: block; margin-bottom: 2px;">
+                                            Proposed New Value:
+                                        </label>
+                                        ${renderCommonQueryProposedInput(formType, q.field_name, q.id, rawVal)}
+                                    </div>
                                 </div>
                             ` : ''}
-                            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                            <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.5rem;">
                                 <input type="text" id="inp_ans_query_${q.id}" class="form-input" placeholder="Enter response remark..." style="flex: 1; font-size: 0.8rem;">
                                 <button type="button" onclick="submitCommonQueryAnswer(${q.id}, ${rec.id})" class="btn btn-sm btn-primary" style="white-space: nowrap; font-weight: 600;">Submit Response</button>
                             </div>
@@ -6189,34 +6357,57 @@ function openCommonQueryModal(recordId, targetFieldKey = null, targetFieldLabel 
 
                 // Reviewer Close / Re-open Controls
                 if (isMonitorOrManager) {
+                    const qRoleLower = (q.raised_by_role || '').toLowerCase();
+                    const isQMon = qRoleLower.includes('monitor');
+                    const isQMgr = qRoleLower.includes('manager');
+
+                    let canCloseThisQuery = USER_IS_ADMIN;
+                    if (USER_IS_MONITOR && isQMon) {
+                        canCloseThisQuery = true;
+                    } else if (USER_IS_MANAGER && isQMgr) {
+                        canCloseThisQuery = true;
+                    } else if (!isQMon && !isQMgr) {
+                        canCloseThisQuery = isMonitorOrManager;
+                    }
+
                     html += `<div style="margin-top: 0.75rem;">`;
-                    if (q.status !== 'closed') {
-                        if (latestProposedValue !== null && q.field_name) {
+                    if (canCloseThisQuery) {
+                        if (q.status !== 'closed') {
+                            if (latestProposedValue !== null && q.field_name) {
+                                html += `
+                                    <div style="margin-bottom: 0.5rem; font-size: 0.75rem; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; padding: 0.5rem; border-radius: 6px;">
+                                        <span class="material-icons-round" style="font-size: 13px; vertical-align: middle;">info</span> 
+                                        Closing this query will update <strong>${escapeHtml(fieldDisplay)}</strong> to <strong>"${escapeHtml(latestProposedValue)}"</strong> and will automatically <strong>revoke SDR state</strong>, requiring re-submission.
+                                    </div>
+                                `;
+                            }
                             html += `
-                                <div style="margin-bottom: 0.5rem; font-size: 0.75rem; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; padding: 0.5rem; border-radius: 6px;">
-                                    <span class="material-icons-round" style="font-size: 13px; vertical-align: middle;">info</span> 
-                                    Closing this query will update <strong>${escapeHtml(fieldDisplay)}</strong> to <strong>"${escapeHtml(latestProposedValue)}"</strong> and will automatically <strong>revoke SDR state</strong>, requiring re-submission.
+                                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                    <input type="text" id="inp_close_remark_${q.id}" class="form-input" placeholder="Optional closure remark..." style="flex: 1; font-size: 0.8rem;">
+                                    <button type="button" onclick="updateCommonQueryStatus(${q.id}, 'close', ${rec.id})" class="btn btn-sm" style="background: #059669; color: #fff; border: 1px solid #059669; font-weight: 600; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 3px;">
+                                        <span class="material-icons-round" style="font-size: 14px;">check_circle</span> Close Query
+                                    </button>
+                                    <button type="button" onclick="updateCommonQueryStatus(${q.id}, 'reopen', ${rec.id})" class="btn btn-sm btn-outline" style="font-size: 0.75rem; display: inline-flex; align-items: center; gap: 3px;">
+                                        <span class="material-icons-round" style="font-size: 14px;">refresh</span> Re-query
+                                    </button>
+                                </div>
+                            `;
+                        } else {
+                            html += `
+                                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                    <input type="text" id="inp_close_remark_${q.id}" class="form-input" placeholder="Reason for re-opening query..." style="flex: 1; font-size: 0.8rem;">
+                                    <button type="button" onclick="updateCommonQueryStatus(${q.id}, 'reopen', ${rec.id})" class="btn btn-sm btn-outline" style="font-size: 0.75rem; display: inline-flex; align-items: center; gap: 3px;">
+                                        <span class="material-icons-round" style="font-size: 14px;">refresh</span> Re-open Query
+                                    </button>
                                 </div>
                             `;
                         }
+                    } else if (q.status !== 'closed') {
+                        const targetRoleName = isQMon ? 'Data Monitor' : 'Data Manager';
                         html += `
-                            <div style="display: flex; gap: 0.5rem; align-items: center;">
-                                <input type="text" id="inp_close_remark_${q.id}" class="form-input" placeholder="Optional closure remark..." style="flex: 1; font-size: 0.8rem;">
-                                <button type="button" onclick="updateCommonQueryStatus(${q.id}, 'close', ${rec.id})" class="btn btn-sm" style="background: #059669; color: #fff; border: 1px solid #059669; font-weight: 600; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 3px;">
-                                    <span class="material-icons-round" style="font-size: 14px;">check_circle</span> Close Query
-                                </button>
-                                <button type="button" onclick="updateCommonQueryStatus(${q.id}, 'reopen', ${rec.id})" class="btn btn-sm btn-outline" style="font-size: 0.75rem; display: inline-flex; align-items: center; gap: 3px;">
-                                    <span class="material-icons-round" style="font-size: 14px;">refresh</span> Re-query
-                                </button>
-                            </div>
-                        `;
-                    } else {
-                        html += `
-                            <div style="display: flex; gap: 0.5rem; align-items: center;">
-                                <input type="text" id="inp_close_remark_${q.id}" class="form-input" placeholder="Reason for re-opening query..." style="flex: 1; font-size: 0.8rem;">
-                                <button type="button" onclick="updateCommonQueryStatus(${q.id}, 'reopen', ${rec.id})" class="btn btn-sm btn-outline" style="font-size: 0.75rem; display: inline-flex; align-items: center; gap: 3px;">
-                                    <span class="material-icons-round" style="font-size: 14px;">refresh</span> Re-open Query
-                                </button>
+                            <div style="font-size: 0.75rem; color: #64748b; background: #f8fafc; border: 1px solid #e2e8f0; padding: 0.4rem 0.65rem; border-radius: 6px; display: inline-flex; align-items: center; gap: 5px;">
+                                <span class="material-icons-round" style="font-size: 14px; color: #94a3b8;">lock</span> 
+                                Raised by <strong>${escapeHtml(q.raised_by_role || targetRoleName)}</strong> &mdash; can only be closed or re-queried by <strong>${targetRoleName}</strong>.
                             </div>
                         `;
                     }
