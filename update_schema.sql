@@ -111,3 +111,12 @@ ALTER TABLE subject_common_records ALTER COLUMN status TYPE VARCHAR(50);
 ALTER TABLE common_form_queries ALTER COLUMN status TYPE VARCHAR(50);
 ALTER TABLE data_queries ADD COLUMN IF NOT EXISTS raised_by_role VARCHAR(50);
 ALTER TABLE common_form_queries ADD COLUMN IF NOT EXISTS raised_by_role VARCHAR(50);
+
+-- PI Sign Off Columns
+ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS pi_signed_off BOOLEAN DEFAULT FALSE;
+ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS pi_signed_by INT NULL;
+ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS pi_signed_at TIMESTAMP NULL;
+ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS pi_signed_off BOOLEAN DEFAULT FALSE;
+ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS pi_signed_by INT NULL;
+ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS pi_signed_at TIMESTAMP NULL;
+

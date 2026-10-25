@@ -26,12 +26,13 @@ try {
     ensureCommonFormsTables($pdo);
 
     $role_lower = strtolower($_SESSION['active_role_name'] ?? '');
-    $is_coordinator = (strpos($role_lower, 'coordinator') !== false) || (strpos($role_lower, 'entry') !== false) || (strpos($role_lower, 'investigator') !== false) || (strpos($role_lower, 'admin') !== false);
+    $is_coordinator = (strpos($role_lower, 'coordinator') !== false) || (strpos($role_lower, 'entry') !== false) || (strpos($role_lower, 'admin') !== false);
     $is_monitor = (strpos($role_lower, 'monitor') !== false) || (strpos($role_lower, 'cra') !== false) || (strpos($role_lower, 'admin') !== false);
     $is_manager = (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'admin') !== false);
+    $is_pi = (strpos($role_lower, 'investigator') !== false) || ($role_lower === 'pi') || (strpos($role_lower, 'admin') !== false);
     $is_admin = (strpos($role_lower, 'admin') !== false);
-    // Strict clinical content editor flag: Data Managers and Data Monitors cannot create, edit, or void clinical content.
-    $is_data_editor = ($is_coordinator || $is_admin) && (strpos($role_lower, 'manager') === false) && (strpos($role_lower, 'monitor') === false);
+    // Strict clinical content editor flag: Data Managers, Data Monitors, and Principal Investigators cannot create, edit, or void clinical content.
+    $is_data_editor = ($is_coordinator || $is_admin) && (strpos($role_lower, 'manager') === false) && (strpos($role_lower, 'monitor') === false) && (strpos($role_lower, 'investigator') === false) && ($role_lower !== 'pi');
 
     // =========================================================================
     // 1. GET ALL RECORDS FOR A SUBJECT & FORM TYPE
@@ -44,7 +45,7 @@ try {
         $sdr_filter = trim($_POST['sdr_status'] ?? '');
         $include_voided = !empty($_POST['include_voided']) && $_POST['include_voided'] !== 'false';
 
-        if (!in_array($form_type, ['MH', 'AE', 'CM', 'TA'], true)) {
+        if (!in_array($form_type, ['MH', 'AE', 'CM', 'TA', 'USV'], true)) {
             throw new Exception("Invalid form type");
         }
 
@@ -61,12 +62,14 @@ try {
                        u_s.name as sdr_user_name, u_s.username as sdr_user_code,
                        u_mon.name as monitor_user_name, u_mon.username as monitor_user_code,
                        u_mgr.name as manager_user_name, u_mgr.username as manager_user_code,
+                       u_pi.name as pi_user_name, u_pi.username as pi_user_code,
                        (SELECT COUNT(*) FROM common_form_queries q WHERE q.record_id = r.id AND q.status IN ('open', 'answered')) as open_query_count
                 FROM subject_common_records r
                 LEFT JOIN users u_c ON r.created_by = u_c.id
                 LEFT JOIN users u_s ON r.sdr_by = u_s.id
                 LEFT JOIN users u_mon ON r.monitor_by = u_mon.id
                 LEFT JOIN users u_mgr ON r.manager_by = u_mgr.id
+                LEFT JOIN users u_pi ON r.pi_signed_by = u_pi.id
                 WHERE r.study_id = :sid AND r.subject_id = :subid AND r.form_type = :ft";
         
         $params = ['sid' => $study_id, 'subid' => $subject_id, 'ft' => $form_type];
@@ -87,6 +90,8 @@ try {
                 $sql .= " AND (r.sdr_status = 'sdved' OR r.sdr_status = 'reviewed' OR r.monitor_reviewed = TRUE)";
             } elseif ($sdr_filter === 'dm_reviewed') {
                 $sql .= " AND (r.sdr_status = 'dm_reviewed' OR r.manager_reviewed = TRUE)";
+            } elseif ($sdr_filter === 'pi_signed_off') {
+                $sql .= " AND (r.sdr_status = 'pi_signed_off' OR r.pi_signed_off = TRUE)";
             } elseif ($sdr_filter === 'needs_rereview') {
                 $sql .= " AND r.sdr_status = 'needs_rereview'";
             }
@@ -114,6 +119,11 @@ try {
                     if (!empty($data['tumor_timepoint']) && strpos(strtolower($data['tumor_timepoint']), $search_lower) !== false) $term_match = true;
                     if (!empty($data['recist_overall_response']) && strpos(strtolower($data['recist_overall_response']), $search_lower) !== false) $term_match = true;
                     if (!empty($data['imaging_modality']) && strpos(strtolower($data['imaging_modality']), $search_lower) !== false) $term_match = true;
+                }
+                if ($form_type === 'USV') {
+                    if (!empty($data['date_of_visit']) && strpos(strtolower($data['date_of_visit']), $search_lower) !== false) $term_match = true;
+                    if (!empty($data['visit_reason_unscheduled']) && strpos(strtolower($data['visit_reason_unscheduled']), $search_lower) !== false) $term_match = true;
+                    if (!empty($data['visit_comments']) && strpos(strtolower($data['visit_comments']), $search_lower) !== false) $term_match = true;
                 }
                 
                 if (!$num_match && !$term_match) {
@@ -181,6 +191,9 @@ try {
                 'monitor_at' => $r['monitor_at'] ? date('d-M-Y H:i', strtotime($r['monitor_at'])) : null,
                 'manager_by_name' => $r['manager_user_name'] ?? $r['manager_user_code'] ?? '',
                 'manager_at' => $r['manager_at'] ? date('d-M-Y H:i', strtotime($r['manager_at'])) : null,
+                'pi_signed_off' => (bool)($r['pi_signed_off'] ?? false),
+                'pi_signed_by_name' => $r['pi_user_name'] ?? $r['pi_user_code'] ?? '',
+                'pi_signed_at' => $r['pi_signed_at'] ? date('d-M-Y H:i', strtotime($r['pi_signed_at'])) : null,
                 'revision' => (int)$r['revision'],
                 'is_voided' => (bool)$r['is_voided'],
                 'void_reason' => $r['void_reason'] ?? '',
@@ -202,9 +215,11 @@ try {
                 SUM(CASE WHEN sdr_submitted = TRUE THEN 1 ELSE 0 END) as sdr_submitted_count,
                 SUM(CASE WHEN monitor_reviewed = TRUE THEN 1 ELSE 0 END) as monitor_reviewed_count,
                 SUM(CASE WHEN manager_reviewed = TRUE THEN 1 ELSE 0 END) as manager_reviewed_count,
+                SUM(CASE WHEN pi_signed_off = TRUE THEN 1 ELSE 0 END) as pi_signed_off_count,
                 SUM(CASE WHEN sdr_status = 'pending' OR sdr_status IS NULL OR sdr_status = '' THEN 1 ELSE 0 END) as sdr_pending_count,
                 SUM(CASE WHEN sdr_status = 'under_review' THEN 1 ELSE 0 END) as sdr_under_review_count,
                 SUM(CASE WHEN sdr_status = 'sdved' OR sdr_status = 'reviewed' THEN 1 ELSE 0 END) as sdr_sdved_count,
+                SUM(CASE WHEN sdr_status = 'pi_signed_off' OR pi_signed_off = TRUE THEN 1 ELSE 0 END) as sdr_pi_signed_count,
                 SUM(CASE WHEN sdr_status = 'needs_rereview' THEN 1 ELSE 0 END) as sdr_needs_rereview_count
             FROM subject_common_records
             WHERE study_id = ? AND subject_id = ? AND form_type = ? AND is_voided = FALSE
@@ -224,6 +239,7 @@ try {
                 'sdr_submitted' => (int)($summary['sdr_submitted_count'] ?? 0),
                 'monitor_reviewed' => (int)($summary['monitor_reviewed_count'] ?? 0),
                 'manager_reviewed' => (int)($summary['manager_reviewed_count'] ?? 0),
+                'pi_signed_off' => (int)($summary['pi_signed_off_count'] ?? 0),
                 'sdr_pending' => (int)($summary['sdr_pending_count'] ?? 0),
                 'sdr_under_review' => (int)($summary['sdr_under_review_count'] ?? 0),
                 'sdr_sdved' => (int)($summary['sdr_sdved_count'] ?? 0),
@@ -284,13 +300,15 @@ try {
                    u_c.name as creator_name, u_c.username as creator_user,
                    u_s.name as sdr_user_name, u_s.username as sdr_user_code,
                    u_mon.name as monitor_user_name, u_mon.username as monitor_user_code,
-                   u_mgr.name as manager_user_name, u_mgr.username as manager_user_code
+                   u_mgr.name as manager_user_name, u_mgr.username as manager_user_code,
+                   u_pi.name as pi_user_name, u_pi.username as pi_user_code
             FROM subject_common_records r
             JOIN subjects s ON r.subject_id = s.id
             LEFT JOIN users u_c ON r.created_by = u_c.id
             LEFT JOIN users u_s ON r.sdr_by = u_s.id
             LEFT JOIN users u_mon ON r.monitor_by = u_mon.id
             LEFT JOIN users u_mgr ON r.manager_by = u_mgr.id
+            LEFT JOIN users u_pi ON r.pi_signed_by = u_pi.id
             WHERE r.id = ? AND r.study_id = ?
         ");
         $stmt->execute([$record_id, $study_id]);
@@ -425,12 +443,15 @@ try {
                 'sdr_submitted' => (bool)($rec['sdr_submitted'] ?? false),
                 'monitor_reviewed' => (bool)($rec['monitor_reviewed'] ?? false),
                 'manager_reviewed' => (bool)($rec['manager_reviewed'] ?? false),
+                'pi_signed_off' => (bool)($rec['pi_signed_off'] ?? false),
                 'sdr_by_name' => $rec['sdr_user_name'] ?? $rec['sdr_user_code'] ?? '',
                 'sdr_at' => $rec['sdr_at'] ? date('d-M-Y H:i', strtotime($rec['sdr_at'])) : null,
                 'monitor_by_name' => $rec['monitor_user_name'] ?? $rec['monitor_user_code'] ?? '',
                 'monitor_at' => $rec['monitor_at'] ? date('d-M-Y H:i', strtotime($rec['monitor_at'])) : null,
                 'manager_by_name' => $rec['manager_user_name'] ?? $rec['manager_user_code'] ?? '',
                 'manager_at' => $rec['manager_at'] ? date('d-M-Y H:i', strtotime($rec['manager_at'])) : null,
+                'pi_signed_by_name' => $rec['pi_user_name'] ?? $rec['pi_user_code'] ?? '',
+                'pi_signed_at' => $rec['pi_signed_at'] ? date('d-M-Y H:i', strtotime($rec['pi_signed_at'])) : null,
                 'revision' => (int)$rec['revision'],
                 'is_voided' => (bool)$rec['is_voided'],
                 'void_reason' => $rec['void_reason'] ?? '',
@@ -450,8 +471,8 @@ try {
     // 4. SAVE RECORD (CREATE OR EDIT - SAVE DRAFT / MARK COMPLETE)
     // =========================================================================
     elseif ($action === 'save_record') {
-        if (!$is_data_editor || (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'monitor') !== false) || (!$is_coordinator && !$is_admin && !hasPermission('enter_data') && !hasPermission('edit'))) {
-            throw new Exception("Unauthorized: Data Managers and Data Monitors cannot create or edit clinical records directly.");
+        if (!$is_data_editor || (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'monitor') !== false) || (strpos($role_lower, 'investigator') !== false) || ($role_lower === 'pi') || (!$is_coordinator && !$is_admin && !hasPermission('enter_data') && !hasPermission('edit'))) {
+            throw new Exception("Unauthorized: Data Managers, Data Monitors, and Principal Investigators cannot create or edit clinical records directly.");
         }
 
         $record_id = (int)($_POST['record_id'] ?? 0);
@@ -460,7 +481,7 @@ try {
         $mode = trim($_POST['mode'] ?? 'draft'); // 'draft' or 'complete'
         $change_reason = trim($_POST['change_reason'] ?? 'Clinical Data Update');
 
-        if (!in_array($form_type, ['MH', 'AE', 'CM', 'TA'], true)) {
+        if (!in_array($form_type, ['MH', 'AE', 'CM', 'TA', 'USV'], true)) {
             throw new Exception("Invalid form type");
         }
         if (!in_array($mode, ['draft', 'complete'], true)) {
@@ -487,7 +508,16 @@ try {
             $raw_linked = json_decode($raw_linked, true) ?: explode(',', $raw_linked);
         }
         $linked_ids = array_map('intval', (array)$raw_linked);
-        $linked_ids = array_values(array_filter($linked_ids, function($id) { return $id > 0; }));
+        // Enforce no future date in IST across Common Forms
+        $today_ist = (new DateTime('now', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d');
+        foreach (['start_date', 'end_date', 'stop_date', 'imaging_date', 'date_of_visit', 'date_of_death', 'vitals_assessment_date', 'hema_collection_date', 'chem_collection_date', 'drug_admin_date'] as $date_key) {
+            if (!empty($data[$date_key])) {
+                $check_date = substr(trim((string)$data[$date_key]), 0, 10);
+                if ($check_date > $today_ist) {
+                    throw new Exception("Future Date has been selected, Please Select the Correct Date");
+                }
+            }
+        }
 
         // SERVER SIDE VALIDATION WHEN MODE === 'COMPLETE'
         if ($mode === 'complete') {
@@ -588,6 +618,27 @@ try {
                     }
                 }
             }
+            elseif ($form_type === 'USV') {
+                $visit_performed = trim($data['visit_performed'] ?? '');
+                if ($visit_performed === '') {
+                    throw new Exception("Visit Performed status is required to mark complete.");
+                }
+                if ($visit_performed === 'No') {
+                    if (empty(trim($data['visit_not_performed_reason'] ?? ''))) {
+                        throw new Exception("Reason visit not performed is required.");
+                    }
+                } else {
+                    if (empty(trim($data['date_of_visit'] ?? ''))) {
+                        throw new Exception("Date of Visit is required.");
+                    }
+                    if (empty(trim($data['visit_reason_unscheduled'] ?? ''))) {
+                        throw new Exception("Reason for Unscheduled Visit is required.");
+                    }
+                    if (trim($data['visit_reason_unscheduled'] ?? '') === 'Other' && empty(trim($data['unscheduled_reason_other'] ?? ''))) {
+                        throw new Exception("Please specify other reason for unscheduled visit.");
+                    }
+                }
+            }
         }
 
         // CM SERVER-SIDE BOUNDS CHECK ON LINKED IDS
@@ -679,6 +730,9 @@ try {
 
                 if (!$old_rec) throw new Exception("Record not found.");
                 if ($old_rec['is_voided']) throw new Exception("Cannot edit a voided record.");
+                if (!empty($old_rec['pi_signed_off'])) {
+                    throw new Exception("This record has been Signed Off by Principal Investigator and cannot be edited.");
+                }
 
                 $old_data = json_decode($old_rec['data_json'] ?? '{}', true) ?: [];
                 $old_sdr_status = $old_rec['sdr_status'];
@@ -840,8 +894,13 @@ try {
         $sdr_submitted = (bool)($rec['sdr_submitted'] ?? false);
         $monitor_reviewed = (bool)($rec['monitor_reviewed'] ?? false);
         $manager_reviewed = (bool)($rec['manager_reviewed'] ?? false);
+        $pi_signed_off = (bool)($rec['pi_signed_off'] ?? false);
         $curr_revision = (int)($rec['revision'] ?? 1);
         $curr_user_id = $user_id > 0 ? $user_id : (int)($_SESSION['user_id'] ?? $_SESSION['id'] ?? 1);
+
+        if ($pi_signed_off && $workflow_action !== 'pi_revoke') {
+            throw new Exception("This record has been Signed Off by Principal Investigator. No changes or revocations are permitted for any other roles.");
+        }
 
         $pdo->beginTransaction();
         try {
@@ -870,8 +929,8 @@ try {
                 if (!$sdr_submitted) {
                     throw new Exception("Record is not marked as SDR.");
                 }
-                if ($monitor_reviewed || $manager_reviewed) {
-                    throw new Exception("Cannot revoke SDR: The form is locked because it has already been SDVed by Data Monitor or DM Reviewed by Data Manager.");
+                if ($monitor_reviewed || $manager_reviewed || $pi_signed_off) {
+                    throw new Exception("Cannot revoke SDR: The form is locked because it has already been reviewed or signed off.");
                 }
 
                 $sdr_submitted = false;
@@ -971,6 +1030,57 @@ try {
                 $audit_logs[] = ['manager_reviewed', 'true', 'false', $remarks, 'manager_revoked'];
                 $audit_logs[] = ['sdr_status', $rec['sdr_status'], 'pending', 'SDR Revoked due to DM Reviewed Revocation. Remarks: ' . $remarks, 'sdr_revoked'];
 
+            } elseif ($workflow_action === 'pi_sign_off') {
+                if (!$is_pi) {
+                    throw new Exception("Unauthorized: Only Principal Investigators can perform PI Sign Off.");
+                }
+                if (!$monitor_reviewed || !$manager_reviewed) {
+                    throw new Exception("Cannot sign off: Record must be both SDVed and DM Reviewed before Principal Investigator sign off.");
+                }
+                if ($pi_signed_off) {
+                    throw new Exception("Record is already signed off by Principal Investigator.");
+                }
+
+                // Check open queries on this record
+                $stmt_open_q = $pdo->prepare("SELECT COUNT(*) FROM common_form_queries WHERE record_id = ? AND status != 'closed'");
+                $stmt_open_q->execute([$record_id]);
+                if ((int)$stmt_open_q->fetchColumn() > 0) {
+                    throw new Exception("Cannot sign off: All open queries on this record must be answered and closed before PI Sign Off.");
+                }
+
+                $pi_signed_off = true;
+                $rec['pi_signed_by'] = $curr_user_id;
+                $rec['pi_signed_at'] = date('Y-m-d H:i:s');
+                $sdr_hist_action = 'pi_sign_off';
+                $audit_logs[] = ['pi_signed_off', 'false', 'true', 'PI Sign Off completed by Principal Investigator', 'pi_signed_off'];
+
+            } elseif ($workflow_action === 'pi_revoke') {
+                if (!$is_pi) {
+                    throw new Exception("Unauthorized: Only Principal Investigators can revoke PI Sign Off.");
+                }
+                if (!$pi_signed_off) {
+                    throw new Exception("PI Sign Off has not been completed.");
+                }
+
+                $remarks = trim($_POST['remarks'] ?? '');
+                if ($remarks === '') {
+                    throw new Exception("Please enter a reason before revoking PI Sign Off.");
+                }
+                if (mb_strlen($remarks) < 10) {
+                    throw new Exception("Remarks must be at least 10 characters.");
+                }
+                if (mb_strlen($remarks) > 500) {
+                    throw new Exception("Remarks cannot exceed 500 characters.");
+                }
+
+                // If the PI Sign Off is Revoked it goes back to previous stage of SDVed & DM Reviewed
+                $pi_signed_off = false;
+                $sdr_submitted = true;
+                $monitor_reviewed = true;
+                $manager_reviewed = true;
+                $sdr_hist_action = 'pi_revoke';
+                $audit_logs[] = ['pi_signed_off', 'true', 'false', 'PI Sign Off Revoked. Remarks: ' . $remarks, 'pi_revoked'];
+
             } else {
                 throw new Exception("Invalid workflow action: " . htmlspecialchars($workflow_action));
             }
@@ -982,7 +1092,9 @@ try {
             }
 
             $final_sdr_status = 'pending';
-            if ($monitor_reviewed && $manager_reviewed) {
+            if ($pi_signed_off) {
+                $final_sdr_status = 'pi_signed_off';
+            } elseif ($monitor_reviewed && $manager_reviewed) {
                 $final_sdr_status = 'sdved_and_dm_reviewed';
             } elseif ($monitor_reviewed) {
                 $final_sdr_status = 'sdved';
@@ -996,12 +1108,16 @@ try {
             $sdr_val = $sdr_submitted ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
             $mon_val = $monitor_reviewed ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
             $mgr_val = $manager_reviewed ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
+            $pi_val = $pi_signed_off ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
 
             $stmt_upd = $pdo->prepare("
                 UPDATE subject_common_records
                 SET sdr_submitted = $sdr_val,
                     monitor_reviewed = $mon_val,
                     manager_reviewed = $mgr_val,
+                    pi_signed_off = $pi_val,
+                    pi_signed_by = :piby,
+                    pi_signed_at = :piat,
                     monitor_by = :monby,
                     monitor_at = :monat,
                     manager_by = :mgrby,
@@ -1014,6 +1130,8 @@ try {
                 WHERE id = :id
             ");
             $stmt_upd->execute([
+                'piby' => $pi_signed_off ? ($rec['pi_signed_by'] ?? $curr_user_id) : null,
+                'piat' => $pi_signed_off ? ($rec['pi_signed_at'] ?? date('Y-m-d H:i:s')) : null,
                 'monby' => $monitor_reviewed ? ($rec['monitor_by'] ?? $curr_user_id) : null,
                 'monat' => $monitor_reviewed ? ($rec['monitor_at'] ?? date('Y-m-d H:i:s')) : null,
                 'mgrby' => $manager_reviewed ? ($rec['manager_by'] ?? $curr_user_id) : null,
@@ -1060,6 +1178,8 @@ try {
             elseif ($workflow_action === 'monitor_revoke') $msg = "SDVed review revoked";
             elseif ($workflow_action === 'manager_review') $msg = "Record marked as DM Reviewed successfully";
             elseif ($workflow_action === 'manager_revoke') $msg = "DM Review revoked";
+            elseif ($workflow_action === 'pi_sign_off') $msg = "Record PI Signed Off successfully";
+            elseif ($workflow_action === 'pi_revoke') $msg = "PI Sign Off revoked successfully";
 
             ob_clean();
             echo json_encode([
@@ -1068,6 +1188,7 @@ try {
                 'sdr_submitted' => $sdr_submitted,
                 'monitor_reviewed' => $monitor_reviewed,
                 'manager_reviewed' => $manager_reviewed,
+                'pi_signed_off' => $pi_signed_off,
                 'sdr_status' => $final_sdr_status,
                 'form_type' => $rec['form_type'],
                 'message' => $msg
@@ -1084,8 +1205,8 @@ try {
     // 6. VOID RECORD WITH REASON (COORDINATOR / ADMIN)
     // =========================================================================
     elseif ($action === 'void_record') {
-        if (!$is_data_editor || (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'monitor') !== false)) {
-            throw new Exception("Unauthorized: Data Managers and Data Monitors cannot void clinical records.");
+        if (!$is_data_editor || (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'monitor') !== false) || (strpos($role_lower, 'investigator') !== false) || ($role_lower === 'pi')) {
+            throw new Exception("Unauthorized: Data Managers, Data Monitors, and Principal Investigators cannot void clinical records.");
         }
         if (!$is_coordinator && !$is_admin) {
             throw new Exception("Unauthorized: Voiding records requires Data Coordinator or Admin permissions.");
@@ -1102,6 +1223,7 @@ try {
         $rec = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$rec) throw new Exception("Record not found.");
         if ($rec['is_voided']) throw new Exception("Record is already voided.");
+        if (!empty($rec['pi_signed_off'])) throw new Exception("Cannot void a record that has been Signed Off by Principal Investigator.");
 
         $pdo->beginTransaction();
         try {
@@ -1150,6 +1272,9 @@ try {
         $rec = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$rec) throw new Exception("Record not found.");
 
+        if (!empty($rec['pi_signed_off'])) {
+            throw new Exception("Cannot Raise Query as the form has been Signed Off by Principal Investigator");
+        }
         if ($is_monitor && (bool)$rec['monitor_reviewed']) {
             throw new Exception("Cannot Raise Query as the form is marked as SDVed");
         }
@@ -1240,16 +1365,28 @@ try {
         if ($query_id <= 0) throw new Exception("Invalid query ID");
         if ($remark === '') throw new Exception("Response remark cannot be empty.");
 
-        $stmt = $pdo->prepare("SELECT q.*, r.data_json FROM common_form_queries q JOIN subject_common_records r ON q.record_id = r.id WHERE q.id = ? AND q.study_id = ?");
+        $stmt = $pdo->prepare("SELECT q.*, r.data_json, r.pi_signed_off FROM common_form_queries q JOIN subject_common_records r ON q.record_id = r.id WHERE q.id = ? AND q.study_id = ?");
         $stmt->execute([$query_id, $study_id]);
         $q = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$q) throw new Exception("Query not found.");
+
+        if (!empty($q['pi_signed_off'])) {
+            throw new Exception("Action prohibited: Record has been Signed Off by Principal Investigator and is completely locked.");
+        }
 
         $hist_old_val = null;
         $hist_new_val = null;
 
         // Check if there is a proposed field value update for the queried field
         if ($proposed_field_value !== null && !empty($q['field_name'])) {
+            if ($proposed_field_value !== '' && in_array($q['field_name'], ['start_date', 'end_date', 'stop_date', 'imaging_date', 'date_of_visit', 'date_of_death', 'vitals_assessment_date', 'hema_collection_date', 'chem_collection_date', 'drug_admin_date'], true)) {
+                $today_ist = (new DateTime('now', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d');
+                $check_date = substr(trim($proposed_field_value), 0, 10);
+                if ($check_date > $today_ist) {
+                    throw new Exception("Future Date has been selected, Please Select the Correct Date");
+                }
+            }
+
             $rec_data = json_decode($q['data_json'] ?? '{}', true) ?: [];
             $curr_val = is_array($rec_data[$q['field_name']] ?? null) ? implode(', ', $rec_data[$q['field_name']]) : (string)($rec_data[$q['field_name']] ?? '');
 
@@ -1320,14 +1457,19 @@ try {
         }
 
         $stmt = $pdo->prepare("
-            SELECT q.*, 
+            SELECT q.*, r.pi_signed_off,
                    COALESCE(q.raised_by_role, (SELECT role_name FROM study_users WHERE user_id = q.created_by AND study_id = q.study_id LIMIT 1), 'Data Monitor') AS effective_raised_by_role
             FROM common_form_queries q 
+            JOIN subject_common_records r ON q.record_id = r.id
             WHERE q.id = ? AND q.study_id = ?
         ");
         $stmt->execute([$query_id, $study_id]);
         $q = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$q) throw new Exception("Query not found.");
+
+        if (!empty($q['pi_signed_off'])) {
+            throw new Exception("Action prohibited: Record has been Signed Off by Principal Investigator and is completely locked.");
+        }
 
         $user_role_lower = strtolower($_SESSION['active_role_name'] ?? '');
         $is_curr_monitor = (strpos($user_role_lower, 'monitor') !== false);

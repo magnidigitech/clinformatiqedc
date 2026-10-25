@@ -198,6 +198,12 @@ function hasPermission($permission_key) {
         return in_array($permission_key, $allowed);
     }
 
+    // Principal Investigator (PI): Can view data, view queries, and perform PI Sign Off ('sign_off').
+    if ($role_lower === 'principal investigator' || $role_lower === 'pi' || strpos($role_lower, 'investigator') !== false) {
+        $allowed = ['view', 'query', 'sign_off'];
+        return in_array($permission_key, $allowed);
+    }
+
     // Fallback to DB permissions if any (legacy), or default deny
     $perms = $_SESSION['active_permissions'] ?? [];
     return isset($perms['all']) || isset($perms[$permission_key]);

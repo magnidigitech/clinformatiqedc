@@ -19,7 +19,7 @@ $pdo = getDB();
 ensureCommonFormsTables($pdo);
 
 $current_common_form = strtolower(trim($_GET['common_form'] ?? ''));
-if (!in_array($current_common_form, ['mh', 'ae', 'cm', 'ta'], true)) {
+if (!in_array($current_common_form, ['mh', 'ae', 'cm', 'ta', 'usv'], true)) {
     $current_common_form = '';
 }
 
@@ -45,12 +45,13 @@ $is_manager = (strpos($current_role, 'coordinator') !== false);
 $is_admin = (strpos($current_role, 'admin') !== false);
 
 // Specific precise roles for workflow
-$is_coordinator = (strpos($current_role, 'coordinator') !== false) || (strpos($current_role, 'entry') !== false) || (strpos($current_role, 'investigator') !== false) || (strpos($current_role, 'admin') !== false);
+$is_coordinator = (strpos($current_role, 'coordinator') !== false) || (strpos($current_role, 'entry') !== false) || (strpos($current_role, 'admin') !== false);
 $is_monitor_role = (strpos($current_role, 'monitor') !== false) || (strpos($current_role, 'cra') !== false) || (strpos($current_role, 'admin') !== false);
 $is_manager_role = (strpos($current_role, 'manager') !== false) || (strpos($current_role, 'admin') !== false);
+$is_pi_role = (strpos($current_role, 'investigator') !== false) || ($current_role === 'pi') || (strpos($current_role, 'admin') !== false);
 
-// Strict clinical content editor flag: Data Managers and Data Monitors cannot edit clinical content.
-$is_data_editor = ($is_coordinator || $is_admin) && (strpos($current_role, 'manager') === false) && (strpos($current_role, 'monitor') === false);
+// Strict clinical content editor flag: Data Managers, Data Monitors, and Principal Investigators cannot edit clinical content.
+$is_data_editor = ($is_coordinator || $is_admin) && (strpos($current_role, 'manager') === false) && (strpos($current_role, 'monitor') === false) && (strpos($current_role, 'investigator') === false) && ($current_role !== 'pi');
 $can_edit = $is_data_editor;
 
 // Review status resolver is now defined in includes/functions.php
@@ -119,7 +120,7 @@ $stmt->execute([$study_id]);
 $tree_data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Fetch ALL Form Statuses for this Subject
-$stmt_status = $pdo->prepare("SELECT form_id, status, progress_percent, is_verified, sdr_submitted, monitor_reviewed, manager_reviewed, COALESCE(repeating_instance_id, 0) as repeating_instance_id FROM subject_form_status WHERE subject_id = ?");
+$stmt_status = $pdo->prepare("SELECT form_id, status, progress_percent, is_verified, sdr_submitted, monitor_reviewed, manager_reviewed, pi_signed_off, COALESCE(repeating_instance_id, 0) as repeating_instance_id FROM subject_form_status WHERE subject_id = ?");
 $stmt_status->execute([$subject_id]);
 $raw_statuses = $stmt_status->fetchAll(PDO::FETCH_ASSOC);
 $statuses = [];
@@ -133,6 +134,7 @@ foreach($raw_statuses as $s) {
         'sdr_submitted' => $s['sdr_submitted'] ?? 0,
         'monitor_reviewed' => $s['monitor_reviewed'] ?? 0,
         'manager_reviewed' => $s['manager_reviewed'] ?? 0,
+        'pi_signed_off' => $s['pi_signed_off'] ?? 0,
         'query_count' => 0 // Default
     ];
 }
@@ -182,6 +184,7 @@ if (!empty($modules)) {
 // Identify Key Visits across study
 $screening_visit_id = null;
 $day1_visit_id = null;
+$day_treatment_visit_ids = [];
 $eot_visit_id = null;
 $eot_first_form_id = null;
 
@@ -193,6 +196,9 @@ foreach ($tree_data as $row) {
         $day1_visit_id = $row['visit_id'];
     } elseif ((strpos($v_name_l, 'end of treatment') !== false || strpos($v_name_l, 'end of study') !== false || strpos($v_name_l, 'eot') !== false || strpos($v_name_l, 'eos') !== false) && !$eot_visit_id) {
         $eot_visit_id = $row['visit_id'];
+    }
+    if (preg_match('/day\s*[-_]?\s*\d+/i', $v_name_l) && !in_array((int)$row['visit_id'], $day_treatment_visit_ids, true)) {
+        $day_treatment_visit_ids[] = (int)$row['visit_id'];
     }
 }
 if (!$screening_visit_id && !empty($tree_data)) {
@@ -211,14 +217,14 @@ $total_progress_sum = 0;
 
 foreach ($tree_data as $row) {
     $v_id = $row['visit_id'];
-    $is_day1_visit = ($day1_visit_id && $v_id == $day1_visit_id);
+    $is_day_treatment_visit = in_array((int)$v_id, $day_treatment_visit_ids, true);
     if (!isset($structure[$v_id])) {
         $structure[$v_id] = [
             'name' => $row['visit_name'],
             'forms' => [],
             'visit_progress_sum' => 0,
             'visit_forms_count' => 0,
-            'is_disabled' => (!$is_screening_performed && $is_day1_visit)
+            'is_disabled' => (!$is_screening_performed && $is_day_treatment_visit)
         ];
     }
     
@@ -229,9 +235,9 @@ foreach ($tree_data as $row) {
         $is_v_performed = ($visit_performed_map[$v_id] ?? '') !== 'No';
 
         // 1. If this visit itself was not performed, disable other forms in it
-        // 2. If Screening visit was not performed, Day 1 Visit is disabled completely!
+        // 2. If Screening visit was not performed, Day 1 / Day 2 / Day 3 Visits are disabled completely!
         $is_f_disabled = (!$is_v_performed && stripos($row['form_name'], 'Visit Details') === false);
-        if (!$is_screening_performed && $is_day1_visit) {
+        if (!$is_screening_performed && $is_day_treatment_visit) {
             $is_f_disabled = true;
         }
 
@@ -370,8 +376,9 @@ if ($current_module_id) {
 $is_current_visit_performed = ($current_visit_id && isset($visit_performed_map[$current_visit_id])) 
     ? ($visit_performed_map[$current_visit_id] !== 'No') 
     : true;
-$is_day1_disabled_by_screening = (!$is_screening_performed && $day1_visit_id && $current_visit_id == $day1_visit_id);
-$is_current_form_disabled = ((!$is_current_visit_performed && stripos($current_form_name, 'Visit Details') === false) || $is_day1_disabled_by_screening);
+$is_treatment_visit_disabled_by_screening = (!$is_screening_performed && in_array((int)$current_visit_id, $day_treatment_visit_ids, true));
+$is_day1_disabled_by_screening = $is_treatment_visit_disabled_by_screening;
+$is_current_form_disabled = ((!$is_current_visit_performed && stripos($current_form_name, 'Visit Details') === false) || $is_treatment_visit_disabled_by_screening);
 
 // Fetch Fields for the Current Form
 $fields = [];
@@ -522,6 +529,7 @@ if ($current_form_id && $subject_id) {
     <title>Data Entry - <?php echo htmlspecialchars($current_form_name); ?></title>
     <link rel="stylesheet" href="assets/css/style.css?v=20261022">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+    <script src="assets/js/app.js?v=20261025"></script>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; }
         .entry-layout { display: flex; height: calc(100vh - 110px); background: #f8fafc; overflow: hidden; }
@@ -686,7 +694,8 @@ $curr_stat = $statuses[$curr_stat_key] ?? [
     'is_verified' => 0,
     'sdr_submitted' => 0,
     'monitor_reviewed' => 0,
-    'manager_reviewed' => 0
+    'manager_reviewed' => 0,
+    'pi_signed_off' => 0
 ];
 $is_complete = ($curr_stat['status'] === 'complete' || $curr_stat['progress'] == 100);
 $is_verified = ($curr_stat['status'] === 'verified' || !empty($curr_stat['is_verified'])); // Check both for safety
@@ -694,8 +703,9 @@ $is_verified = ($curr_stat['status'] === 'verified' || !empty($curr_stat['is_ver
 $sdr_submitted = (bool)($curr_stat['sdr_submitted'] ?? false);
 $monitor_reviewed = (bool)($curr_stat['monitor_reviewed'] ?? false);
 $manager_reviewed = (bool)($curr_stat['manager_reviewed'] ?? false);
+$pi_signed_off = (bool)($curr_stat['pi_signed_off'] ?? false);
 
-if ($sdr_submitted || $monitor_reviewed || $manager_reviewed || $is_current_form_disabled || !$is_data_editor) {
+if ($sdr_submitted || $monitor_reviewed || $manager_reviewed || $pi_signed_off || $is_current_form_disabled || !$is_data_editor) {
     $can_edit = false; // Lock editing!
 }
 
@@ -723,6 +733,9 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
         </a>
         <a href="?subject_id=<?php echo $subject_id; ?>&common_form=ta" style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.875rem; font-weight: 600; text-decoration: none; padding: 0.75rem 0; color: <?php echo ($current_common_form === 'ta') ? 'var(--primary-color)' : '#64748b'; ?>; border-bottom: 2px solid <?php echo ($current_common_form === 'ta') ? 'var(--primary-color)' : 'transparent'; ?>;">
             <span class="material-icons-round" style="font-size: 1.1rem; color: #8b5cf6;">radar</span> Tumor Assessment (TA)
+        </a>
+        <a href="?subject_id=<?php echo $subject_id; ?>&common_form=usv" style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.875rem; font-weight: 600; text-decoration: none; padding: 0.75rem 0; color: <?php echo ($current_common_form === 'usv') ? 'var(--primary-color)' : '#64748b'; ?>; border-bottom: 2px solid <?php echo ($current_common_form === 'usv') ? 'var(--primary-color)' : 'transparent'; ?>;">
+            <span class="material-icons-round" style="font-size: 1.1rem; color: #0284c7;">more_time</span> Unscheduled Visits (USV)
         </a>
     </div>
 
@@ -898,6 +911,14 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                              <span class="badge" id="sidebar-count-ta" style="font-size: 0.75rem; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 999px;">0</span>
                          </div>
                      </a>
+                     <a href="?subject_id=<?php echo $subject_id; ?>&common_form=usv" class="visit-header <?php echo ($current_common_form === 'usv') ? 'active' : ''; ?>" style="display: block; padding: 0.65rem 1rem; text-decoration: none;">
+                         <div style="display: flex; justify-content: space-between; align-items: center;">
+                             <div style="display: flex; align-items: center; gap: 0.5rem; font-weight: 600; color: #334155;">
+                                 <span class="material-icons-round" style="font-size: 1.25rem; color: #0284c7;">more_time</span> Unscheduled Visits
+                             </div>
+                             <span class="badge" id="sidebar-count-usv" style="font-size: 0.75rem; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 999px;">0</span>
+                         </div>
+                     </a>
                  </div>
 
             </div>
@@ -919,6 +940,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                                     elseif ($current_common_form === 'ae') echo '<span class="material-icons-round" style="color: #d97706;">warning_amber</span> Adverse Events (AE)';
                                     elseif ($current_common_form === 'cm') echo '<span class="material-icons-round" style="color: #059669;">medication</span> Concomitant Medications (CM)';
                                     elseif ($current_common_form === 'ta') echo '<span class="material-icons-round" style="color: #8b5cf6;">radar</span> Tumor Assessment (TA)';
+                                    elseif ($current_common_form === 'usv') echo '<span class="material-icons-round" style="color: #0284c7;">more_time</span> Unscheduled Visits (USV)';
                                 ?>
                                 <span id="commonFormRecordCountBadge" style="background: #e2e8f0; color: #475569; font-size: 0.8rem; padding: 2px 8px; border-radius: 99px; font-weight: 600;">0</span>
                             </h1>
@@ -1134,7 +1156,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                                             <span class="material-icons-round" style="font-size: 1rem;">block</span> Form Disabled (Visit Not Performed)
                                         </span>
                                     <?php else: ?>
-                                        <?php echo renderWorkflowButtons($is_coordinator, $is_monitor_role, $is_manager_role, $sdr_submitted, $monitor_reviewed, $manager_reviewed, $all_mandatory_completed); ?>
+                                        <?php echo renderWorkflowButtons($is_coordinator, $is_monitor_role, $is_manager_role, $sdr_submitted, $monitor_reviewed, $manager_reviewed, $all_mandatory_completed, $pi_signed_off, $is_pi_role); ?>
                                     <?php endif; ?>
                                 </div>
 
@@ -1197,10 +1219,10 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                             <div class="alert alert-warning" style="display: flex; align-items: flex-start; gap: 0.85rem; background: #fffbeb; border: 1px solid #fef3c7; border-left: 4px solid #f59e0b; padding: 1rem 1.25rem; border-radius: 8px; margin-bottom: 1.5rem; color: #92400e;">
                                 <span class="material-icons-round" style="font-size: 1.75rem; color: #f59e0b; margin-top: 2px;">block</span>
                                 <div style="flex: 1;">
-                                    <?php if ($is_day1_disabled_by_screening): ?>
-                                        <strong style="font-size: 0.95rem;">Day 1 Visit Disabled — Initial Screening Visit Not Performed</strong>
+                                    <?php if ($is_treatment_visit_disabled_by_screening): ?>
+                                        <strong style="font-size: 0.95rem;"><?php echo htmlspecialchars($current_visit_name); ?> Disabled — Initial Screening Visit Not Performed</strong>
                                         <div style="font-size: 0.85rem; color: #b45309; margin-top: 3px; line-height: 1.4;">
-                                            This visit (<strong><?php echo htmlspecialchars($current_visit_name); ?></strong>) is disabled because <strong>Was this Visit Performed</strong> was answered <strong>No</strong> in the initial Screening Visit. Data entry is disabled for Day 1. Please directly proceed to <strong>End of Treatment / End of Study</strong>.
+                                            This visit (<strong><?php echo htmlspecialchars($current_visit_name); ?></strong>) is disabled because <strong>Was this Visit Performed</strong> was answered <strong>No</strong> in the initial Screening Visit. Data entry is disabled for treatment day visits. Please directly proceed to <strong>End of Treatment / End of Study</strong>.
                                         </div>
                                         <?php if ($eot_jump_url): ?>
                                         <div style="margin-top: 0.75rem;">
@@ -1305,11 +1327,13 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                                                     $query_color = '#94a3b8'; // default gray
                                                     $query_tooltip = 'Queries';
                                                     $click_handler = '';
-                                                    $is_form_reviewed_for_role = ($is_monitor_role && $monitor_reviewed) || ($is_manager_role && $manager_reviewed);
-                                                    $reviewed_label = ($is_monitor_role && $monitor_reviewed) ? 'SDVed' : 'DM Reviewed';
+                                                    $is_form_reviewed_for_role = ($is_monitor_role && $monitor_reviewed) || ($is_manager_role && $manager_reviewed) || $pi_signed_off;
+                                                    $reviewed_label = $pi_signed_off ? 'PI Signed Off' : (($is_monitor_role && $monitor_reviewed) ? 'SDVed' : 'DM Reviewed');
                                                     
                                                     if ($active_query_count > 0) {
-                                                        if ($is_form_reviewed_for_role) {
+                                                        if ($pi_signed_off) {
+                                                            $query_tooltip = "Cannot Raise Query&#10;as the form is Signed Off by Principal Investigator";
+                                                        } elseif ($is_form_reviewed_for_role) {
                                                             $query_tooltip = "Cannot Raise Query&#10;as the form is marked as " . $reviewed_label;
                                                         } else {
                                                             $query_tooltip = "Cannot Raise Query&#10;as a query is open";
@@ -1572,8 +1596,10 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
 
     window.monitorReviewed = <?php echo $monitor_reviewed ? 'true' : 'false'; ?>;
     window.managerReviewed = <?php echo $manager_reviewed ? 'true' : 'false'; ?>;
+    window.piSignedOff = <?php echo $pi_signed_off ? 'true' : 'false'; ?>;
     const isMonitorRole = <?php echo $is_monitor_role ? 'true' : 'false'; ?>;
     const isManagerRole = <?php echo $is_manager_role ? 'true' : 'false'; ?>;
+    const isPiRole = <?php echo $is_pi_role ? 'true' : 'false'; ?>;
     let pendingWorkflowAction = '';
 
     function closeWorkflowModal() {
@@ -1713,6 +1739,16 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
             message = 'Are you sure you want to revoke this DM Reviewed status? The SDR status will be reset, and the Data Coordinator will be able to update and resubmit the record.';
             btnText = 'Confirm Revoke DM Reviewed';
             btnBg = '#dc2626';
+        } else if (workflowAction === 'pi_sign_off') {
+            title = 'Principal Investigator Sign Off';
+            message = 'Are you sure you want to perform PI Sign Off on this form? Once signed off, this form will be completely locked. No queries, field changes, or revocations will be permitted for any role unless the PI revokes the sign off.';
+            btnText = 'Yes, PI Sign Off';
+            btnBg = '#4338ca';
+        } else if (workflowAction === 'pi_revoke') {
+            title = 'Revoke PI Sign Off';
+            message = 'Are you sure you want to revoke the Principal Investigator Sign Off? The form will return to the previous stage of SDVed & DM Reviewed.';
+            btnText = 'Confirm Revoke PI Sign Off';
+            btnBg = '#dc2626';
         }
 
         document.getElementById('workflowModalTitle').textContent = title;
@@ -1722,7 +1758,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
         confirmBtn.style.backgroundColor = btnBg;
         confirmBtn.style.borderColor = btnBg;
         
-        const isRevoke = (workflowAction === 'monitor_revoke' || workflowAction === 'manager_revoke');
+        const isRevoke = (workflowAction === 'monitor_revoke' || workflowAction === 'manager_revoke' || workflowAction === 'pi_revoke');
         const remarksContainer = document.getElementById('revokeRemarksContainer');
         const remarksText = document.getElementById('revokeRemarksText');
         const remarksLabel = document.getElementById('revokeRemarksLabel');
@@ -1732,9 +1768,13 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                 remarksContainer.style.display = 'block';
                 remarksText.value = '';
                 if (remarksLabel) {
-                    remarksLabel.innerHTML = (workflowAction === 'monitor_revoke') 
-                        ? 'Reason for Revoking SDVed <span style="color: red;">*</span>' 
-                        : 'Reason for Revoking DM Reviewed <span style="color: red;">*</span>';
+                    if (workflowAction === 'monitor_revoke') {
+                        remarksLabel.innerHTML = 'Reason for Revoking SDVed <span style="color: red;">*</span>';
+                    } else if (workflowAction === 'manager_revoke') {
+                        remarksLabel.innerHTML = 'Reason for Revoking DM Reviewed <span style="color: red;">*</span>';
+                    } else if (workflowAction === 'pi_revoke') {
+                        remarksLabel.innerHTML = 'Reason for Revoking PI Sign Off <span style="color: red;">*</span>';
+                    }
                 }
                 validateRevokeRemarks(); // disables by default
             } else {
@@ -1836,12 +1876,12 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
         // 8. Update query buttons dynamically
         if (data.monitor_reviewed !== undefined) window.monitorReviewed = data.monitor_reviewed;
         if (data.manager_reviewed !== undefined) window.managerReviewed = data.manager_reviewed;
+        if (data.pi_signed_off !== undefined) window.piSignedOff = data.pi_signed_off;
 
-        const isFormReviewedForRole = (window.monitorReviewed && isMonitorRole) || (window.managerReviewed && isManagerRole);
-        if (isFormReviewedForRole) {
+        if (window.piSignedOff) {
             const queryButtons = document.querySelectorAll('.field-direct-actions button[title*="Query"], .field-direct-actions button[title*="query"], .field-direct-actions button[title*="add"], .field-direct-actions button[title*="Add"]');
             queryButtons.forEach(btn => {
-                btn.title = "Cannot Raise Query\nas the form is marked as review";
+                btn.title = "Cannot Raise Query\nas the form is Signed Off by Principal Investigator";
                 const onclickStr = btn.getAttribute('onclick') || '';
                 if (onclickStr.includes('add_query')) {
                     btn.removeAttribute('onclick');
@@ -1852,9 +1892,25 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                 }
             });
         } else {
-            // If the review is revoked, reload to restore all original click handlers and tooltips easily
-            if (pendingWorkflowAction && pendingWorkflowAction.includes('revoke')) {
-                location.reload();
+            const isFormReviewedForRole = (window.monitorReviewed && isMonitorRole) || (window.managerReviewed && isManagerRole);
+            if (isFormReviewedForRole) {
+                const queryButtons = document.querySelectorAll('.field-direct-actions button[title*="Query"], .field-direct-actions button[title*="query"], .field-direct-actions button[title*="add"], .field-direct-actions button[title*="Add"]');
+                queryButtons.forEach(btn => {
+                    btn.title = "Cannot Raise Query\nas the form is marked as review";
+                    const onclickStr = btn.getAttribute('onclick') || '';
+                    if (onclickStr.includes('add_query')) {
+                        btn.removeAttribute('onclick');
+                        btn.style.cursor = 'not-allowed';
+                        btn.style.opacity = '0.5';
+                        const iconEl = btn.querySelector('.material-icons-round');
+                        if (iconEl) iconEl.style.color = '#cbd5e1';
+                    }
+                });
+            } else {
+                // If the review is revoked, reload to restore all original click handlers and tooltips easily
+                if (pendingWorkflowAction && pendingWorkflowAction.includes('revoke')) {
+                    location.reload();
+                }
             }
         }
         
@@ -1956,6 +2012,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
 
     const SCREENING_VISIT_ID = '<?php echo (int)($screening_visit_id ?? 0); ?>';
     const DAY1_VISIT_ID = '<?php echo (int)($day1_visit_id ?? 0); ?>';
+    const DAY_TREATMENT_VISIT_IDS = <?php echo json_encode(array_values($day_treatment_visit_ids)); ?>;
     const EOT_VISIT_ID = '<?php echo (int)($eot_visit_id ?? 0); ?>';
     const EOT_JUMP_URL = '<?php echo $eot_jump_url ? addslashes($eot_jump_url) : ""; ?>';
     let CURRENT_NEXT_LINK = '<?php echo $next_link ? addslashes($next_link) : ""; ?>';
@@ -2341,32 +2398,34 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
             setFormDisabledVisual(link, vpVal === 'No');
         });
 
-        // 2. If Screening visit, handle Day 1 forms and visit header
-        if (isScreening && DAY1_VISIT_ID && DAY1_VISIT_ID !== '0') {
-            const day1Forms = document.querySelectorAll(`.tree-form[data-visit-id="${DAY1_VISIT_ID}"]`);
-            day1Forms.forEach(link => {
-                setFormDisabledVisual(link, vpVal === 'No');
+        // 2. If Screening visit, handle Day 1, Day 2, Day 3 forms and visit headers
+        if (isScreening && typeof DAY_TREATMENT_VISIT_IDS !== 'undefined' && Array.isArray(DAY_TREATMENT_VISIT_IDS)) {
+            DAY_TREATMENT_VISIT_IDS.forEach(tVid => {
+                const dayForms = document.querySelectorAll(`.tree-form[data-visit-id="${tVid}"]`);
+                dayForms.forEach(link => {
+                    setFormDisabledVisual(link, vpVal === 'No');
+                });
             });
 
-            // Day 1 Visit Header
-            const day1Headers = document.querySelectorAll(`.tree-visit .visit-header`);
-            day1Headers.forEach(vh => {
+            // Treatment Day Visit Headers
+            const dayHeaders = document.querySelectorAll(`.tree-visit .visit-header`);
+            dayHeaders.forEach(vh => {
                 const titleText = (vh.innerText || '').toLowerCase();
-                if (titleText.includes('day 1') || titleText.includes('day-1') || titleText.includes('day1')) {
-                    let day1Badge = vh.querySelector('.day1-disabled-badge');
+                if (/day\s*[-_]?\s*\d+/i.test(titleText)) {
+                    let dayBadge = vh.querySelector('.day1-disabled-badge');
                     if (vpVal === 'No') {
                         vh.style.opacity = '0.6';
-                        if (!day1Badge) {
-                            day1Badge = document.createElement('span');
-                            day1Badge.className = 'badge-disabled day1-disabled-badge';
-                            day1Badge.style.cssText = 'font-size: 0.65rem; background: #fee2e2; color: #b91c1c; padding: 2px 6px; border-radius: 4px; font-weight: 600; margin-left: 0.5rem;';
-                            day1Badge.innerText = 'Disabled';
+                        if (!dayBadge) {
+                            dayBadge = document.createElement('span');
+                            dayBadge.className = 'badge-disabled day1-disabled-badge';
+                            dayBadge.style.cssText = 'font-size: 0.65rem; background: #fee2e2; color: #b91c1c; padding: 2px 6px; border-radius: 4px; font-weight: 600; margin-left: 0.5rem;';
+                            dayBadge.innerText = 'Disabled';
                             const titleDiv = vh.querySelector('div > div');
-                            if (titleDiv) titleDiv.appendChild(day1Badge);
+                            if (titleDiv) titleDiv.appendChild(dayBadge);
                         }
                     } else {
                         vh.style.opacity = '1';
-                        if (day1Badge) day1Badge.remove();
+                        if (dayBadge) dayBadge.remove();
                     }
                 }
             });
@@ -2870,6 +2929,10 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
         document.querySelectorAll('.dropdown-menu').forEach(m => m.style.display = 'none');
 
         if (action === 'add_query') {
+            if (window.piSignedOff) {
+                alert("Cannot Raise Query\nas the form is Signed Off by Principal Investigator");
+                return;
+            }
             const isFormReviewedForRole = (window.monitorReviewed && isMonitorRole) || (window.managerReviewed && isManagerRole);
             if (isFormReviewedForRole) {
                 alert("Cannot Raise Query\nas the form is marked as review");
@@ -3063,9 +3126,9 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                   fieldAuditHistory = data.history; // Cache field audit logs
                   
                   if (btnRaise) {
-                      const isFormReviewed = (window.monitorReviewed && isMonitorRole) || (window.managerReviewed && isManagerRole);
+                      const isFormReviewed = (window.monitorReviewed && isMonitorRole) || (window.managerReviewed && isManagerRole) || window.piSignedOff;
                       const hasUnresolvedQuery = data.queries.some(q => q.status !== 'closed');
-                      if (isFormReviewed || hasUnresolvedQuery) {
+                      if (isFormReviewed || hasUnresolvedQuery || window.piSignedOff) {
                           btnRaise.style.display = 'none';
                       }
                   }
@@ -3219,10 +3282,17 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
             canManageQuery = true;
         }
 
+        if (window.piSignedOff) {
+            canManageQuery = false;
+        }
+
         // Restriction notice if user is reviewer but doesn't match the query creator's role
         const noticeEl = document.getElementById('queryRoleRestrictionNotice');
         if (noticeEl) {
-            if ((currentUserIsMonitor || currentUserIsManager) && !canManageQuery && query.status !== 'closed') {
+            if (window.piSignedOff) {
+                noticeEl.style.display = 'block';
+                noticeEl.innerHTML = `<span class="material-icons-round" style="font-size: 15px; vertical-align: middle;">lock</span> Form is Signed Off by <strong>Principal Investigator</strong>. All queries, field changes, and revocations are completely locked.`;
+            } else if ((currentUserIsMonitor || currentUserIsManager) && !canManageQuery && query.status !== 'closed') {
                 const targetRoleText = isQMonitor ? 'Data Monitor' : 'Data Manager';
                 noticeEl.style.display = 'block';
                 noticeEl.innerHTML = `<span class="material-icons-round" style="font-size: 15px; vertical-align: middle;">lock</span> This query was raised by <strong>${escapeHtml(query.raised_by_role || targetRoleText)}</strong>. Only a <strong>${targetRoleText}</strong> can close or re-query it.`;
@@ -3247,7 +3317,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
 
         <?php if ($is_coordinator || $current_role === 'data_entry' || strpos($current_role, 'entry') !== false): ?>
             // Coordinator can only select Answered Query if status is new or open
-             if (['new', 'open'].includes(query.status)) {
+             if (['new', 'open'].includes(query.status) && !window.piSignedOff) {
                   statusSelect.add(new Option('Answered Query', 'answered'));
             }
         <?php endif; ?>
@@ -3411,6 +3481,10 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
     }
 
     async function submitUpdateQuery() {
+         if (window.piSignedOff) {
+             alert("Cannot update query: This form is Signed Off by Principal Investigator.");
+             return;
+         }
          const queryId = document.getElementById('querySelect').value;
          const status = document.getElementById('queryNewStatus').value;
          const remark = document.getElementById('queryUpdateRemark').value;
@@ -3939,6 +4013,7 @@ const USER_IS_COORDINATOR = <?php echo $is_coordinator ? 'true' : 'false'; ?>;
 const USER_IS_MANAGER = <?php echo $is_manager_role ? 'true' : 'false'; ?>;
 const USER_IS_ADMIN = <?php echo $is_admin ? 'true' : 'false'; ?>;
 const USER_IS_MONITOR = <?php echo $is_monitor_role ? 'true' : 'false'; ?>;
+const USER_IS_PI = <?php echo $is_pi_role ? 'true' : 'false'; ?>;
 const USER_CAN_EDIT_CONTENT = <?php echo $is_data_editor ? 'true' : 'false'; ?>;
 
 let commonSearchTimer = null;
@@ -3946,7 +4021,7 @@ let currentEditingRecordData = null;
 let currentLinkableRecords = [];
 
 document.addEventListener('DOMContentLoaded', function() {
-    ['MH', 'AE', 'CM', 'TA'].forEach(ft => {
+    ['MH', 'AE', 'CM', 'TA', 'USV'].forEach(ft => {
         loadCommonRecords(ft);
     });
 });
@@ -4062,6 +4137,20 @@ function renderCommonTable(records, formType) {
             <th style="padding: 0.85rem 1rem; text-align: center; white-space: nowrap;">Queries</th>
             <th style="padding: 0.85rem 1rem; text-align: right; white-space: nowrap;">Actions</th>
         `;
+    } else if (formType === 'USV') {
+        thead.innerHTML = `
+            <th style="padding: 0.85rem 1rem; text-align: left; white-space: nowrap;">USV Number</th>
+            <th style="padding: 0.85rem 1rem; text-align: center; white-space: nowrap;">Visit Performed</th>
+            <th style="padding: 0.85rem 1rem; text-align: left; white-space: nowrap;">Date of Visit</th>
+            <th style="padding: 0.85rem 1rem; text-align: left;">Reason for Unscheduled Visit</th>
+            <th style="padding: 0.85rem 1rem; text-align: center; white-space: nowrap;">Vitals</th>
+            <th style="padding: 0.85rem 1rem; text-align: center; white-space: nowrap;">Labs</th>
+            <th style="padding: 0.85rem 1rem; text-align: center; white-space: nowrap;">Drug Admin</th>
+            <th style="padding: 0.85rem 1rem; text-align: center; white-space: nowrap;">Status</th>
+            <th style="padding: 0.85rem 1rem; text-align: center; white-space: nowrap;">SDR</th>
+            <th style="padding: 0.85rem 1rem; text-align: center; white-space: nowrap;">Queries</th>
+            <th style="padding: 0.85rem 1rem; text-align: right; white-space: nowrap;">Actions</th>
+        `;
     }
 
     if (records.length === 0) {
@@ -4093,9 +4182,12 @@ function renderCommonTable(records, formType) {
         const monRev = (r.monitor_reviewed === true || r.monitor_reviewed === 't' || r.monitor_reviewed === 1 || r.monitor_reviewed === '1');
         const mgrRev = (r.manager_reviewed === true || r.manager_reviewed === 't' || r.manager_reviewed === 1 || r.manager_reviewed === '1');
         const sdrSub = (r.sdr_submitted === true || r.sdr_submitted === 't' || r.sdr_submitted === 1 || r.sdr_submitted === '1');
+        const piSigned = (r.pi_signed_off === true || r.pi_signed_off === 't' || r.pi_signed_off === 1 || r.pi_signed_off === '1');
 
         let sdrBadge = `<span style="background: #f1f5f9; color: #64748b; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 500; white-space: nowrap;">Pending SDR</span>`;
-        if ((monRev && mgrRev) || r.sdr_status === 'sdved_and_dm_reviewed') {
+        if (piSigned || r.sdr_status === 'pi_signed_off') {
+            sdrBadge = `<span style="background: #e0e7ff; color: #4338ca; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;"><span class="material-icons-round" style="font-size: 14px;">verified_user</span> PI Signed Off</span>`;
+        } else if ((monRev && mgrRev) || r.sdr_status === 'sdved_and_dm_reviewed') {
             sdrBadge = `<span style="background: #f0fdf4; color: #0d8e6f; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;"><span class="material-icons-round" style="font-size: 14px;">verified</span> SDVed & DM Reviewed</span>`;
         } else if (mgrRev && !monRev) {
             sdrBadge = `<span style="background: #f5f3ff; color: #6d28d9; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;"><span class="material-icons-round" style="font-size: 14px;">verified</span> DM Reviewed</span>`;
@@ -4272,6 +4364,44 @@ function renderCommonTable(records, formType) {
                     </td>
                 </tr>
             `;
+        } else if (formType === 'USV') {
+            const isVisitYes = (d.visit_performed === 'Yes');
+            const perfBadge = isVisitYes 
+                ? '<span style="background: #ecfdf5; color: #047857; padding: 2px 8px; border-radius: 99px; font-weight: 600; font-size: 0.75rem;">Yes</span>'
+                : '<span style="background: #fef2f2; color: #dc2626; padding: 2px 8px; border-radius: 99px; font-weight: 600; font-size: 0.75rem;">No</span>';
+            const reasonStr = d.visit_reason_unscheduled ? (d.visit_reason_unscheduled === 'Other' ? (d.unscheduled_reason_other || 'Other') : d.visit_reason_unscheduled) : (d.visit_not_performed_reason || '-');
+            const vitalsStr = d.vitals_assessed || '-';
+            const labsStr = (d.hema_panel_collected === 'Yes' || d.chem_panel_collected === 'Yes') ? 'Yes' : (d.hema_panel_collected === 'No' && d.chem_panel_collected === 'No' ? 'No' : '-');
+            const drugStr = d.drug_administered || '-';
+
+            html += `
+                <tr style="${rowStyle}">
+                    <td style="padding: 0.85rem 1rem; font-weight: 700; color: #1e293b; vertical-align: middle; white-space: nowrap;">
+                        ${escapeHtml(r.record_number)}
+                        ${isVoided ? '<span style="background: #dc2626; color: white; font-size: 0.65rem; padding: 1px 5px; border-radius: 4px; margin-left: 4px;">VOIDED</span>' : ''}
+                    </td>
+                    <td style="padding: 0.85rem 1rem; text-align: center; vertical-align: middle; white-space: nowrap;">${perfBadge}</td>
+                    <td style="padding: 0.85rem 1rem; color: #0f172a; font-weight: 600; vertical-align: middle; white-space: nowrap;">${escapeHtml(d.date_of_visit || '-')}</td>
+                    <td style="padding: 0.85rem 1rem; color: #475569; vertical-align: middle;">${escapeHtml(reasonStr)}</td>
+                    <td style="padding: 0.85rem 1rem; text-align: center; vertical-align: middle; white-space: nowrap;">
+                        <span style="font-weight: 600; color: ${vitalsStr === 'Yes' ? '#047857' : '#64748b'};">${escapeHtml(vitalsStr)}</span>
+                    </td>
+                    <td style="padding: 0.85rem 1rem; text-align: center; vertical-align: middle; white-space: nowrap;">
+                        <span style="font-weight: 600; color: ${labsStr === 'Yes' ? '#047857' : '#64748b'};">${escapeHtml(labsStr)}</span>
+                    </td>
+                    <td style="padding: 0.85rem 1rem; text-align: center; vertical-align: middle; white-space: nowrap;">
+                        <span style="font-weight: 600; color: ${drugStr === 'Yes' ? '#047857' : '#64748b'};">${escapeHtml(drugStr)}</span>
+                    </td>
+                    <td style="padding: 0.85rem 1rem; text-align: center; vertical-align: middle; white-space: nowrap;">${statusBadge}</td>
+                    <td style="padding: 0.85rem 1rem; text-align: center; vertical-align: middle; white-space: nowrap;">${sdrBadge}</td>
+                    <td style="padding: 0.85rem 1rem; text-align: center; vertical-align: middle; white-space: nowrap;">${queryBadge}</td>
+                    <td style="padding: 0.85rem 1rem; text-align: right; vertical-align: middle; white-space: nowrap;">
+                        <div style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; white-space: nowrap;">
+                            ${renderRecordActionButtons(r, 'USV')}
+                        </div>
+                    </td>
+                </tr>
+            `;
         }
     });
 
@@ -4284,10 +4414,11 @@ function renderRecordActionButtons(r, formType) {
     const sdrSub = (r.sdr_submitted === true || r.sdr_submitted === 't' || r.sdr_submitted === 1 || r.sdr_submitted === '1');
     const monRev = (r.monitor_reviewed === true || r.monitor_reviewed === 't' || r.monitor_reviewed === 1 || r.monitor_reviewed === '1');
     const mgrRev = (r.manager_reviewed === true || r.manager_reviewed === 't' || r.manager_reviewed === 1 || r.manager_reviewed === '1');
-    const isLocked = sdrSub && (monRev || mgrRev);
+    const piSigned = (r.pi_signed_off === true || r.pi_signed_off === 't' || r.pi_signed_off === 1 || r.pi_signed_off === '1');
+    const isLocked = (sdrSub && (monRev || mgrRev)) || piSigned;
 
     // Open/Edit/View
-    if (USER_CAN_EDIT_CONTENT && !sdrSub) {
+    if (USER_CAN_EDIT_CONTENT && !sdrSub && !piSigned) {
         btns += `<button class="btn btn-sm btn-outline" onclick="openCommonFormModal(${r.id}, '${formType}')" title="Edit Record" style="padding: 0.25rem 0.6rem; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 3px;"><span class="material-icons-round" style="font-size: 13px;">edit</span> Edit</button>`;
     } else {
         btns += `<button class="btn btn-sm btn-outline" onclick="openCommonFormModal(${r.id}, '${formType}')" title="${isLocked ? 'Record is locked' : 'View Record'}" style="padding: 0.25rem 0.6rem; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 3px;"><span class="material-icons-round" style="font-size: 13px;">visibility</span> View</button>`;
@@ -4303,40 +4434,52 @@ function renderRecordActionButtons(r, formType) {
 
     // SDR & Review Workflow Actions (Strict 3-Role Governance)
     if (!r.is_voided) {
-        // Data Coordinator Actions
-        if (USER_IS_COORDINATOR) {
-            if (!sdrSub) {
-                if (r.status === 'complete') {
-                    btns += `<button class="btn btn-sm" onclick="triggerCommonReviewAction(${r.id}, 'mark_sdr', '${formType}')" title="Mark as SDR (Submit for Review)" style="padding: 0.25rem 0.55rem; font-size: 0.75rem; background: #1d6f97; color: #fff; border: 1px solid #1d6f97; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;"><span class="material-icons-round" style="font-size: 14px;">lock</span> Mark SDR</button>`;
-                } else {
-                    btns += `<button class="btn btn-sm" onclick="showToast('Cannot mark as SDR: Record must be marked complete first.', 'warning')" title="Record must be complete before SDR submission" style="padding: 0.25rem 0.55rem; font-size: 0.75rem; background: #f1f5f9; color: #94a3b8; border: 1px solid #cbd5e1; cursor: not-allowed; display: inline-flex; align-items: center; gap: 3px;"><span class="material-icons-round" style="font-size: 14px;">lock</span> Mark SDR</button>`;
+        if (piSigned) {
+            // Once PI Signed Off, NO ONE can revoke except PI or Admin revoking PI Sign Off!
+            if (USER_IS_PI || USER_IS_ADMIN) {
+                btns += `<button class="btn btn-sm btn-outline" onclick="triggerCommonReviewAction(${r.id}, 'pi_revoke', '${formType}')" title="Revoke PI Sign Off" style="padding: 0.25rem 0.55rem; font-size: 0.75rem; color: #dc2626; border: 1px solid #dc2626; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;"><span class="material-icons-round" style="font-size: 14px;">undo</span> Revoke PI Sign Off</button>`;
+            }
+        } else {
+            // Data Coordinator Actions
+            if (USER_IS_COORDINATOR) {
+                if (!sdrSub) {
+                    if (r.status === 'complete') {
+                        btns += `<button class="btn btn-sm" onclick="triggerCommonReviewAction(${r.id}, 'mark_sdr', '${formType}')" title="Mark as SDR (Submit for Review)" style="padding: 0.25rem 0.55rem; font-size: 0.75rem; background: #1d6f97; color: #fff; border: 1px solid #1d6f97; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;"><span class="material-icons-round" style="font-size: 14px;">lock</span> Mark SDR</button>`;
+                    } else {
+                        btns += `<button class="btn btn-sm" onclick="showToast('Cannot mark as SDR: Record must be marked complete first.', 'warning')" title="Record must be complete before SDR submission" style="padding: 0.25rem 0.55rem; font-size: 0.75rem; background: #f1f5f9; color: #94a3b8; border: 1px solid #cbd5e1; cursor: not-allowed; display: inline-flex; align-items: center; gap: 3px;"><span class="material-icons-round" style="font-size: 14px;">lock</span> Mark SDR</button>`;
+                    }
+                } else if (sdrSub && !monRev && !mgrRev) {
+                    btns += `<button class="btn btn-sm btn-outline" onclick="triggerCommonReviewAction(${r.id}, 'revoke_sdr', '${formType}')" title="Revoke SDR Submission" style="padding: 0.25rem 0.55rem; font-size: 0.75rem; color: #dc2626; border: 1px solid #dc2626; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;"><span class="material-icons-round" style="font-size: 14px;">lock_open</span> Revoke SDR</button>`;
                 }
-            } else if (sdrSub && !monRev && !mgrRev) {
-                btns += `<button class="btn btn-sm btn-outline" onclick="triggerCommonReviewAction(${r.id}, 'revoke_sdr', '${formType}')" title="Revoke SDR Submission" style="padding: 0.25rem 0.55rem; font-size: 0.75rem; color: #dc2626; border: 1px solid #dc2626; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;"><span class="material-icons-round" style="font-size: 14px;">lock_open</span> Revoke SDR</button>`;
             }
-        }
 
-        // Data Monitor Actions
-        if ((USER_IS_MONITOR || USER_IS_ADMIN) && sdrSub) {
-            if (!monRev) {
-                btns += `<button class="btn btn-sm" onclick="triggerCommonReviewAction(${r.id}, 'monitor_review', '${formType}')" title="Mark as SDVed" style="padding: 0.25rem 0.55rem; font-size: 0.75rem; background: #059669; color: #fff; border: 1px solid #059669; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;"><span class="material-icons-round" style="font-size: 14px;">verified</span> SDVed</button>`;
-            } else {
-                btns += `<button class="btn btn-sm btn-outline" onclick="triggerCommonReviewAction(${r.id}, 'monitor_revoke', '${formType}')" title="Revoke SDVed" style="padding: 0.25rem 0.55rem; font-size: 0.75rem; color: #dc2626; border: 1px solid #dc2626; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;"><span class="material-icons-round" style="font-size: 14px;">undo</span> Revoke SDV</button>`;
+            // Data Monitor Actions
+            if ((USER_IS_MONITOR || USER_IS_ADMIN) && sdrSub) {
+                if (!monRev) {
+                    btns += `<button class="btn btn-sm" onclick="triggerCommonReviewAction(${r.id}, 'monitor_review', '${formType}')" title="Mark as SDVed" style="padding: 0.25rem 0.55rem; font-size: 0.75rem; background: #059669; color: #fff; border: 1px solid #059669; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;"><span class="material-icons-round" style="font-size: 14px;">verified</span> SDVed</button>`;
+                } else {
+                    btns += `<button class="btn btn-sm btn-outline" onclick="triggerCommonReviewAction(${r.id}, 'monitor_revoke', '${formType}')" title="Revoke SDVed" style="padding: 0.25rem 0.55rem; font-size: 0.75rem; color: #dc2626; border: 1px solid #dc2626; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;"><span class="material-icons-round" style="font-size: 14px;">undo</span> Revoke SDV</button>`;
+                }
             }
-        }
 
-        // Data Manager Actions
-        if ((USER_IS_MANAGER || USER_IS_ADMIN) && sdrSub) {
-            if (!mgrRev) {
-                btns += `<button class="btn btn-sm" onclick="triggerCommonReviewAction(${r.id}, 'manager_review', '${formType}')" title="Mark as DM Reviewed" style="padding: 0.25rem 0.55rem; font-size: 0.75rem; background: #6d28d9; color: #fff; border: 1px solid #6d28d9; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;"><span class="material-icons-round" style="font-size: 14px;">verified</span> DM Review</button>`;
-            } else {
-                btns += `<button class="btn btn-sm btn-outline" onclick="triggerCommonReviewAction(${r.id}, 'manager_revoke', '${formType}')" title="Revoke DM Reviewed" style="padding: 0.25rem 0.55rem; font-size: 0.75rem; color: #dc2626; border: 1px solid #dc2626; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;"><span class="material-icons-round" style="font-size: 14px;">undo</span> Revoke DM</button>`;
+            // Data Manager Actions
+            if ((USER_IS_MANAGER || USER_IS_ADMIN) && sdrSub) {
+                if (!mgrRev) {
+                    btns += `<button class="btn btn-sm" onclick="triggerCommonReviewAction(${r.id}, 'manager_review', '${formType}')" title="Mark as DM Reviewed" style="padding: 0.25rem 0.55rem; font-size: 0.75rem; background: #6d28d9; color: #fff; border: 1px solid #6d28d9; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;"><span class="material-icons-round" style="font-size: 14px;">verified</span> DM Review</button>`;
+                } else {
+                    btns += `<button class="btn btn-sm btn-outline" onclick="triggerCommonReviewAction(${r.id}, 'manager_revoke', '${formType}')" title="Revoke DM Reviewed" style="padding: 0.25rem 0.55rem; font-size: 0.75rem; color: #dc2626; border: 1px solid #dc2626; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;"><span class="material-icons-round" style="font-size: 14px;">undo</span> Revoke DM</button>`;
+                }
+            }
+
+            // Principal Investigator Actions (Requires BOTH SDVed & DM Reviewed)
+            if ((USER_IS_PI || USER_IS_ADMIN) && monRev && mgrRev) {
+                btns += `<button class="btn btn-sm" onclick="triggerCommonReviewAction(${r.id}, 'pi_sign_off', '${formType}')" title="PI Sign Off" style="padding: 0.25rem 0.55rem; font-size: 0.75rem; background: #4338ca; color: #fff; border: 1px solid #4338ca; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;"><span class="material-icons-round" style="font-size: 14px;">verified_user</span> PI Sign Off</button>`;
             }
         }
     }
 
     // Void (Coordinator / Admin - only if record is active and not locked)
-    if ((USER_IS_COORDINATOR || USER_IS_ADMIN) && !r.is_voided && !isLocked) {
+    if ((USER_IS_COORDINATOR || USER_IS_ADMIN) && !r.is_voided && !isLocked && !piSigned) {
         btns += `<button class="btn btn-sm" onclick="openCommonVoidModal(${r.id})" title="Void Record" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; display: inline-flex; align-items: center;"><span class="material-icons-round" style="font-size: 14px;">remove_circle_outline</span></button>`;
     }
 
@@ -4367,7 +4510,8 @@ function openCommonFormModal(recordId, formType, defaultData = null) {
         'MH': 'Medical History (MH)',
         'AE': 'Adverse Events (AE)',
         'CM': 'Concomitant Medications (CM)',
-        'TA': 'Tumor Assessment (TA)'
+        'TA': 'Tumor Assessment (TA)',
+        'USV': 'Unscheduled Visits (USV)'
     };
     const formNameStr = formNames[formType] || (formType + ' Form');
     const subTitleEl = document.getElementById('cfEditorSubTitle');
@@ -4455,6 +4599,11 @@ function renderCommonFieldHeader(rec, fieldKey, fieldLabel, isRequired = false) 
         tooltip = `View Closed Queries for ${fieldLabel || fieldKey}`;
     }
 
+    const recPiSigned = (rec && (rec.pi_signed_off === true || rec.pi_signed_off === 't' || rec.pi_signed_off === 1 || rec.pi_signed_off === '1'));
+    if (recPiSigned && activeCount === 0 && closedQueries.length === 0) {
+        tooltip = `Cannot Raise Query as the record is Signed Off by Principal Investigator`;
+    }
+
     const escapedLabel = (fieldLabel || fieldKey).replace(/<[^>]*>?/gm, '').trim();
     const cleanEscapedLabel = escapeHtml(escapedLabel).replace(/'/g, "\\'");
 
@@ -4483,6 +4632,7 @@ function setupEditorForm(rec, formType) {
     else if (formType === 'AE') iconHtml = '<span class="material-icons-round" style="color: #d97706; font-size: 1.35rem;">warning_amber</span>';
     else if (formType === 'CM') iconHtml = '<span class="material-icons-round" style="color: #059669; font-size: 1.35rem;">medication</span>';
     else if (formType === 'TA') iconHtml = '<span class="material-icons-round" style="color: #8b5cf6; font-size: 1.35rem;">radar</span>';
+    else if (formType === 'USV') iconHtml = '<span class="material-icons-round" style="color: #0284c7; font-size: 1.35rem;">more_time</span>';
 
     document.getElementById('cfEditorTitle').innerHTML = `${iconHtml} <span>${escapeHtml(rec.record_number)}</span>`;
 
@@ -4493,9 +4643,12 @@ function setupEditorForm(rec, formType) {
     const recMonRev = (rec.monitor_reviewed === true || rec.monitor_reviewed === 't' || rec.monitor_reviewed === 1 || rec.monitor_reviewed === '1');
     const recMgrRev = (rec.manager_reviewed === true || rec.manager_reviewed === 't' || rec.manager_reviewed === 1 || rec.manager_reviewed === '1');
     const recSdrSub = (rec.sdr_submitted === true || rec.sdr_submitted === 't' || rec.sdr_submitted === 1 || rec.sdr_submitted === '1');
+    const recPiSigned = (rec.pi_signed_off === true || rec.pi_signed_off === 't' || rec.pi_signed_off === 1 || rec.pi_signed_off === '1');
 
     let sdrBadge = '<span style="background: #f1f5f9; color: #64748b; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 500; white-space: nowrap;">Pending SDR</span>';
-    if ((recMonRev && recMgrRev) || rec.sdr_status === 'sdved_and_dm_reviewed') {
+    if (recPiSigned || rec.sdr_status === 'pi_signed_off') {
+        sdrBadge = '<span style="background: #e0e7ff; color: #4338ca; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;"><span class="material-icons-round" style="font-size: 14px;">verified_user</span> PI Signed Off</span>';
+    } else if ((recMonRev && recMgrRev) || rec.sdr_status === 'sdved_and_dm_reviewed') {
         sdrBadge = '<span style="background: #f0fdf4; color: #0d8e6f; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;"><span class="material-icons-round" style="font-size: 14px;">verified</span> SDVed & DM Reviewed</span>';
     } else if (recMgrRev && !recMonRev) {
         sdrBadge = '<span style="background: #f5f3ff; color: #6d28d9; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;"><span class="material-icons-round" style="font-size: 14px;">verified</span> DM Reviewed</span>';
@@ -4506,9 +4659,9 @@ function setupEditorForm(rec, formType) {
     } else if (rec.sdr_status === 'sdved' || rec.sdr_status === 'reviewed') {
         sdrBadge = '<span style="background: #ecfdf5; color: #047857; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;"><span class="material-icons-round" style="font-size: 14px;">check_circle</span> SDVed</span>';
     } else if (rec.sdr_status === 'under_review' || recSdrSub) {
-        sdrBadge = '<span style="background: #fef3c7; color: #b45309; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;"><span class="material-icons-round" style="font-size: 14px;">pending_actions</span> Under Review</span>';
+        sdrBadge = '<span style="background: #fef3c7; color: #b45309; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;"><span class="material-icons-round" style="font-size: 13px;">pending_actions</span> Under Review</span>';
     } else if (rec.sdr_status === 'needs_rereview') {
-        sdrBadge = '<span style="background: #fff7ed; color: #c2410c; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;"><span class="material-icons-round" style="font-size: 14px;">published_with_changes</span> Re-review</span>';
+        sdrBadge = '<span style="background: #fff7ed; color: #c2410c; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;"><span class="material-icons-round" style="font-size: 13px;">published_with_changes</span> Re-review</span>';
     }
     bBox.innerHTML = `${stBadge} ${sdrBadge} <span style="background: #f8fafc; color: #64748b; border: 1px solid #cbd5e1; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; white-space: nowrap;">v${rec.revision || 1}</span>`;
 
@@ -4526,37 +4679,52 @@ function setupEditorForm(rec, formType) {
             const sdrSub = !!rec.sdr_submitted;
             const monRev = !!rec.monitor_reviewed;
             const mgrRev = !!rec.manager_reviewed;
+            const piSigned = (rec.pi_signed_off === true || rec.pi_signed_off === 't' || rec.pi_signed_off === 1 || rec.pi_signed_off === '1');
 
-            // Coordinator
-            if (USER_IS_COORDINATOR) {
-                if (!sdrSub) {
-                    if (rec.status === 'complete') {
-                        mBtns += `<button type="button" class="btn btn-sm" onclick="closeModal('modalCommonFormEditor'); triggerCommonReviewAction(${rec.id}, 'mark_sdr', '${formType}')" style="background: #1d6f97; color: #fff; border: 1px solid #1d6f97; font-weight: 600; padding: 0.5rem 1.1rem; display: inline-flex; align-items: center; gap: 4px;"><span class="material-icons-round" style="font-size: 1rem;">lock</span> Mark as SDR</button>`;
-                    } else {
-                        mBtns += `<button type="button" class="btn btn-sm" onclick="showToast('Cannot mark as SDR: Record must be marked complete first.', 'warning')" style="background: #f1f5f9; color: #94a3b8; border: 1px solid #cbd5e1; cursor: not-allowed; padding: 0.5rem 1.1rem; display: inline-flex; align-items: center; gap: 4px;"><span class="material-icons-round" style="font-size: 1rem;">lock</span> Mark as SDR</button>`;
+            if (piSigned) {
+                // If PI Signed Off, only PI or Admin can revoke
+                if (USER_IS_PI || USER_IS_ADMIN) {
+                    mBtns += `<button type="button" class="btn btn-sm btn-outline" onclick="closeModal('modalCommonFormEditor'); triggerCommonReviewAction(${rec.id}, 'pi_revoke', '${formType}')" style="color: #dc2626; border: 1px solid #dc2626; font-weight: 600; padding: 0.5rem 1.1rem; display: inline-flex; align-items: center; gap: 4px;"><span class="material-icons-round" style="font-size: 1rem;">undo</span> Revoke PI Sign Off</button>`;
+                } else {
+                    mBtns += `<span class="badge" style="background: #e0e7ff; color: #4338ca; padding: 0.5rem 0.8rem; border-radius: 6px; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 4px;"><span class="material-icons-round" style="font-size: 1rem;">verified_user</span> PI Signed Off (Locked)</span>`;
+                }
+            } else {
+                // Coordinator
+                if (USER_IS_COORDINATOR) {
+                    if (!sdrSub) {
+                        if (rec.status === 'complete') {
+                            mBtns += `<button type="button" class="btn btn-sm" onclick="closeModal('modalCommonFormEditor'); triggerCommonReviewAction(${rec.id}, 'mark_sdr', '${formType}')" style="background: #1d6f97; color: #fff; border: 1px solid #1d6f97; font-weight: 600; padding: 0.5rem 1.1rem; display: inline-flex; align-items: center; gap: 4px;"><span class="material-icons-round" style="font-size: 1rem;">lock</span> Mark as SDR</button>`;
+                        } else {
+                            mBtns += `<button type="button" class="btn btn-sm" onclick="showToast('Cannot mark as SDR: Record must be marked complete first.', 'warning')" style="background: #f1f5f9; color: #94a3b8; border: 1px solid #cbd5e1; cursor: not-allowed; padding: 0.5rem 1.1rem; display: inline-flex; align-items: center; gap: 4px;"><span class="material-icons-round" style="font-size: 1rem;">lock</span> Mark as SDR</button>`;
+                        }
+                    } else if (sdrSub && !monRev && !mgrRev) {
+                        mBtns += `<button type="button" class="btn btn-sm btn-outline" onclick="closeModal('modalCommonFormEditor'); triggerCommonReviewAction(${rec.id}, 'revoke_sdr', '${formType}')" style="color: #dc2626; border: 1px solid #dc2626; font-weight: 600; padding: 0.5rem 1.1rem; display: inline-flex; align-items: center; gap: 4px;"><span class="material-icons-round" style="font-size: 1rem;">lock_open</span> Revoke SDR</button>`;
+                    } else if (sdrSub && (monRev || mgrRev) && !USER_IS_MONITOR && !USER_IS_MANAGER && !USER_IS_ADMIN) {
+                        mBtns += `<span class="badge" style="background: #f1f5f9; color: #64748b; padding: 0.5rem 0.8rem; border-radius: 6px; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 4px;"><span class="material-icons-round" style="font-size: 1rem;">lock</span> Form Locked</span>`;
                     }
-                } else if (sdrSub && !monRev && !mgrRev) {
-                    mBtns += `<button type="button" class="btn btn-sm btn-outline" onclick="closeModal('modalCommonFormEditor'); triggerCommonReviewAction(${rec.id}, 'revoke_sdr', '${formType}')" style="color: #dc2626; border: 1px solid #dc2626; font-weight: 600; padding: 0.5rem 1.1rem; display: inline-flex; align-items: center; gap: 4px;"><span class="material-icons-round" style="font-size: 1rem;">lock_open</span> Revoke SDR</button>`;
-                } else if (sdrSub && (monRev || mgrRev) && !USER_IS_MONITOR && !USER_IS_MANAGER && !USER_IS_ADMIN) {
-                    mBtns += `<span class="badge" style="background: #f1f5f9; color: #64748b; padding: 0.5rem 0.8rem; border-radius: 6px; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 4px;"><span class="material-icons-round" style="font-size: 1rem;">lock</span> Form Locked</span>`;
                 }
-            }
 
-            // Monitor
-            if ((USER_IS_MONITOR || USER_IS_ADMIN) && sdrSub) {
-                if (!monRev) {
-                    mBtns += `<button type="button" class="btn btn-sm" onclick="closeModal('modalCommonFormEditor'); triggerCommonReviewAction(${rec.id}, 'monitor_review', '${formType}')" style="background: #059669; color: #fff; border: 1px solid #059669; font-weight: 600; padding: 0.5rem 1.1rem; display: inline-flex; align-items: center; gap: 4px;"><span class="material-icons-round" style="font-size: 1rem;">verified</span> Mark as SDVed</button>`;
-                } else {
-                    mBtns += `<button type="button" class="btn btn-sm btn-outline" onclick="closeModal('modalCommonFormEditor'); triggerCommonReviewAction(${rec.id}, 'monitor_revoke', '${formType}')" style="color: #dc2626; border: 1px solid #dc2626; font-weight: 600; padding: 0.5rem 1.1rem; display: inline-flex; align-items: center; gap: 4px;"><span class="material-icons-round" style="font-size: 1rem;">undo</span> Revoke SDVed</button>`;
+                // Monitor
+                if ((USER_IS_MONITOR || USER_IS_ADMIN) && sdrSub) {
+                    if (!monRev) {
+                        mBtns += `<button type="button" class="btn btn-sm" onclick="closeModal('modalCommonFormEditor'); triggerCommonReviewAction(${rec.id}, 'monitor_review', '${formType}')" style="background: #059669; color: #fff; border: 1px solid #059669; font-weight: 600; padding: 0.5rem 1.1rem; display: inline-flex; align-items: center; gap: 4px;"><span class="material-icons-round" style="font-size: 1rem;">verified</span> Mark as SDVed</button>`;
+                    } else {
+                        mBtns += `<button type="button" class="btn btn-sm btn-outline" onclick="closeModal('modalCommonFormEditor'); triggerCommonReviewAction(${rec.id}, 'monitor_revoke', '${formType}')" style="color: #dc2626; border: 1px solid #dc2626; font-weight: 600; padding: 0.5rem 1.1rem; display: inline-flex; align-items: center; gap: 4px;"><span class="material-icons-round" style="font-size: 1rem;">undo</span> Revoke SDVed</button>`;
+                    }
                 }
-            }
 
-            // Manager
-            if ((USER_IS_MANAGER || USER_IS_ADMIN) && sdrSub) {
-                if (!mgrRev) {
-                    mBtns += `<button type="button" class="btn btn-sm" onclick="closeModal('modalCommonFormEditor'); triggerCommonReviewAction(${rec.id}, 'manager_review', '${formType}')" style="background: #6d28d9; color: #fff; border: 1px solid #6d28d9; font-weight: 600; padding: 0.5rem 1.1rem; display: inline-flex; align-items: center; gap: 4px;"><span class="material-icons-round" style="font-size: 1rem;">verified</span> Mark as DM Reviewed</button>`;
-                } else {
-                    mBtns += `<button type="button" class="btn btn-sm btn-outline" onclick="closeModal('modalCommonFormEditor'); triggerCommonReviewAction(${rec.id}, 'manager_revoke', '${formType}')" style="color: #dc2626; border: 1px solid #dc2626; font-weight: 600; padding: 0.5rem 1.1rem; display: inline-flex; align-items: center; gap: 4px;"><span class="material-icons-round" style="font-size: 1rem;">undo</span> Revoke DM Reviewed</button>`;
+                // Manager
+                if ((USER_IS_MANAGER || USER_IS_ADMIN) && sdrSub) {
+                    if (!mgrRev) {
+                        mBtns += `<button type="button" class="btn btn-sm" onclick="closeModal('modalCommonFormEditor'); triggerCommonReviewAction(${rec.id}, 'manager_review', '${formType}')" style="background: #6d28d9; color: #fff; border: 1px solid #6d28d9; font-weight: 600; padding: 0.5rem 1.1rem; display: inline-flex; align-items: center; gap: 4px;"><span class="material-icons-round" style="font-size: 1rem;">verified</span> Mark as DM Reviewed</button>`;
+                    } else {
+                        mBtns += `<button type="button" class="btn btn-sm btn-outline" onclick="closeModal('modalCommonFormEditor'); triggerCommonReviewAction(${rec.id}, 'manager_revoke', '${formType}')" style="color: #dc2626; border: 1px solid #dc2626; font-weight: 600; padding: 0.5rem 1.1rem; display: inline-flex; align-items: center; gap: 4px;"><span class="material-icons-round" style="font-size: 1rem;">undo</span> Revoke DM Reviewed</button>`;
+                    }
+                }
+
+                // Principal Investigator
+                if ((USER_IS_PI || USER_IS_ADMIN) && monRev && mgrRev) {
+                    mBtns += `<button type="button" class="btn btn-sm" onclick="closeModal('modalCommonFormEditor'); triggerCommonReviewAction(${rec.id}, 'pi_sign_off', '${formType}')" style="background: #4338ca; color: #fff; border: 1px solid #4338ca; font-weight: 600; padding: 0.5rem 1.1rem; display: inline-flex; align-items: center; gap: 4px;"><span class="material-icons-round" style="font-size: 1rem;">verified_user</span> PI Sign Off</button>`;
                 }
             }
 
@@ -4587,12 +4755,12 @@ function setupEditorForm(rec, formType) {
 
                     <div>
                         ${renderCommonFieldHeader(rec, 'start_date', '3. Start Date', false)}
-                        <input type="date" id="inp_mh_start_date" onchange="onMHDateChange()" class="form-input" value="${escapeHtml(d.start_date || '')}" style="width: 100%;">
+                        <input type="date" id="inp_mh_start_date" onchange="onMHDateChange()" class="form-input" max="${getTodayIST()}" value="${escapeHtml(d.start_date || '')}" style="width: 100%;">
                     </div>
 
                     <div>
                         ${renderCommonFieldHeader(rec, 'end_date', '4. End Date', false)}
-                        <input type="date" id="inp_mh_end_date" class="form-input" value="${escapeHtml(d.end_date || '')}" style="width: 100%;">
+                        <input type="date" id="inp_mh_end_date" class="form-input" max="${getTodayIST()}" value="${escapeHtml(d.end_date || '')}" style="width: 100%;">
                     </div>
                 </div>
 
@@ -4633,12 +4801,12 @@ function setupEditorForm(rec, formType) {
                 <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 1rem;">
                     <div>
                         ${renderCommonFieldHeader(rec, 'start_date', '2. Start Date', false)}
-                        <input type="date" id="inp_ae_start_date" class="form-input" value="${escapeHtml(d.start_date || '')}" style="width: 100%;">
+                        <input type="date" id="inp_ae_start_date" class="form-input" max="${getTodayIST()}" value="${escapeHtml(d.start_date || '')}" style="width: 100%;">
                     </div>
 
                     <div>
                         ${renderCommonFieldHeader(rec, 'end_date', '3. End Date', false)}
-                        <input type="date" id="inp_ae_end_date" class="form-input" value="${escapeHtml(d.end_date || '')}" style="width: 100%;">
+                        <input type="date" id="inp_ae_end_date" class="form-input" max="${getTodayIST()}" value="${escapeHtml(d.end_date || '')}" style="width: 100%;">
                     </div>
 
                     <div>
@@ -4747,12 +4915,12 @@ function setupEditorForm(rec, formType) {
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                     <div>
                         ${renderCommonFieldHeader(rec, 'start_date', '2. Start Date', false)}
-                        <input type="date" id="inp_cm_start_date" class="form-input" value="${escapeHtml(d.start_date || '')}" style="width: 100%;">
+                        <input type="date" id="inp_cm_start_date" class="form-input" max="${getTodayIST()}" value="${escapeHtml(d.start_date || '')}" style="width: 100%;">
                     </div>
 
                     <div>
                         ${renderCommonFieldHeader(rec, 'stop_date', '3. Stop Date', false)}
-                        <input type="date" id="inp_cm_stop_date" class="form-input" value="${escapeHtml(d.stop_date || '')}" style="width: 100%;">
+                        <input type="date" id="inp_cm_stop_date" class="form-input" max="${getTodayIST()}" value="${escapeHtml(d.stop_date || '')}" style="width: 100%;">
                     </div>
                 </div>
 
@@ -4863,7 +5031,7 @@ function setupEditorForm(rec, formType) {
                             </div>
                             <div>
                                 ${renderCommonFieldHeader(rec, 'imaging_date', 'Imaging Assessment Date', true)}
-                                <input type="date" id="inp_ta_imaging_date" class="form-input" value="${escapeHtml(d.imaging_date || '')}" style="width: 100%;">
+                                <input type="date" id="inp_ta_imaging_date" class="form-input" max="${getTodayIST()}" value="${escapeHtml(d.imaging_date || '')}" style="width: 100%;">
                             </div>
                             <div>
                                 ${renderCommonFieldHeader(rec, 'imaging_modality', 'Imaging Modality', true)}
@@ -5020,10 +5188,13 @@ function setupEditorForm(rec, formType) {
             reindexTaTlRows();
             reindexTaNtlRows();
         }
+    } else if (formType === 'USV') {
+        fieldsBox.innerHTML = renderUsvFormHtml(rec, d);
     }
 
-    // Strict Enforcement of Read-Only / Non-editable state for Data Managers & Monitors, or SDR Submitted forms
-    const isReadOnly = !USER_CAN_EDIT_CONTENT || !!rec.sdr_submitted;
+    // Strict Enforcement of Read-Only / Non-editable state for Data Managers & Monitors, or SDR Submitted forms, or PI Signed Off forms
+    const piSigned = (rec.pi_signed_off === true || rec.pi_signed_off === 't' || rec.pi_signed_off === 1 || rec.pi_signed_off === '1');
+    const isReadOnly = !USER_CAN_EDIT_CONTENT || !!rec.sdr_submitted || piSigned;
     const existingNotice = document.getElementById('cfReadOnlyNotice');
     if (existingNotice) existingNotice.remove();
 
@@ -5032,13 +5203,28 @@ function setupEditorForm(rec, formType) {
     const btnComplete = document.getElementById('btnCfMarkComplete');
 
     if (isReadOnly && formBody) {
-        const bannerMsg = !USER_CAN_EDIT_CONTENT 
-            ? '<strong>Read-Only Mode:</strong> Data Managers and Data Monitors cannot edit clinical content directly. Any required data corrections must be requested via Queries.' 
-            : '<strong>Form Locked:</strong> This record has been submitted for SDR and is locked from direct edits. Revoke SDR or manage queries to adjust content.';
+        let bannerMsg = '';
+        let bannerBg = '#eff6ff';
+        let bannerBorder = '#bfdbfe';
+        let bannerColor = '#1e40af';
+        let bannerIcon = 'info';
+
+        if (piSigned) {
+            bannerMsg = '<strong>Record Locked:</strong> This record has been Signed Off by Principal Investigator. All fields, queries, and features are completely locked.';
+            bannerBg = '#e0e7ff';
+            bannerBorder = '#c7d2fe';
+            bannerColor = '#3730a3';
+            bannerIcon = 'verified_user';
+        } else if (!USER_CAN_EDIT_CONTENT) {
+            bannerMsg = '<strong>Read-Only Mode:</strong> Users with this role cannot edit clinical content directly. Any required data corrections must be requested via Queries.';
+        } else {
+            bannerMsg = '<strong>Form Locked:</strong> This record has been submitted for SDR and is locked from direct edits. Revoke SDR or manage queries to adjust content.';
+        }
+
         const banner = document.createElement('div');
         banner.id = 'cfReadOnlyNotice';
-        banner.style.cssText = 'background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; padding: 0.75rem 1rem; border-radius: 8px; margin-bottom: 1.25rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.6rem;';
-        banner.innerHTML = `<span class="material-icons-round" style="color: #2563eb; font-size: 1.25rem;">info</span><span>${bannerMsg}</span>`;
+        banner.style.cssText = `background: ${bannerBg}; border: 1px solid ${bannerBorder}; color: ${bannerColor}; padding: 0.75rem 1rem; border-radius: 8px; margin-bottom: 1.25rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.6rem;`;
+        banner.innerHTML = `<span class="material-icons-round" style="color: ${bannerColor}; font-size: 1.25rem;">${bannerIcon}</span><span>${bannerMsg}</span>`;
         formBody.insertBefore(banner, formBody.firstChild);
 
         // Disable all inputs, selects, textareas inside cfEditorBody
@@ -5050,10 +5236,10 @@ function setupEditorForm(rec, formType) {
             el.style.cursor = 'not-allowed';
         });
 
-        // Hide mutation buttons inside formBody (e.g. + Add Target Lesion, Remove, + Add CM), but keep field query buttons active
+        // Hide mutation buttons inside formBody (e.g. + Add Target Lesion, Remove, + Add CM), but keep field query and navigation tab buttons active
         const subBtns = formBody.querySelectorAll('button');
         subBtns.forEach(btn => {
-            if (btn.id !== 'btnCfAudit' && btn.id !== 'btnCfQuery' && !btn.classList.contains('btn-cf-field-query')) {
+            if (btn.id !== 'btnCfAudit' && btn.id !== 'btnCfQuery' && !btn.classList.contains('btn-cf-field-query') && !btn.classList.contains('btn-usv-nav')) {
                 btn.style.display = 'none';
             }
         });
@@ -5378,7 +5564,575 @@ function reindexTaNtlRows() {
     }
 }
 
+// =========================================================================
+// USV (UNSCHEDULED VISITS) - FORM BUILDER & EVENT HANDLERS
+// =========================================================================
+function switchUsvSection(secNum, btn) {
+    document.querySelectorAll('.usv-section-card').forEach(el => el.style.display = 'none');
+    const target = document.getElementById('usv_sec_' + secNum);
+    if (target) target.style.display = 'block';
+
+    document.querySelectorAll('.btn-usv-nav').forEach(b => {
+        b.style.borderColor = '#cbd5e1';
+        b.style.background = '#fff';
+        b.style.color = '#475569';
+        b.classList.remove('active');
+    });
+
+    if (btn) {
+        btn.style.borderColor = '#0284c7';
+        btn.style.background = '#e0f2fe';
+        btn.style.color = '#0369a1';
+        btn.classList.add('active');
+    }
+}
+
+function onUsvVisitPerfChange() {
+    const val = document.getElementById('inp_usv_visit_performed')?.value || 'Yes';
+    const dateBox = document.getElementById('usvDateBox');
+    const reasonBox = document.getElementById('usvReasonBox');
+    const notPerfBox = document.getElementById('usvNotPerfBox');
+    if (val === 'Yes') {
+        if (dateBox) dateBox.style.display = 'block';
+        if (reasonBox) reasonBox.style.display = 'block';
+        if (notPerfBox) notPerfBox.style.display = 'none';
+    } else {
+        if (dateBox) dateBox.style.display = 'none';
+        if (reasonBox) reasonBox.style.display = 'none';
+        if (notPerfBox) notPerfBox.style.display = 'block';
+    }
+}
+
+function onUsvReasonChange() {
+    const val = document.getElementById('inp_usv_visit_reason_unscheduled')?.value || '';
+    const otherBox = document.getElementById('usvReasonOtherBox');
+    if (otherBox) otherBox.style.display = (val === 'Other') ? 'block' : 'none';
+}
+
+function onUsvNotPerfReasonChange() {
+    const val = document.getElementById('inp_usv_visit_not_performed_reason')?.value || '';
+    const deathBox = document.getElementById('usvDeathDateBox');
+    if (deathBox) deathBox.style.display = (val === 'Death') ? 'block' : 'none';
+}
+
+function onUsvVitalsAssChange() {
+    const val = document.getElementById('inp_usv_vitals_assessed')?.value || 'Yes';
+    const notAssBox = document.getElementById('usvVitalsNotAssBox');
+    const contentBox = document.getElementById('usvVitalsContentBox');
+    if (val === 'Yes') {
+        if (notAssBox) notAssBox.style.display = 'none';
+        if (contentBox) contentBox.style.display = 'block';
+    } else {
+        if (notAssBox) notAssBox.style.display = 'block';
+        if (contentBox) contentBox.style.display = 'none';
+    }
+}
+
+function onUsvHemaCollChange() {
+    const val = document.getElementById('inp_usv_hema_panel_collected')?.value || 'Yes';
+    const notCollBox = document.getElementById('usvHemaNotCollBox');
+    const contentBox = document.getElementById('usvHemaContentBox');
+    if (val === 'Yes') {
+        if (notCollBox) notCollBox.style.display = 'none';
+        if (contentBox) contentBox.style.display = 'block';
+    } else {
+        if (notCollBox) notCollBox.style.display = 'block';
+        if (contentBox) contentBox.style.display = 'none';
+    }
+}
+
+function onUsvChemCollChange() {
+    const val = document.getElementById('inp_usv_chem_panel_collected')?.value || 'Yes';
+    const notCollBox = document.getElementById('usvChemNotCollBox');
+    const contentBox = document.getElementById('usvChemContentBox');
+    if (val === 'Yes') {
+        if (notCollBox) notCollBox.style.display = 'none';
+        if (contentBox) contentBox.style.display = 'block';
+    } else {
+        if (notCollBox) notCollBox.style.display = 'block';
+        if (contentBox) contentBox.style.display = 'none';
+    }
+}
+
+function onUsvDrugAdminChange() {
+    const val = document.getElementById('inp_usv_drug_administered')?.value || 'Yes';
+    const notAdminBox = document.getElementById('usvDrugNotAdminBox');
+    const adminBox = document.getElementById('usvDrugAdminBox');
+    if (val === 'Yes') {
+        if (notAdminBox) notAdminBox.style.display = 'none';
+        if (adminBox) adminBox.style.display = 'block';
+    } else {
+        if (notAdminBox) notAdminBox.style.display = 'block';
+        if (adminBox) adminBox.style.display = 'none';
+    }
+}
+
+function onUsvDrugRouteChange() {
+    const val = document.getElementById('inp_usv_drug_route')?.value || '';
+    const ivBox = document.getElementById('usvIvInfusionBox');
+    if (ivBox) ivBox.style.display = (val === 'IV infusion') ? 'block' : 'none';
+}
+
+function onUsvFlagChange(prefix, code) {
+    const flagVal = document.getElementById(`inp_usv_${prefix}_${code}_flag`)?.value || 'Normal';
+    const clinSigBox = document.getElementById(`box_usv_${prefix}_${code}_clin_sig`);
+    const dashBox = document.getElementById(`dash_usv_${prefix}_${code}_clin_sig`);
+    const isAb = (flagVal === 'Low' || flagVal === 'High');
+    if (clinSigBox) clinSigBox.style.display = isAb ? 'block' : 'none';
+    if (dashBox) dashBox.style.display = isAb ? 'none' : 'block';
+}
+
+function renderUsvFormHtml(rec, d) {
+    const today = getTodayIST();
+    const nowTime = (new Date()).toTimeString().slice(0, 5);
+
+    const visitPerf = d.visit_performed || 'Yes';
+    const vitalsAss = d.vitals_assessed || 'Yes';
+    const hemaColl = d.hema_panel_collected || 'Yes';
+    const chemColl = d.chem_panel_collected || 'Yes';
+    const drugAdmin = d.drug_administered || 'Yes';
+
+    function labRow(prefix, code, name, unit, refLow, refHigh) {
+        const val = d[`${prefix}_${code}_val`] || '';
+        const flag = d[`${prefix}_${code}_flag`] || 'Normal';
+        const clinSig = d[`${prefix}_${code}_clin_sig`] || 'No';
+        const action = d[`${prefix}_${code}_action`] || '';
+        const isAb = (flag === 'Low' || flag === 'High');
+
+        return `
+            <tr style="border-bottom: 1px solid #f1f5f9; font-size: 0.85rem;">
+                <td style="padding: 0.6rem 0.75rem; font-weight: 600; color: #1e293b;">
+                    ${name}
+                    <div style="font-size: 0.7rem; color: #64748b; font-weight: normal;">Ref: ${refLow} – ${refHigh} ${unit}</div>
+                </td>
+                <td style="padding: 0.5rem 0.75rem; width: 140px;">
+                    <div style="display: flex; align-items: center; gap: 4px;">
+                        <input type="text" id="inp_usv_${prefix}_${code}_val" class="form-input" value="${escapeHtml(val)}" placeholder="${unit}" style="width: 100%; font-size: 0.85rem; padding: 0.35rem 0.5rem;">
+                        ${renderCommonFieldHeader(rec, `${prefix}_${code}_val`, '', false)}
+                    </div>
+                </td>
+                <td style="padding: 0.5rem 0.75rem; width: 130px;">
+                    <select id="inp_usv_${prefix}_${code}_flag" onchange="onUsvFlagChange('${prefix}', '${code}')" class="form-input" style="width: 100%; font-size: 0.85rem; padding: 0.35rem 0.5rem;">
+                        <option value="Normal" ${flag === 'Normal' ? 'selected' : ''}>Normal</option>
+                        <option value="Low" ${flag === 'Low' ? 'selected' : ''}>Low</option>
+                        <option value="High" ${flag === 'High' ? 'selected' : ''}>High</option>
+                        <option value="Not provided" ${flag === 'Not provided' ? 'selected' : ''}>Not provided</option>
+                    </select>
+                </td>
+                <td style="padding: 0.5rem 0.75rem; width: 110px;">
+                    <div id="box_usv_${prefix}_${code}_clin_sig" style="display: ${isAb ? 'block' : 'none'};">
+                        <select id="inp_usv_${prefix}_${code}_clin_sig" class="form-input" style="width: 100%; font-size: 0.85rem; padding: 0.35rem 0.5rem;">
+                            <option value="No" ${clinSig === 'No' ? 'selected' : ''}>No</option>
+                            <option value="Yes" ${clinSig === 'Yes' ? 'selected' : ''}>Yes (CS)</option>
+                        </select>
+                    </div>
+                    <div id="dash_usv_${prefix}_${code}_clin_sig" style="display: ${isAb ? 'none' : 'block'}; color: #94a3b8; text-align: center;">—</div>
+                </td>
+                <td style="padding: 0.5rem 0.75rem;">
+                    <input type="text" id="inp_usv_${prefix}_${code}_action" class="form-input" value="${escapeHtml(action)}" placeholder="Clinical comments / AE ref..." style="width: 100%; font-size: 0.85rem; padding: 0.35rem 0.5rem;">
+                </td>
+            </tr>
+        `;
+    }
+
+    return `
+        <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+            <!-- USV Section Tabs Navigation -->
+            <div style="display: flex; gap: 0.5rem; overflow-x: auto; padding: 0.35rem 0.5rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                <button type="button" class="btn-usv-nav active" onclick="switchUsvSection(1, this)" style="padding: 0.45rem 0.85rem; font-size: 0.8rem; font-weight: 600; border-radius: 6px; border: 1px solid #0284c7; background: #e0f2fe; color: #0369a1; cursor: pointer; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
+                    <span class="material-icons-round" style="font-size: 1rem;">event_available</span> 1. Visit Details
+                </button>
+                <button type="button" class="btn-usv-nav" onclick="switchUsvSection(2, this)" style="padding: 0.45rem 0.85rem; font-size: 0.8rem; font-weight: 600; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; color: #475569; cursor: pointer; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
+                    <span class="material-icons-round" style="font-size: 1rem;">favorite_border</span> 2. Vital Signs
+                </button>
+                <button type="button" class="btn-usv-nav" onclick="switchUsvSection(3, this)" style="padding: 0.45rem 0.85rem; font-size: 0.8rem; font-weight: 600; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; color: #475569; cursor: pointer; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
+                    <span class="material-icons-round" style="font-size: 1rem;">bloodtype</span> 3. Hematology
+                </button>
+                <button type="button" class="btn-usv-nav" onclick="switchUsvSection(4, this)" style="padding: 0.45rem 0.85rem; font-size: 0.8rem; font-weight: 600; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; color: #475569; cursor: pointer; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
+                    <span class="material-icons-round" style="font-size: 1rem;">science</span> 4. Chemistry
+                </button>
+                <button type="button" class="btn-usv-nav" onclick="switchUsvSection(5, this)" style="padding: 0.45rem 0.85rem; font-size: 0.8rem; font-weight: 600; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; color: #475569; cursor: pointer; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
+                    <span class="material-icons-round" style="font-size: 1rem;">medication</span> 5. Study Drug
+                </button>
+            </div>
+
+            <!-- SECTION 1: VISIT DETAILS -->
+            <div id="usv_sec_1" class="usv-section-card" style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem;">
+                <div style="font-weight: 700; color: #1e293b; font-size: 1rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; border-bottom: 1px solid #f1f5f9; padding-bottom: 0.75rem;">
+                    <span class="material-icons-round" style="color: #0284c7;">event_available</span> Form 1: Visit Details
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                    <div>
+                        ${renderCommonFieldHeader(rec, 'visit_performed', 'Was this Visit Performed?', true)}
+                        <select id="inp_usv_visit_performed" onchange="onUsvVisitPerfChange()" class="form-input" style="width: 100%;">
+                            <option value="Yes" ${visitPerf === 'Yes' ? 'selected' : ''}>Yes</option>
+                            <option value="No" ${visitPerf === 'No' ? 'selected' : ''}>No</option>
+                        </select>
+                    </div>
+                    <div id="usvDateBox" style="display: ${visitPerf === 'Yes' ? 'block' : 'none'};">
+                        ${renderCommonFieldHeader(rec, 'date_of_visit', 'Date of Visit', true)}
+                        <input type="date" id="inp_usv_date_of_visit" max="${today}" class="form-input" value="${escapeHtml(d.date_of_visit || '')}" style="width: 100%;">
+                    </div>
+                </div>
+
+                <div id="usvReasonBox" style="display: ${visitPerf === 'Yes' ? 'block' : 'none'}; margin-bottom: 1rem;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div>
+                            ${renderCommonFieldHeader(rec, 'visit_reason_unscheduled', 'Reason for Unscheduled Visit', true)}
+                            <select id="inp_usv_visit_reason_unscheduled" onchange="onUsvReasonChange()" class="form-input" style="width: 100%;">
+                                <option value="">-- Select Reason --</option>
+                                <option value="Adverse Event" ${d.visit_reason_unscheduled === 'Adverse Event' ? 'selected' : ''}>Adverse Event</option>
+                                <option value="Abnormal Laboratory Result" ${d.visit_reason_unscheduled === 'Abnormal Laboratory Result' ? 'selected' : ''}>Abnormal Laboratory Result</option>
+                                <option value="Disease Symptoms / Progression" ${d.visit_reason_unscheduled === 'Disease Symptoms / Progression' ? 'selected' : ''}>Disease Symptoms / Progression</option>
+                                <option value="Subject Request / Concern" ${d.visit_reason_unscheduled === 'Subject Request / Concern' ? 'selected' : ''}>Subject Request / Concern</option>
+                                <option value="Treatment Assessment" ${d.visit_reason_unscheduled === 'Treatment Assessment' ? 'selected' : ''}>Treatment Assessment</option>
+                                <option value="Safety Follow-up" ${d.visit_reason_unscheduled === 'Safety Follow-up' ? 'selected' : ''}>Safety Follow-up</option>
+                                <option value="Protocol Requirement" ${d.visit_reason_unscheduled === 'Protocol Requirement' ? 'selected' : ''}>Protocol Requirement</option>
+                                <option value="Other" ${d.visit_reason_unscheduled === 'Other' ? 'selected' : ''}>Other</option>
+                            </select>
+                        </div>
+                        <div id="usvReasonOtherBox" style="display: ${d.visit_reason_unscheduled === 'Other' ? 'block' : 'none'};">
+                            ${renderCommonFieldHeader(rec, 'unscheduled_reason_other', 'Specify Other Reason', true)}
+                            <input type="text" id="inp_usv_unscheduled_reason_other" class="form-input" value="${escapeHtml(d.unscheduled_reason_other || '')}" placeholder="Specify reason..." style="width: 100%;">
+                        </div>
+                    </div>
+                </div>
+
+                <div id="usvNotPerfBox" style="display: ${visitPerf === 'No' ? 'block' : 'none'}; margin-bottom: 1rem;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div>
+                            ${renderCommonFieldHeader(rec, 'visit_not_performed_reason', 'Primary reason visit was not performed', true)}
+                            <select id="inp_usv_visit_not_performed_reason" onchange="onUsvNotPerfReasonChange()" class="form-input" style="width: 100%;">
+                                <option value="">-- Select Reason --</option>
+                                <option value="Subject missed visit" ${d.visit_not_performed_reason === 'Subject missed visit' ? 'selected' : ''}>Subject missed visit</option>
+                                <option value="Subject refused / withdrew consent" ${d.visit_not_performed_reason === 'Subject refused / withdrew consent' ? 'selected' : ''}>Subject refused / withdrew consent</option>
+                                <option value="Investigator decision" ${d.visit_not_performed_reason === 'Investigator decision' ? 'selected' : ''}>Investigator decision</option>
+                                <option value="Technical / logistical failure" ${d.visit_not_performed_reason === 'Technical / logistical failure' ? 'selected' : ''}>Technical / logistical failure</option>
+                                <option value="Death" ${d.visit_not_performed_reason === 'Death' ? 'selected' : ''}>Death</option>
+                                <option value="Other" ${d.visit_not_performed_reason === 'Other' ? 'selected' : ''}>Other</option>
+                            </select>
+                        </div>
+                        <div id="usvDeathDateBox" style="display: ${d.visit_not_performed_reason === 'Death' ? 'block' : 'none'};">
+                            ${renderCommonFieldHeader(rec, 'date_of_death', 'Date of Death', true)}
+                            <input type="date" id="inp_usv_date_of_death" max="${today}" class="form-input" value="${escapeHtml(d.date_of_death || '')}" style="width: 100%;">
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    ${renderCommonFieldHeader(rec, 'visit_comments', 'Visit Comments / Notes', false)}
+                    <textarea id="inp_usv_visit_comments" class="form-input" rows="2" placeholder="Clinical observations / notes regarding this visit..." style="width: 100%; resize: vertical;">${escapeHtml(d.visit_comments || '')}</textarea>
+                </div>
+            </div>
+
+            <!-- SECTION 2: VITAL SIGNS -->
+            <div id="usv_sec_2" class="usv-section-card" style="display: none; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem;">
+                <div style="font-weight: 700; color: #1e293b; font-size: 1rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; border-bottom: 1px solid #f1f5f9; padding-bottom: 0.75rem;">
+                    <span class="material-icons-round" style="color: #059669;">favorite_border</span> Form 2: Pre-dose Vital Signs
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                    <div>
+                        ${renderCommonFieldHeader(rec, 'vitals_assessed', 'Were vital signs assessed?', true)}
+                        <select id="inp_usv_vitals_assessed" onchange="onUsvVitalsAssChange()" class="form-input" style="width: 100%;">
+                            <option value="Yes" ${vitalsAss === 'Yes' ? 'selected' : ''}>Yes</option>
+                            <option value="No" ${vitalsAss === 'No' ? 'selected' : ''}>No</option>
+                        </select>
+                    </div>
+                    <div id="usvVitalsNotAssBox" style="display: ${vitalsAss === 'No' ? 'block' : 'none'};">
+                        ${renderCommonFieldHeader(rec, 'vitals_not_assessed_reason', 'Reason vital signs not assessed', true)}
+                        <select id="inp_usv_vitals_not_assessed_reason" class="form-input" style="width: 100%;">
+                            <option value="">-- Select Reason --</option>
+                            <option value="Subject declined" ${d.vitals_not_assessed_reason === 'Subject declined' ? 'selected' : ''}>Subject declined</option>
+                            <option value="Equipment unavailable" ${d.vitals_not_assessed_reason === 'Equipment unavailable' ? 'selected' : ''}>Equipment unavailable</option>
+                            <option value="Subject unable to undergo assessment" ${d.vitals_not_assessed_reason === 'Subject unable to undergo assessment' ? 'selected' : ''}>Subject unable to undergo assessment</option>
+                            <option value="Other" ${d.vitals_not_assessed_reason === 'Other' ? 'selected' : ''}>Other</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="usvVitalsContentBox" style="display: ${vitalsAss === 'Yes' ? 'block' : 'none'};">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.25rem;">
+                        <div>
+                            ${renderCommonFieldHeader(rec, 'vitals_assessment_date', 'Assessment Date', true)}
+                            <input type="date" id="inp_usv_vitals_assessment_date" max="${today}" class="form-input" value="${escapeHtml(d.vitals_assessment_date || d.date_of_visit || '')}" style="width: 100%;">
+                        </div>
+                        <div>
+                            ${renderCommonFieldHeader(rec, 'vitals_assessment_time', 'Assessment Time', true)}
+                            <input type="time" id="inp_usv_vitals_assessment_time" class="form-input" value="${escapeHtml(d.vitals_assessment_time || nowTime)}" style="width: 100%;">
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem;">
+                        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.75rem;">
+                            ${renderCommonFieldHeader(rec, 'sbp_val', 'Systolic BP (mmHg)', true)}
+                            <input type="number" id="inp_usv_sbp_val" class="form-input" value="${escapeHtml(d.sbp_val || '')}" placeholder="e.g. 120" min="70" max="220" style="width: 100%;">
+                            <div style="font-size: 0.7rem; color: #64748b; margin-top: 3px;">Range: 70 – 200 mmHg</div>
+                        </div>
+
+                        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.75rem;">
+                            ${renderCommonFieldHeader(rec, 'dbp_val', 'Diastolic BP (mmHg)', true)}
+                            <input type="number" id="inp_usv_dbp_val" class="form-input" value="${escapeHtml(d.dbp_val || '')}" placeholder="e.g. 80" min="40" max="140" style="width: 100%;">
+                            <div style="font-size: 0.7rem; color: #64748b; margin-top: 3px;">Range: 40 – 130 mmHg</div>
+                        </div>
+
+                        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.75rem;">
+                            ${renderCommonFieldHeader(rec, 'hr_val', 'Heart Rate (bpm)', true)}
+                            <input type="number" id="inp_usv_hr_val" class="form-input" value="${escapeHtml(d.hr_val || '')}" placeholder="e.g. 72" min="40" max="200" style="width: 100%;">
+                            <div style="font-size: 0.7rem; color: #64748b; margin-top: 3px;">Range: 40 – 180 bpm</div>
+                        </div>
+
+                        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.75rem;">
+                            ${renderCommonFieldHeader(rec, 'rr_val', 'Resp. Rate (breaths/min)', true)}
+                            <input type="number" id="inp_usv_rr_val" class="form-input" value="${escapeHtml(d.rr_val || '')}" placeholder="e.g. 16" min="8" max="50" style="width: 100%;">
+                            <div style="font-size: 0.7rem; color: #64748b; margin-top: 3px;">Range: 8 – 40 /min</div>
+                        </div>
+
+                        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.75rem;">
+                            ${renderCommonFieldHeader(rec, 'temp_val', 'Body Temp (°C)', true)}
+                            <input type="number" step="0.1" id="inp_usv_temp_val" class="form-input" value="${escapeHtml(d.temp_val || '')}" placeholder="e.g. 36.8" min="34" max="43" style="width: 100%;">
+                            <div style="font-size: 0.7rem; color: #64748b; margin-top: 3px;">Range: 35.0 – 42.0 °C</div>
+                        </div>
+
+                        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.75rem;">
+                            ${renderCommonFieldHeader(rec, 'weight_val', 'Body Weight (kg)', false)}
+                            <input type="number" step="0.1" id="inp_usv_weight_val" class="form-input" value="${escapeHtml(d.weight_val || '')}" placeholder="e.g. 70.5" style="width: 100%;">
+                        </div>
+
+                        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.75rem;">
+                            ${renderCommonFieldHeader(rec, 'height_val', 'Height (cm)', false)}
+                            <input type="number" step="0.1" id="inp_usv_height_val" class="form-input" value="${escapeHtml(d.height_val || '')}" placeholder="e.g. 172.0" style="width: 100%;">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 3: HEMATOLOGY -->
+            <div id="usv_sec_3" class="usv-section-card" style="display: none; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem;">
+                <div style="font-weight: 700; color: #1e293b; font-size: 1rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; border-bottom: 1px solid #f1f5f9; padding-bottom: 0.75rem;">
+                    <span class="material-icons-round" style="color: #dc2626;">bloodtype</span> Form 3: Laboratory Assessment — Hematology
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                    <div>
+                        ${renderCommonFieldHeader(rec, 'hema_panel_collected', 'Was Hematology sample collected?', true)}
+                        <select id="inp_usv_hema_panel_collected" onchange="onUsvHemaCollChange()" class="form-input" style="width: 100%;">
+                            <option value="Yes" ${hemaColl === 'Yes' ? 'selected' : ''}>Yes</option>
+                            <option value="No" ${hemaColl === 'No' ? 'selected' : ''}>No</option>
+                        </select>
+                    </div>
+                    <div id="usvHemaNotCollBox" style="display: ${hemaColl === 'No' ? 'block' : 'none'};">
+                        ${renderCommonFieldHeader(rec, 'hema_not_collected_reason', 'Reason sample not collected', true)}
+                        <select id="inp_usv_hema_not_collected_reason" class="form-input" style="width: 100%;">
+                            <option value="">-- Select Reason --</option>
+                            <option value="Subject unavailable" ${d.hema_not_collected_reason === 'Subject unavailable' ? 'selected' : ''}>Subject unavailable</option>
+                            <option value="Subject declined" ${d.hema_not_collected_reason === 'Subject declined' ? 'selected' : ''}>Subject declined</option>
+                            <option value="Vein access failed" ${d.hema_not_collected_reason === 'Vein access failed' ? 'selected' : ''}>Vein access failed</option>
+                            <option value="Equipment unavailable" ${d.hema_not_collected_reason === 'Equipment unavailable' ? 'selected' : ''}>Equipment unavailable</option>
+                            <option value="Other" ${d.hema_not_collected_reason === 'Other' ? 'selected' : ''}>Other</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="usvHemaContentBox" style="display: ${hemaColl === 'Yes' ? 'block' : 'none'};">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                        <div>
+                            ${renderCommonFieldHeader(rec, 'hema_collection_date', 'Sample Collection Date', true)}
+                            <input type="date" id="inp_usv_hema_collection_date" max="${today}" class="form-input" value="${escapeHtml(d.hema_collection_date || d.date_of_visit || '')}" style="width: 100%;">
+                        </div>
+                        <div>
+                            ${renderCommonFieldHeader(rec, 'hema_collection_time', 'Sample Collection Time', true)}
+                            <input type="time" id="inp_usv_hema_collection_time" class="form-input" value="${escapeHtml(d.hema_collection_time || nowTime)}" style="width: 100%;">
+                        </div>
+                    </div>
+
+                    <table style="width: 100%; border-collapse: collapse; background: white; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden;">
+                        <thead style="background: #f8fafc; font-size: 0.8rem; color: #475569; border-bottom: 1px solid #cbd5e1;">
+                            <tr>
+                                <th style="padding: 0.6rem 0.75rem; text-align: left;">Hematology Test</th>
+                                <th style="padding: 0.6rem 0.75rem; text-align: left; width: 140px;">Result</th>
+                                <th style="padding: 0.6rem 0.75rem; text-align: left; width: 130px;">Flag</th>
+                                <th style="padding: 0.6rem 0.75rem; text-align: center; width: 110px;">Clin. Sig.?</th>
+                                <th style="padding: 0.6rem 0.75rem; text-align: left;">Comment / Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${labRow('hema', 'hgb', 'Hemoglobin (HGB)', 'g/dL', '12.0', '17.5')}
+                            ${labRow('hema', 'hct', 'Hematocrit (HCT)', '%', '36.0', '50.0')}
+                            ${labRow('hema', 'rbc', 'Red Blood Cells (RBC)', '10^6/µL', '4.2', '5.9')}
+                            ${labRow('hema', 'wbc', 'White Blood Cells (WBC)', '10^3/µL', '4.5', '11.0')}
+                            ${labRow('hema', 'anc', 'Absolute Neutrophils (ANC)', '10^3/µL', '1.5', '8.0')}
+                            ${labRow('hema', 'plt', 'Platelet Count (PLT)', '10^3/µL', '150', '450')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- SECTION 4: CHEMISTRY -->
+            <div id="usv_sec_4" class="usv-section-card" style="display: none; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem;">
+                <div style="font-weight: 700; color: #1e293b; font-size: 1rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; border-bottom: 1px solid #f1f5f9; padding-bottom: 0.75rem;">
+                    <span class="material-icons-round" style="color: #8b5cf6;">science</span> Form 4: Laboratory Assessment — Chemistry
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                    <div>
+                        ${renderCommonFieldHeader(rec, 'chem_panel_collected', 'Was Chemistry sample collected?', true)}
+                        <select id="inp_usv_chem_panel_collected" onchange="onUsvChemCollChange()" class="form-input" style="width: 100%;">
+                            <option value="Yes" ${chemColl === 'Yes' ? 'selected' : ''}>Yes</option>
+                            <option value="No" ${chemColl === 'No' ? 'selected' : ''}>No</option>
+                        </select>
+                    </div>
+                    <div id="usvChemNotCollBox" style="display: ${chemColl === 'No' ? 'block' : 'none'};">
+                        ${renderCommonFieldHeader(rec, 'chem_not_collected_reason', 'Reason sample not collected', true)}
+                        <select id="inp_usv_chem_not_collected_reason" class="form-input" style="width: 100%;">
+                            <option value="">-- Select Reason --</option>
+                            <option value="Subject unavailable" ${d.chem_not_collected_reason === 'Subject unavailable' ? 'selected' : ''}>Subject unavailable</option>
+                            <option value="Subject declined" ${d.chem_not_collected_reason === 'Subject declined' ? 'selected' : ''}>Subject declined</option>
+                            <option value="Vein access failed" ${d.chem_not_collected_reason === 'Vein access failed' ? 'selected' : ''}>Vein access failed</option>
+                            <option value="Equipment unavailable" ${d.chem_not_collected_reason === 'Equipment unavailable' ? 'selected' : ''}>Equipment unavailable</option>
+                            <option value="Other" ${d.chem_not_collected_reason === 'Other' ? 'selected' : ''}>Other</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="usvChemContentBox" style="display: ${chemColl === 'Yes' ? 'block' : 'none'};">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                        <div>
+                            ${renderCommonFieldHeader(rec, 'chem_collection_date', 'Sample Collection Date', true)}
+                            <input type="date" id="inp_usv_chem_collection_date" max="${today}" class="form-input" value="${escapeHtml(d.chem_collection_date || d.date_of_visit || '')}" style="width: 100%;">
+                        </div>
+                        <div>
+                            ${renderCommonFieldHeader(rec, 'chem_collection_time', 'Sample Collection Time', true)}
+                            <input type="time" id="inp_usv_chem_collection_time" class="form-input" value="${escapeHtml(d.chem_collection_time || nowTime)}" style="width: 100%;">
+                        </div>
+                    </div>
+
+                    <table style="width: 100%; border-collapse: collapse; background: white; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden;">
+                        <thead style="background: #f8fafc; font-size: 0.8rem; color: #475569; border-bottom: 1px solid #cbd5e1;">
+                            <tr>
+                                <th style="padding: 0.6rem 0.75rem; text-align: left;">Chemistry Test</th>
+                                <th style="padding: 0.6rem 0.75rem; text-align: left; width: 140px;">Result</th>
+                                <th style="padding: 0.6rem 0.75rem; text-align: left; width: 130px;">Flag</th>
+                                <th style="padding: 0.6rem 0.75rem; text-align: center; width: 110px;">Clin. Sig.?</th>
+                                <th style="padding: 0.6rem 0.75rem; text-align: left;">Comment / Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${labRow('chem', 'sod', 'Sodium (Na)', 'mmol/L', '135', '145')}
+                            ${labRow('chem', 'pot', 'Potassium (K)', 'mmol/L', '3.5', '5.0')}
+                            ${labRow('chem', 'glu', 'Glucose', 'mg/dL', '70', '100')}
+                            ${labRow('chem', 'cal', 'Calcium', 'mg/dL', '8.5', '10.5')}
+                            ${labRow('chem', 'alb', 'Albumin', 'g/dL', '3.5', '5.5')}
+                            ${labRow('chem', 'tp', 'Total Protein', 'g/dL', '6.0', '8.3')}
+                            ${labRow('chem', 'alt', 'Alanine Aminotransferase (ALT / SGPT)', 'U/L', '7', '56')}
+                            ${labRow('chem', 'ast', 'Aspartate Aminotransferase (AST / SGOT)', 'U/L', '10', '40')}
+                            ${labRow('chem', 'tbil', 'Total Bilirubin', 'mg/dL', '0.1', '1.2')}
+                            ${labRow('chem', 'creat', 'Serum Creatinine', 'mg/dL', '0.6', '1.2')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- SECTION 5: STUDY DRUG ADMINISTRATION -->
+            <div id="usv_sec_5" class="usv-section-card" style="display: none; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem;">
+                <div style="font-weight: 700; color: #1e293b; font-size: 1rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; border-bottom: 1px solid #f1f5f9; padding-bottom: 0.75rem;">
+                    <span class="material-icons-round" style="color: #6366f1;">medication</span> Form 5: Study Drug Administration
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                    <div>
+                        ${renderCommonFieldHeader(rec, 'drug_administered', 'Was study treatment administered?', true)}
+                        <select id="inp_usv_drug_administered" onchange="onUsvDrugAdminChange()" class="form-input" style="width: 100%;">
+                            <option value="Yes" ${drugAdmin === 'Yes' ? 'selected' : ''}>Yes</option>
+                            <option value="No" ${drugAdmin === 'No' ? 'selected' : ''}>No</option>
+                        </select>
+                    </div>
+                    <div id="usvDrugNotAdminBox" style="display: ${drugAdmin === 'No' ? 'block' : 'none'};">
+                        ${renderCommonFieldHeader(rec, 'drug_not_administered_reason', 'Reason treatment not administered', true)}
+                        <select id="inp_usv_drug_not_administered_reason" class="form-input" style="width: 100%;">
+                            <option value="">-- Select Reason --</option>
+                            <option value="Adverse event" ${d.drug_not_administered_reason === 'Adverse event' ? 'selected' : ''}>Adverse event</option>
+                            <option value="Laboratory finding" ${d.drug_not_administered_reason === 'Laboratory finding' ? 'selected' : ''}>Laboratory finding</option>
+                            <option value="Subject declined" ${d.drug_not_administered_reason === 'Subject declined' ? 'selected' : ''}>Subject declined</option>
+                            <option value="Treatment unavailable" ${d.drug_not_administered_reason === 'Treatment unavailable' ? 'selected' : ''}>Treatment unavailable</option>
+                            <option value="Investigator decision" ${d.drug_not_administered_reason === 'Investigator decision' ? 'selected' : ''}>Investigator decision</option>
+                            <option value="Other" ${d.drug_not_administered_reason === 'Other' ? 'selected' : ''}>Other</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="usvDrugAdminBox" style="display: ${drugAdmin === 'Yes' ? 'block' : 'none'};">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                        <div>
+                            ${renderCommonFieldHeader(rec, 'drug_name', 'Study Treatment Name / Code', true)}
+                            <input type="text" id="inp_usv_drug_name" class="form-input" value="${escapeHtml(d.drug_name || 'IMP-2026')}" style="width: 100%;">
+                        </div>
+                        <div>
+                            ${renderCommonFieldHeader(rec, 'drug_admin_date', 'Administration Date', true)}
+                            <input type="date" id="inp_usv_drug_admin_date" max="${today}" class="form-input" value="${escapeHtml(d.drug_admin_date || d.date_of_visit || '')}" style="width: 100%;">
+                        </div>
+                        <div>
+                            ${renderCommonFieldHeader(rec, 'drug_admin_start_time', 'Start Time', true)}
+                            <input type="time" id="inp_usv_drug_admin_start_time" class="form-input" value="${escapeHtml(d.drug_admin_start_time || nowTime)}" style="width: 100%;">
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                        <div>
+                            ${renderCommonFieldHeader(rec, 'drug_actual_dose', 'Actual Dose Administered', true)}
+                            <input type="text" id="inp_usv_drug_actual_dose" class="form-input" value="${escapeHtml(d.drug_actual_dose || '100.0')}" style="width: 100%;">
+                        </div>
+                        <div>
+                            ${renderCommonFieldHeader(rec, 'drug_dose_unit', 'Dose Unit', true)}
+                            <select id="inp_usv_drug_dose_unit" class="form-input" style="width: 100%;">
+                                <option value="mg" ${d.drug_dose_unit === 'mg' || !d.drug_dose_unit ? 'selected' : ''}>mg</option>
+                                <option value="mg/kg" ${d.drug_dose_unit === 'mg/kg' ? 'selected' : ''}>mg/kg</option>
+                                <option value="mg/m²" ${d.drug_dose_unit === 'mg/m²' ? 'selected' : ''}>mg/m²</option>
+                                <option value="mL" ${d.drug_dose_unit === 'mL' ? 'selected' : ''}>mL</option>
+                                <option value="mcg" ${d.drug_dose_unit === 'mcg' ? 'selected' : ''}>mcg</option>
+                            </select>
+                        </div>
+                        <div>
+                            ${renderCommonFieldHeader(rec, 'drug_route', 'Route of Administration', true)}
+                            <select id="inp_usv_drug_route" onchange="onUsvDrugRouteChange()" class="form-input" style="width: 100%;">
+                                <option value="Oral" ${d.drug_route === 'Oral' ? 'selected' : ''}>Oral</option>
+                                <option value="IV infusion" ${d.drug_route === 'IV infusion' ? 'selected' : ''}>IV infusion</option>
+                                <option value="Subcutaneous" ${d.drug_route === 'Subcutaneous' ? 'selected' : ''}>Subcutaneous</option>
+                                <option value="Other" ${d.drug_route === 'Other' ? 'selected' : ''}>Other</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="usvIvInfusionBox" style="display: ${d.drug_route === 'IV infusion' ? 'block' : 'none'}; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 0.85rem; margin-bottom: 1rem;">
+                        <div style="font-weight: 600; font-size: 0.85rem; color: #334155; margin-bottom: 0.5rem;">IV Infusion Details</div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                            <div>
+                                ${renderCommonFieldHeader(rec, 'iv_end_datetime', 'Infusion End Date / Time', false)}
+                                <input type="datetime-local" id="inp_usv_iv_end_datetime" class="form-input" value="${escapeHtml(d.iv_end_datetime || '')}" style="width: 100%;">
+                            </div>
+                            <div>
+                                ${renderCommonFieldHeader(rec, 'iv_interrupted', 'Was infusion interrupted?', false)}
+                                <select id="inp_usv_iv_interrupted" class="form-input" style="width: 100%;">
+                                    <option value="No" ${d.iv_interrupted === 'No' || !d.iv_interrupted ? 'selected' : ''}>No</option>
+                                    <option value="Yes" ${d.iv_interrupted === 'Yes' ? 'selected' : ''}>Yes</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        ${renderCommonFieldHeader(rec, 'drug_comments', 'Dose Comments / Notes', false)}
+                        <textarea id="inp_usv_drug_comments" class="form-input" rows="2" placeholder="Administration notes..." style="width: 100%; resize: vertical;">${escapeHtml(d.drug_comments || '')}</textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
 function renderAeCritCb(val, label, selectedList) {
+
     const isChecked = selectedList.includes(val) ? 'checked' : '';
     return `
         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #431407; font-weight: 500; cursor: pointer;">
@@ -5688,6 +6442,46 @@ function saveCommonRecord(mode) {
                 data[`ntl${i}_status`] = '';
             }
         }
+    } else if (formType === 'USV') {
+        const usvFieldKeys = [
+            'visit_performed', 'date_of_visit', 'visit_reason_unscheduled', 'unscheduled_reason_other',
+            'visit_not_performed_reason', 'date_of_death', 'visit_comments',
+            'vitals_assessed', 'vitals_not_assessed_reason',
+            'vitals_assessment_date', 'vitals_assessment_time',
+            'sbp_val', 'dbp_val', 'hr_val', 'rr_val', 'temp_val', 'weight_val', 'height_val',
+            'hema_panel_collected', 'hema_not_collected_reason',
+            'hema_collection_date', 'hema_collection_time',
+            'hema_hgb_val', 'hema_hgb_flag', 'hema_hgb_clin_sig', 'hema_hgb_action',
+            'hema_hct_val', 'hema_hct_flag', 'hema_hct_clin_sig', 'hema_hct_action',
+            'hema_rbc_val', 'hema_rbc_flag', 'hema_rbc_clin_sig', 'hema_rbc_action',
+            'hema_wbc_val', 'hema_wbc_flag', 'hema_wbc_clin_sig', 'hema_wbc_action',
+            'hema_anc_val', 'hema_anc_flag', 'hema_anc_clin_sig', 'hema_anc_action',
+            'hema_plt_val', 'hema_plt_flag', 'hema_plt_clin_sig', 'hema_plt_action',
+            'chem_panel_collected', 'chem_not_collected_reason',
+            'chem_collection_date', 'chem_collection_time',
+            'chem_sod_val', 'chem_sod_flag', 'chem_sod_clin_sig', 'chem_sod_action',
+            'chem_pot_val', 'chem_pot_flag', 'chem_pot_clin_sig', 'chem_pot_action',
+            'chem_glu_val', 'chem_glu_flag', 'chem_glu_clin_sig', 'chem_glu_action',
+            'chem_cal_val', 'chem_cal_flag', 'chem_cal_clin_sig', 'chem_cal_action',
+            'chem_alb_val', 'chem_alb_flag', 'chem_alb_clin_sig', 'chem_alb_action',
+            'chem_tp_val', 'chem_tp_flag', 'chem_tp_clin_sig', 'chem_tp_action',
+            'chem_alt_val', 'chem_alt_flag', 'chem_alt_clin_sig', 'chem_alt_action',
+            'chem_ast_val', 'chem_ast_flag', 'chem_ast_clin_sig', 'chem_ast_action',
+            'chem_tbil_val', 'chem_tbil_flag', 'chem_tbil_clin_sig', 'chem_tbil_action',
+            'chem_creat_val', 'chem_creat_flag', 'chem_creat_clin_sig', 'chem_creat_action',
+            'drug_administered', 'drug_not_administered_reason',
+            'drug_name', 'drug_admin_date', 'drug_admin_start_time', 'drug_route',
+            'drug_actual_dose', 'drug_dose_unit', 'drug_comments',
+            'iv_end_datetime', 'iv_interrupted'
+        ];
+        usvFieldKeys.forEach(k => {
+            const el = document.getElementById('inp_usv_' + k);
+            if (el) {
+                data[k] = el.value.trim();
+            } else {
+                data[k] = '';
+            }
+        });
     }
 
     const fd = new FormData();
@@ -5800,6 +6594,24 @@ function triggerCommonReviewAction(recordId, workflowAction, formType = null) {
         btnStyle = 'background: #dc2626; border: none; color: #fff; font-weight: 600;';
         requireRemarks = true;
         remarksLabel = 'Reason for Revoking DM Reviewed';
+    } else if (workflowAction === 'pi_sign_off') {
+        modalTitle = 'Principal Investigator Sign Off';
+        modalMsg = 'Are you sure you want to perform <strong>PI Sign Off</strong> on this record? Once signed off, this record will be completely locked. No queries, field changes, or revocations will be permitted for any role unless the PI revokes the sign off.';
+        icon = 'verified_user';
+        iconBg = '#e0e7ff';
+        iconColor = '#4338ca';
+        btnText = 'Yes, PI Sign Off';
+        btnStyle = 'background: #4338ca; border: none; color: #fff; font-weight: 600;';
+    } else if (workflowAction === 'pi_revoke') {
+        modalTitle = 'Revoke PI Sign Off';
+        modalMsg = 'Are you sure you want to revoke the <strong>Principal Investigator Sign Off</strong>? The record will return to the previous stage of <strong>SDVed & DM Reviewed</strong>.';
+        icon = 'undo';
+        iconBg = '#fef2f2';
+        iconColor = '#dc2626';
+        btnText = 'Confirm Revoke PI Sign Off';
+        btnStyle = 'background: #dc2626; border: none; color: #fff; font-weight: 600;';
+        requireRemarks = true;
+        remarksLabel = 'Reason for Revoking PI Sign Off';
     }
 
     showConfirmModal({
@@ -5985,6 +6797,66 @@ const COMMON_FORM_FIELD_MAP = {
         { key: 'new_lesions_details', label: 'New Lesion Details / Anatomical Location', type: 'text', placeholder: 'Specify organ and location of new lesion...' },
         { key: 'recist_overall_response', label: 'RECIST 1.1 Overall Response', type: 'select', options: ['CR — Complete Response', 'PR — Partial Response', 'SD — Stable Disease', 'PD — Progressive Disease', 'NE — Not Evaluable'] },
         { key: 'comments', label: 'Clinical Comments / Radiology Notes', type: 'textarea', placeholder: 'Enter additional radiological remarks...' }
+    ],
+    'USV': [
+        { key: 'visit_performed', label: 'Was Visit Performed?', type: 'select', options: ['Yes', 'No'] },
+        { key: 'date_of_visit', label: 'Date of Visit', type: 'date' },
+        { key: 'visit_reason_unscheduled', label: 'Reason for Unscheduled Visit', type: 'select', options: ['Adverse Event (AE) Assessment / Follow-up', 'Concomitant Medication Assessment', 'Abnormal Laboratory Result Follow-up', 'Patient Reported Symptoms / Deterioration', 'Dose Modification / Toxicity Re-evaluation', 'Protocol Compliance / Safety Re-check', 'Other'] },
+        { key: 'unscheduled_reason_other', label: 'Specify Other Reason', type: 'text', placeholder: 'Specify reason...' },
+        { key: 'visit_not_performed_reason', label: 'Reason Visit Not Performed', type: 'select', options: ['Subject Missed / Failed to Attend', 'Subject Withdrew Consent', 'Subject Lost to Follow-up', 'Subject Hospitalized', 'Subject Deceased', 'Adverse Event', 'Site Logistical Issue / Weather / Transport', 'Other'] },
+        { key: 'date_of_death', label: 'Date of Death', type: 'date' },
+        { key: 'visit_comments', label: 'Visit Comments / Remarks', type: 'textarea', placeholder: 'Enter clinical comments...' },
+        { key: 'vitals_assessed', label: 'Vital Signs Assessed?', type: 'select', options: ['Yes', 'No'] },
+        { key: 'vitals_not_assessed_reason', label: 'Reason Vitals Not Assessed', type: 'text', placeholder: 'Specify reason...' },
+        { key: 'vitals_assessment_date', label: 'Vitals Assessment Date', type: 'date' },
+        { key: 'vitals_assessment_time', label: 'Vitals Assessment Time', type: 'text', placeholder: 'HH:MM' },
+        { key: 'sbp_val', label: 'Systolic Blood Pressure (mmHg)', type: 'number', placeholder: '120' },
+        { key: 'dbp_val', label: 'Diastolic Blood Pressure (mmHg)', type: 'number', placeholder: '80' },
+        { key: 'hr_val', label: 'Heart Rate (bpm)', type: 'number', placeholder: '72' },
+        { key: 'rr_val', label: 'Respiratory Rate (breaths/min)', type: 'number', placeholder: '16' },
+        { key: 'temp_val', label: 'Body Temperature (°C)', type: 'number', step: '0.1', placeholder: '36.8' },
+        { key: 'weight_val', label: 'Weight (kg)', type: 'number', step: '0.1', placeholder: '70.0' },
+        { key: 'height_val', label: 'Height (cm)', type: 'number', step: '0.5', placeholder: '172.0' },
+        { key: 'hema_panel_collected', label: 'Hematology Collected?', type: 'select', options: ['Yes', 'No'] },
+        { key: 'hema_not_collected_reason', label: 'Reason Hematology Not Collected', type: 'text', placeholder: 'Specify reason...' },
+        { key: 'hema_collection_date', label: 'Hematology Collection Date', type: 'date' },
+        { key: 'hema_hgb_val', label: 'Hemoglobin (g/dL)', type: 'number', step: '0.1', placeholder: '14.2' },
+        { key: 'hema_hgb_flag', label: 'Hemoglobin Normality', type: 'select', options: ['Normal', 'Low', 'High', 'Abnormal'] },
+        { key: 'hema_hct_val', label: 'Hematocrit (%)', type: 'number', step: '0.1', placeholder: '42.0' },
+        { key: 'hema_hct_flag', label: 'Hematocrit Normality', type: 'select', options: ['Normal', 'Low', 'High', 'Abnormal'] },
+        { key: 'hema_rbc_val', label: 'RBC (10^12/L)', type: 'number', step: '0.01', placeholder: '4.8' },
+        { key: 'hema_rbc_flag', label: 'RBC Normality', type: 'select', options: ['Normal', 'Low', 'High', 'Abnormal'] },
+        { key: 'hema_wbc_val', label: 'WBC (10^9/L)', type: 'number', step: '0.01', placeholder: '6.5' },
+        { key: 'hema_wbc_flag', label: 'WBC Normality', type: 'select', options: ['Normal', 'Low', 'High', 'Abnormal'] },
+        { key: 'hema_anc_val', label: 'ANC (10^9/L)', type: 'number', step: '0.01', placeholder: '3.8' },
+        { key: 'hema_anc_flag', label: 'ANC Normality', type: 'select', options: ['Normal', 'Low', 'High', 'Abnormal'] },
+        { key: 'hema_plt_val', label: 'Platelet Count (10^9/L)', type: 'number', step: '1', placeholder: '240' },
+        { key: 'hema_plt_flag', label: 'Platelet Normality', type: 'select', options: ['Normal', 'Low', 'High', 'Abnormal'] },
+        { key: 'chem_panel_collected', label: 'Chemistry Collected?', type: 'select', options: ['Yes', 'No'] },
+        { key: 'chem_not_collected_reason', label: 'Reason Chemistry Not Collected', type: 'text', placeholder: 'Specify reason...' },
+        { key: 'chem_collection_date', label: 'Chemistry Collection Date', type: 'date' },
+        { key: 'chem_sod_val', label: 'Sodium (mmol/L)', type: 'number', step: '0.1', placeholder: '140' },
+        { key: 'chem_pot_val', label: 'Potassium (mmol/L)', type: 'number', step: '0.1', placeholder: '4.2' },
+        { key: 'chem_glu_val', label: 'Glucose (mg/dL)', type: 'number', step: '1', placeholder: '95' },
+        { key: 'chem_cal_val', label: 'Calcium (mg/dL)', type: 'number', step: '0.1', placeholder: '9.2' },
+        { key: 'chem_alb_val', label: 'Albumin (g/dL)', type: 'number', step: '0.1', placeholder: '4.1' },
+        { key: 'chem_tp_val', label: 'Total Protein (g/dL)', type: 'number', step: '0.1', placeholder: '7.2' },
+        { key: 'chem_alt_val', label: 'ALT / SGPT (U/L)', type: 'number', step: '1', placeholder: '28' },
+        { key: 'chem_alt_flag', label: 'ALT Normality', type: 'select', options: ['Normal', 'Low', 'High', 'Abnormal'] },
+        { key: 'chem_ast_val', label: 'AST / SGOT (U/L)', type: 'number', step: '1', placeholder: '24' },
+        { key: 'chem_ast_flag', label: 'AST Normality', type: 'select', options: ['Normal', 'Low', 'High', 'Abnormal'] },
+        { key: 'chem_tbil_val', label: 'Total Bilirubin (mg/dL)', type: 'number', step: '0.1', placeholder: '0.8' },
+        { key: 'chem_tbil_flag', label: 'Total Bilirubin Normality', type: 'select', options: ['Normal', 'Low', 'High', 'Abnormal'] },
+        { key: 'chem_creat_val', label: 'Serum Creatinine (mg/dL)', type: 'number', step: '0.01', placeholder: '0.9' },
+        { key: 'chem_creat_flag', label: 'Creatinine Normality', type: 'select', options: ['Normal', 'Low', 'High', 'Abnormal'] },
+        { key: 'drug_administered', label: 'Study Drug Administered?', type: 'select', options: ['Yes', 'No'] },
+        { key: 'drug_not_administered_reason', label: 'Reason Drug Not Administered', type: 'text', placeholder: 'Specify reason...' },
+        { key: 'drug_name', label: 'Study Drug Name', type: 'text', placeholder: 'e.g. Investigational Product X' },
+        { key: 'drug_admin_date', label: 'Administration Date', type: 'date' },
+        { key: 'drug_actual_dose', label: 'Actual Dose Administered', type: 'number', step: '0.1', placeholder: '100' },
+        { key: 'drug_dose_unit', label: 'Dose Unit', type: 'select', options: ['mg', 'g', 'mL', 'mg/kg', 'mg/m2', 'IU'] },
+        { key: 'drug_route', label: 'Route of Administration', type: 'select', options: ['Oral (PO)', 'Intravenous (IV) Infusion', 'Subcutaneous (SC)', 'Intramuscular (IM)', 'Topical', 'Inhalation'] },
+        { key: 'drug_comments', label: 'Drug Administration Comments', type: 'textarea', placeholder: 'Enter comments...' }
     ]
 };
 
@@ -6025,7 +6897,7 @@ function renderCommonQueryProposedInput(formType, fieldName, queryId, currentVal
 
     if (fType === 'date') {
         return `
-            <input type="date" id="inp_ans_val_${queryId}" class="form-input" style="width: 100%; font-size: 0.85rem; padding: 0.45rem 0.6rem; border-color: #cbd5e1; background: #fff;">
+            <input type="date" id="inp_ans_val_${queryId}" class="form-input" max="${getTodayIST()}" style="width: 100%; font-size: 0.85rem; padding: 0.45rem 0.6rem; border-color: #cbd5e1; background: #fff;">
             <div style="font-size: 0.7rem; color: #64748b; margin-top: 3px;">Select proposed date (leave blank if date remains unchanged).</div>
         `;
     }
@@ -6157,8 +7029,16 @@ function openCommonQueryModal(recordId, targetFieldKey = null, targetFieldLabel 
         if (isMonitorOrManager) {
             const isMonReviewed = !!rec.monitor_reviewed;
             const isMgrReviewed = !!rec.manager_reviewed;
+            const isPiSigned = (rec.pi_signed_off === true || rec.pi_signed_off === 't' || rec.pi_signed_off === 1 || rec.pi_signed_off === '1');
 
-            if (isMonReviewed && !isManager) {
+            if (isPiSigned) {
+                html += `
+                    <div style="background: #e0e7ff; border: 1px solid #c7d2fe; color: #3730a3; padding: 0.85rem; border-radius: 8px; margin-bottom: 1.25rem; font-size: 0.85rem; display: flex; align-items: center; gap: 8px;">
+                        <span class="material-icons-round" style="font-size: 1.2rem;">lock</span>
+                        <div>Cannot Raise Query as the record is Signed Off by <strong>Principal Investigator</strong>. All queries, field changes, and revocations are completely locked.</div>
+                    </div>
+                `;
+            } else if (isMonReviewed && !isManager) {
                 html += `
                     <div style="background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 0.85rem; border-radius: 8px; margin-bottom: 1.25rem; font-size: 0.85rem; display: flex; align-items: center; gap: 8px;">
                         <span class="material-icons-round" style="font-size: 1.2rem;">lock</span>
@@ -6323,8 +7203,10 @@ function openCommonQueryModal(recordId, targetFieldKey = null, targetFieldLabel 
 
                 html += `</div>`;
 
+                const isPiSigned = (rec.pi_signed_off === true || rec.pi_signed_off === 't' || rec.pi_signed_off === 1 || rec.pi_signed_off === '1');
+
                 // Coordinator Answer Form
-                if (q.status !== 'closed' && (USER_IS_COORDINATOR || USER_IS_ADMIN)) {
+                if (q.status !== 'closed' && (USER_IS_COORDINATOR || USER_IS_ADMIN) && !isPiSigned) {
                     const rawVal = (q.field_name && rec.data) ? (rec.data[q.field_name] !== undefined ? rec.data[q.field_name] : '') : '';
                     const currentValDisplay = Array.isArray(rawVal) ? rawVal.join(', ') : String(rawVal || '');
                     html += `
@@ -6356,7 +7238,7 @@ function openCommonQueryModal(recordId, targetFieldKey = null, targetFieldLabel 
                 }
 
                 // Reviewer Close / Re-open Controls
-                if (isMonitorOrManager) {
+                if (isMonitorOrManager && !isPiSigned) {
                     const qRoleLower = (q.raised_by_role || '').toLowerCase();
                     const isQMon = qRoleLower.includes('monitor');
                     const isQMgr = qRoleLower.includes('manager');
@@ -6412,6 +7294,14 @@ function openCommonQueryModal(recordId, targetFieldKey = null, targetFieldLabel 
                         `;
                     }
                     html += `</div>`;
+                }
+
+                if (isPiSigned) {
+                    html += `
+                        <div style="margin-top: 0.75rem; padding: 0.5rem 0.75rem; background: #e0e7ff; color: #3730a3; border-radius: 6px; font-size: 0.75rem; display: flex; align-items: center; gap: 6px;">
+                            <span class="material-icons-round" style="font-size: 14px;">lock</span> Record is Signed Off by Principal Investigator. Queries cannot be answered or modified.
+                        </div>
+                    `;
                 }
 
                 html += `</div>`;

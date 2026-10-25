@@ -10,7 +10,7 @@ require_once __DIR__ . '/../config/db.php';
 function getProtocolTemplateDefinition() {
     return [
         'name' => 'Standard Oncology Protocol (Visits & Forms)',
-        'description' => 'Structured 3-visit oncology clinical study protocol with RECIST 1.1, laboratory panels, vital signs, study drug administration, and complete skip-logic workflow.',
+        'description' => 'Structured 5-visit oncology clinical study protocol (Screening, Day 1, Day 2, Day 3, End of Treatment / Study) with RECIST 1.1, laboratory panels, vital signs, study drug administration, and complete skip-logic workflow.',
         
         // Option groups to seed for the study
         'option_groups' => [
@@ -393,8 +393,70 @@ function getProtocolTemplateDefinition() {
                 ]
             ],
             [
-                'name' => 'End of Treatment / End of Study',
+                'name' => 'Day 2',
                 'order' => 3,
+                'forms' => [
+                    [
+                        'name' => 'Visit Details',
+                        'order' => 1,
+                        'fields' => getVisitDetailsFields()
+                    ],
+                    [
+                        'name' => 'Pre-dose Vital Signs',
+                        'order' => 2,
+                        'fields' => getVitalSignsFields('Pre-dose')
+                    ],
+                    [
+                        'name' => 'Laboratory Assessment Hematology',
+                        'order' => 3,
+                        'fields' => getHematologyFields('Pre-dose')
+                    ],
+                    [
+                        'name' => 'Laboratory Assessment Chemistry',
+                        'order' => 4,
+                        'fields' => getChemistryFields('Pre-dose')
+                    ],
+                    [
+                        'name' => 'Study Drug Administration',
+                        'order' => 5,
+                        'fields' => getStudyDrugAdministrationFields()
+                    ]
+                ]
+            ],
+            [
+                'name' => 'Day 3',
+                'order' => 4,
+                'forms' => [
+                    [
+                        'name' => 'Visit Details',
+                        'order' => 1,
+                        'fields' => getVisitDetailsFields()
+                    ],
+                    [
+                        'name' => 'Pre-dose Vital Signs',
+                        'order' => 2,
+                        'fields' => getVitalSignsFields('Pre-dose')
+                    ],
+                    [
+                        'name' => 'Laboratory Assessment Hematology',
+                        'order' => 3,
+                        'fields' => getHematologyFields('Pre-dose')
+                    ],
+                    [
+                        'name' => 'Laboratory Assessment Chemistry',
+                        'order' => 4,
+                        'fields' => getChemistryFields('Pre-dose')
+                    ],
+                    [
+                        'name' => 'Study Drug Administration',
+                        'order' => 5,
+                        'fields' => getStudyDrugAdministrationFields()
+                    ]
+                ]
+            ],
+            [
+                'name' => 'End of Treatment / End of Study',
+                'order' => 5,
                 'forms' => [
                     [
                         'name' => 'Visit Details',
@@ -1637,6 +1699,7 @@ function importProtocolTemplate($pdo, $study_id) {
 
             if ($existingVisitId) {
                 $visitId = (int)$existingVisitId;
+                $pdo->prepare("UPDATE study_visits SET order_index = ? WHERE id = ?")->execute([$vData['order'], $visitId]);
             } else {
                 $stmt = $pdo->prepare("INSERT INTO study_visits (study_id, name, order_index) VALUES (?, ?, ?)");
                 $stmt->execute([$study_id, $vData['name'], $vData['order']]);

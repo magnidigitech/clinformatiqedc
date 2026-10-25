@@ -216,7 +216,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="form-section">
                 <label class="form-label">Study Protocol Template</label>
                 <div style="margin-bottom: 0.75rem; color: var(--text-light); font-size: 0.85rem;">
-                    Pre-configures clinical visits (Screening, Day 1, End of Treatment), standard forms, RECIST 1.1, lab panels, and skip logic.
+                    Pre-configures clinical visits (Screening, Day 1, Day 2, Day 3, End of Treatment), standard forms, RECIST 1.1, lab panels, and skip logic.
                 </div>
                 
                 <div class="radio-group">
@@ -224,7 +224,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <input type="radio" name="template" value="oncology_protocol" checked>
                         <span>
                             <strong style="color: #166534;">Standard Protocol (Visits & Forms Specification)</strong>
-                            <div style="font-size: 0.75rem; color: #15803d;">Includes Screening, Day 1, End of Treatment / Study with structured forms & skip logic</div>
+                            <div style="font-size: 0.75rem; color: #15803d;">Includes Screening, Day 1, Day 2, Day 3, End of Treatment / Study with structured forms & skip logic</div>
                         </span>
                     </label>
                     <label class="radio-item" style="padding: 0.5rem; border-radius: 6px; cursor: pointer;">

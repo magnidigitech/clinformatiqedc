@@ -100,6 +100,7 @@ function getFormReviewStatus($f_stat) {
     $sdr = (bool)($f_stat['sdr_submitted'] ?? false);
     $monitor = (bool)($f_stat['monitor_reviewed'] ?? false);
     $manager = (bool)($f_stat['manager_reviewed'] ?? false);
+    $pi_signed = (bool)($f_stat['pi_signed_off'] ?? false);
     $progress = (int)($f_stat['progress'] ?? 0);
     $status_str = $f_stat['status'] ?? 'empty';
     
@@ -107,6 +108,10 @@ function getFormReviewStatus($f_stat) {
         return ['text' => 'Not Applicable', 'color' => '#94a3b8', 'bg' => '#f1f5f9', 'icon' => 'block', 'progress' => 100, 'bar_color' => '#cbd5e1'];
     }
     
+    if ($pi_signed) {
+        return ['text' => 'PI Signed Off', 'color' => '#4338ca', 'bg' => '#e0e7ff', 'icon' => 'verified_user', 'progress' => 100, 'bar_color' => '#4338ca'];
+    }
+
     if (!$sdr) {
         if ($status_str === 'complete' || $progress == 100) {
             return ['text' => 'Draft (100% Complete)', 'color' => '#0d8e6f', 'bg' => '#f0fdf4', 'icon' => 'check_circle', 'progress' => 0, 'bar_color' => '#cbd5e1'];
@@ -131,11 +136,39 @@ function getFormReviewStatus($f_stat) {
 /**
  * Render SDR / Review Workflow buttons.
  */
-function renderWorkflowButtons($is_coordinator, $is_monitor_role, $is_manager_role, $sdr_submitted, $monitor_reviewed, $manager_reviewed, $all_mandatory_completed) {
+function renderWorkflowButtons($is_coordinator, $is_monitor_role, $is_manager_role, $sdr_submitted, $monitor_reviewed, $manager_reviewed, $all_mandatory_completed, $pi_signed_off = false, $is_pi_role = false) {
     $html = '';
+
+    // If PI Signed Off is active:
+    // No revokes allowed for any roles (Coordinator, Monitor, Manager).
+    // Only PI can revoke PI Sign Off!
+    if ($pi_signed_off) {
+        $html .= '<span class="badge" style="background: #e0e7ff; color: #4338ca; border: 1px solid #c7d2fe; padding: 0.35rem 0.75rem; border-radius: 6px; font-size: 0.85rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.35rem;">
+                    <span class="material-icons-round" style="font-size: 1.1rem; color: #4338ca;">verified_user</span> PI Signed Off
+                  </span>';
+
+        if ($is_pi_role) {
+            $html .= '<button type="button" class="btn btn-outline" style="color: #4338ca; border-color: #4338ca; display: inline-flex; align-items: center; gap: 0.25rem;" onclick="updateReviewStatus(\'pi_revoke\')">
+                        <span class="material-icons-round" style="font-size: 1.1rem;">undo</span>
+                        Revoke PI Sign Off
+                      </button>';
+        }
+        return $html;
+    }
+
+    // Normal workflow (not PI Signed Off):
+
+    // Principal Investigator Sign Off button:
+    // Allowed when BOTH SDVed & DM Reviewed!
+    if ($is_pi_role && $monitor_reviewed && $manager_reviewed) {
+        $html .= '<button type="button" class="btn btn-primary" style="background-color: #4f46e5; border-color: #4f46e5; display: inline-flex; align-items: center; gap: 0.25rem;" onclick="updateReviewStatus(\'pi_sign_off\')">
+                    <span class="material-icons-round" style="font-size: 1.1rem;">draw</span>
+                    PI Sign Off
+                  </button>';
+    }
     
     // Data Coordinator actions
-    if ($is_coordinator) {
+    if ($is_coordinator && !$is_pi_role) {
         if (!$sdr_submitted) {
             $html .= '<button type="button" class="btn btn-primary" style="background-color: #1d6f97; border-color: #1d6f97; display: inline-flex; align-items: center; gap: 0.25rem;" onclick="updateReviewStatus(\'mark_sdr\')">
                         <span class="material-icons-round" style="font-size: 1.1rem;">lock</span>
@@ -151,7 +184,7 @@ function renderWorkflowButtons($is_coordinator, $is_monitor_role, $is_manager_ro
     }
     
     // Data Monitor actions
-    if ($is_monitor_role && $sdr_submitted) {
+    if ($is_monitor_role && $sdr_submitted && !$is_pi_role) {
         if (!$monitor_reviewed) {
             $html .= '<button type="button" class="btn btn-primary" style="background-color: #059669; border-color: #059669; display: inline-flex; align-items: center; gap: 0.25rem;" onclick="updateReviewStatus(\'monitor_review\')">
                         <span class="material-icons-round" style="font-size: 1.1rem;">verified</span>
@@ -166,7 +199,7 @@ function renderWorkflowButtons($is_coordinator, $is_monitor_role, $is_manager_ro
     }
     
     // Data Manager actions
-    if ($is_manager_role && $sdr_submitted) {
+    if ($is_manager_role && $sdr_submitted && !$is_pi_role) {
         if (!$manager_reviewed) {
             $html .= '<button type="button" class="btn btn-primary" style="background-color: #6d28d9; border-color: #6d28d9; display: inline-flex; align-items: center; gap: 0.25rem;" onclick="updateReviewStatus(\'manager_review\')">
                         <span class="material-icons-round" style="font-size: 1.1rem;">verified</span>
@@ -181,7 +214,7 @@ function renderWorkflowButtons($is_coordinator, $is_monitor_role, $is_manager_ro
     }
 
     // Display Form Locked badge when Coordinator views a form where Monitor SDVed or Manager DM Reviewed
-    if ($is_coordinator && !$is_monitor_role && !$is_manager_role && $sdr_submitted && ($monitor_reviewed || $manager_reviewed)) {
+    if ($is_coordinator && !$is_monitor_role && !$is_manager_role && !$is_pi_role && $sdr_submitted && ($monitor_reviewed || $manager_reviewed)) {
         $html .= '<span class="badge" style="background: #f1f5f9; color: #64748b; padding: 0.35rem 0.75rem; border-radius: 6px; font-size: 0.8rem; font-weight: 500; display: inline-flex; align-items: center; gap: 0.25rem;">
                     <span class="material-icons-round" style="font-size: 1rem;">lock</span> Form Locked
                   </span>';
@@ -741,11 +774,13 @@ function renderFieldInput($field, $saved_value = '', $choices_map = []) {
             break;
 
         case 'date':
-            echo '<input type="date" name="'.$name.'" data-var="'.$var.'" class="crf-input" value="'.$value.'" placeholder="MM/DD/YYYY" '.$disabled.'>';
+            $today_ist = (new DateTime('now', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d');
+            echo '<input type="date" name="'.$name.'" data-var="'.$var.'" class="crf-input" value="'.$value.'" max="'.$today_ist.'" placeholder="YYYY-MM-DD" '.$disabled.'>';
             break;
 
         case 'datetime':
-            echo '<input type="datetime-local" name="'.$name.'" data-var="'.$var.'" class="crf-input" value="'.$value.'" '.$disabled.'>';
+            $now_ist = (new DateTime('now', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d\TH:i');
+            echo '<input type="datetime-local" name="'.$name.'" data-var="'.$var.'" class="crf-input" value="'.$value.'" max="'.$now_ist.'" '.$disabled.'>';
             break;
 
         case 'time':

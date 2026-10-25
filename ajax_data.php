@@ -23,12 +23,13 @@ try {
     $is_coordinator = (strpos($role_lower, 'coordinator') !== false) || (strpos($role_lower, 'entry') !== false) || (strpos($role_lower, 'admin') !== false);
     $is_monitor = (strpos($role_lower, 'monitor') !== false) || (strpos($role_lower, 'admin') !== false);
     $is_manager = (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'admin') !== false);
-    // Strict clinical content editor flag: Data Managers and Data Monitors cannot edit clinical content.
-    $is_data_editor = ($is_coordinator || (strpos($role_lower, 'admin') !== false)) && (strpos($role_lower, 'manager') === false) && (strpos($role_lower, 'monitor') === false);
+    $is_pi = (strpos($role_lower, 'investigator') !== false) || ($role_lower === 'pi') || (strpos($role_lower, 'admin') !== false);
+    // Strict clinical content editor flag: Data Managers, Data Monitors, and Principal Investigators cannot edit clinical content.
+    $is_data_editor = ($is_coordinator || (strpos($role_lower, 'admin') !== false)) && (strpos($role_lower, 'manager') === false) && (strpos($role_lower, 'monitor') === false) && (strpos($role_lower, 'investigator') === false) && ($role_lower !== 'pi');
 
     if ($action === 'save_data') {
-        if (!$is_data_editor || (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'monitor') !== false)) {
-            throw new Exception("Unauthorized: Data Managers and Data Monitors cannot edit clinical content.");
+        if (!$is_data_editor || (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'monitor') !== false) || (strpos($role_lower, 'investigator') !== false) || ($role_lower === 'pi')) {
+            throw new Exception("Unauthorized: Data Managers, Data Monitors, and Principal Investigators cannot edit clinical content.");
         }
         if (!hasPermission('enter_data') && !hasPermission('edit') && !$is_coordinator) {
             throw new Exception("Unauthorized: Enter Data permission required");
@@ -74,21 +75,21 @@ try {
         $chk->execute([$subject_id, $study_id]);
         if (!$chk->fetch()) throw new Exception("Invalid subject");
 
-        // Enforce read-only lock if SDR is submitted or form is SDVed/DM Reviewed
-        $stmt_lock = $pdo->prepare("SELECT sdr_submitted, monitor_reviewed, manager_reviewed FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
+        // Enforce read-only lock if SDR is submitted, form is SDVed/DM Reviewed, or PI Signed Off
+        $stmt_lock = $pdo->prepare("SELECT sdr_submitted, monitor_reviewed, manager_reviewed, pi_signed_off FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
         $stmt_lock->execute([$subject_id, $form_id, $repeating_instance_id, $repeating_instance_id]);
         $lock_row = $stmt_lock->fetch();
-        if ($lock_row && ((bool)$lock_row['sdr_submitted'] || (bool)$lock_row['monitor_reviewed'] || (bool)$lock_row['manager_reviewed'])) {
-            throw new Exception("This form is locked (SDR submitted / reviewed) and cannot be edited.");
+        if ($lock_row && ((bool)$lock_row['sdr_submitted'] || (bool)$lock_row['monitor_reviewed'] || (bool)$lock_row['manager_reviewed'] || (bool)$lock_row['pi_signed_off'])) {
+            throw new Exception("This form is locked (SDR submitted / reviewed / PI signed off) and cannot be edited.");
         }
 
-        // Enforce guard: Day 1 Visit is disabled if Screening Visit was not performed
+        // Enforce guard: Day 1, Day 2, Day 3 Visits are disabled if Screening Visit was not performed
         if ($visit_id > 0) {
             $stmt_check_v = $pdo->prepare("SELECT name FROM study_visits WHERE id = ?");
             $stmt_check_v->execute([$visit_id]);
             $v_name = $stmt_check_v->fetchColumn() ?: '';
 
-            if (stripos($v_name, 'day 1') !== false || stripos($v_name, 'day-1') !== false || stripos($v_name, 'day1') !== false) {
+            if (preg_match('/day\s*[-_]?\s*\d+/i', $v_name)) {
                 $stmt_scr = $pdo->prepare("
                     SELECT sd.value 
                     FROM subject_data sd
@@ -103,7 +104,7 @@ try {
                 $stmt_scr->execute([$subject_id, $study_id]);
                 $scr_perf = $stmt_scr->fetchColumn();
                 if ($scr_perf !== false && strcasecmp(trim($scr_perf), 'No') === 0) {
-                    throw new Exception("Day 1 Visit is disabled because the initial Screening Visit was not performed. Directly proceed to End of Treatment / End of Study.");
+                    throw new Exception(htmlspecialchars($v_name) . " Visit is disabled because the initial Screening Visit was not performed. Directly proceed to End of Treatment / End of Study.");
                 }
             }
         }
@@ -123,9 +124,26 @@ try {
             $stmt_old = $pdo->prepare("SELECT value FROM subject_data WHERE subject_id = ? AND form_id = ? AND field_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
             $stmt_audit = $pdo->prepare("INSERT INTO data_audit_log (study_id, subject_id, visit_id, form_id, field_id, repeating_instance_id, old_value, new_value, reason_for_change, change_type, action_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
+            // Preload field types to enforce date validation in IST
+            $stmt_f_meta = $pdo->prepare("SELECT id, type, label FROM form_fields WHERE form_id = ?");
+            $stmt_f_meta->execute([$form_id]);
+            $fields_meta_map = $stmt_f_meta->fetchAll(PDO::FETCH_UNIQUE | PDO::FETCH_ASSOC);
+            $today_ist = (new DateTime('now', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d');
+
             foreach ($data as $field_id => $value) {
                 // Ensure value is a string for storage (collapses checkbox arrays)
                 $val_to_save = is_array($value) ? implode(',', $value) : $value;
+                
+                // Validate future date in IST for date / datetime fields
+                $f_info = $fields_meta_map[$field_id] ?? null;
+                if ($f_info && in_array($f_info['type'], ['date', 'datetime-local', 'datetime'], true)) {
+                    if (trim($val_to_save) !== '') {
+                        $check_date = substr(trim($val_to_save), 0, 10);
+                        if ($check_date > $today_ist) {
+                            throw new Exception("Future Date has been selected, Please Select the Correct Date");
+                        }
+                    }
+                }
                 
                 // Get old value for audit logging
                 $stmt_old->execute([$subject_id, $form_id, $field_id, $repeating_instance_id, $repeating_instance_id]);
@@ -310,14 +328,18 @@ try {
         $query_text = trim($_POST['query_text'] ?? '');
         $user_id = $_SESSION['user_id'];
 
-        // Server side check if form is reviewed for active role
-        $stmt_stat = $pdo->prepare("SELECT monitor_reviewed, manager_reviewed FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
+        // Server side check if form is reviewed for active role or PI signed off
+        $stmt_stat = $pdo->prepare("SELECT monitor_reviewed, manager_reviewed, pi_signed_off FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
         $stmt_stat->execute([$subject_id, $form_id, $repeating_instance_id, $repeating_instance_id]);
         $status_row = $stmt_stat->fetch(PDO::FETCH_ASSOC);
         
         $monitor_reviewed = $status_row ? (bool)$status_row['monitor_reviewed'] : false;
         $manager_reviewed = $status_row ? (bool)$status_row['manager_reviewed'] : false;
-        
+        $pi_signed_off = $status_row ? (bool)$status_row['pi_signed_off'] : false;
+
+        if ($pi_signed_off) {
+            throw new Exception("Cannot Raise Query as the form has been Signed Off by Principal Investigator");
+        }
         if ($is_monitor && $monitor_reviewed) {
             throw new Exception("Cannot Raise Query as the form is marked as SDVed");
         }
@@ -386,6 +408,18 @@ try {
 
         if (!$new_status) throw new Exception("Status required");
         
+        // Enforce lock if form is signed off by Principal Investigator
+        $stmt_qchk = $pdo->prepare("SELECT subject_id, form_id, COALESCE(repeating_instance_id, 0) as repeating_instance_id FROM data_queries WHERE id = ?");
+        $stmt_qchk->execute([$query_id]);
+        $qchk = $stmt_qchk->fetch();
+        if ($qchk) {
+            $stmt_pichk = $pdo->prepare("SELECT pi_signed_off FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
+            $stmt_pichk->execute([$qchk['subject_id'], $qchk['form_id'], $qchk['repeating_instance_id'], $qchk['repeating_instance_id']]);
+            if ((bool)$stmt_pichk->fetchColumn()) {
+                throw new Exception("Action prohibited: Form has been Signed Off by Principal Investigator and is completely locked.");
+            }
+        }
+        
         $pdo->beginTransaction();
         try {
             // Check if there is an optional field value update
@@ -420,6 +454,18 @@ try {
                     $old_val = ($old_val === false) ? null : $old_val;
                     
                     if ($field_value !== '' && $old_val !== $field_value) {
+                        // Enforce no future date for date field queries in IST
+                        $stmt_f_chk = $pdo->prepare("SELECT type FROM form_fields WHERE id = ?");
+                        $stmt_f_chk->execute([$fld_id]);
+                        $ftype = $stmt_f_chk->fetchColumn();
+                        if ($ftype && in_array($ftype, ['date', 'datetime-local', 'datetime'], true)) {
+                            $today_ist = (new DateTime('now', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d');
+                            $check_date = substr(trim($field_value), 0, 10);
+                            if ($check_date > $today_ist) {
+                                throw new Exception("Future Date has been selected, Please Select the Correct Date");
+                            }
+                        }
+
                         $hist_old_val = $old_val;
                         $hist_new_val = $field_value;
                         
@@ -881,6 +927,14 @@ try {
          $sdr_submitted = $status_row ? (bool)$status_row['sdr_submitted'] : false;
          $monitor_reviewed = $status_row ? (bool)$status_row['monitor_reviewed'] : false;
          $manager_reviewed = $status_row ? (bool)$status_row['manager_reviewed'] : false;
+         $pi_signed_off = $status_row ? (bool)$status_row['pi_signed_off'] : false;
+         $pi_signed_by = $status_row ? $status_row['pi_signed_by'] : null;
+         $pi_signed_at = $status_row ? $status_row['pi_signed_at'] : null;
+         
+         // Strict PI freeze: If form is Signed Off by Principal Investigator, NO changes or revocations are permitted for any other roles
+         if ($pi_signed_off && $workflow_action !== 'pi_revoke') {
+             throw new Exception("This form has been Signed Off by Principal Investigator. No changes or revocations are permitted for any role.");
+         }
          
          $pdo->beginTransaction();
          try {
@@ -1001,6 +1055,57 @@ try {
                    $audit_logs[] = ['manager_revoked', $remarks];
                    $audit_logs[] = ['sdr_revoked', 'SDR Revoked due to DM Reviewed Revocation. Remarks: ' . $remarks];
                  
+             } elseif ($workflow_action === 'pi_sign_off') {
+                 if (!$is_pi) {
+                     throw new Exception("Unauthorized: Only Principal Investigators can perform PI Sign Off.");
+                 }
+                 if (!$monitor_reviewed || !$manager_reviewed) {
+                     throw new Exception("Cannot sign off: Form must be both SDVed and DM Reviewed before Principal Investigator sign off.");
+                 }
+                 if ($pi_signed_off) {
+                     throw new Exception("Form is already signed off by Principal Investigator.");
+                 }
+                 
+                 // Check if there are unresolved queries on this form
+                 $stmt_open_q = $pdo->prepare("SELECT COUNT(*) FROM data_queries WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL)) AND status != 'closed'");
+                 $stmt_open_q->execute([$subject_id, $form_id, $repeating_instance_id, $repeating_instance_id]);
+                 if ((int)$stmt_open_q->fetchColumn() > 0) {
+                     throw new Exception("Cannot sign off: All open queries on this form must be answered and closed before PI Sign Off.");
+                 }
+
+                 $pi_signed_off = true;
+                 $pi_signed_by = $user_id;
+                 $pi_signed_at = date('Y-m-d H:i:s');
+                 $audit_logs[] = ['pi_signed_off', 'PI Sign Off completed by Principal Investigator'];
+
+             } elseif ($workflow_action === 'pi_revoke') {
+                 if (!$is_pi) {
+                     throw new Exception("Unauthorized: Only Principal Investigators can revoke PI Sign Off.");
+                 }
+                 if (!$pi_signed_off) {
+                     throw new Exception("PI Sign Off has not been completed.");
+                 }
+                 
+                 $remarks = trim($_POST['remarks'] ?? '');
+                 if ($remarks === '') {
+                     throw new Exception("Please enter a reason before revoking PI Sign Off.");
+                 }
+                 if (mb_strlen($remarks) < 10) {
+                     throw new Exception("Remarks must be at least 10 characters.");
+                 }
+                 if (mb_strlen($remarks) > 500) {
+                     throw new Exception("Remarks cannot exceed 500 characters.");
+                 }
+                 
+                 // If the PI Sign Off is Revoked it goes back to previous stage of SDVed & DM Reviewed
+                 $pi_signed_off = false;
+                 $pi_signed_by = null;
+                 $pi_signed_at = null;
+                 $sdr_submitted = true;
+                 $monitor_reviewed = true;
+                 $manager_reviewed = true;
+                 $audit_logs[] = ['pi_revoked', 'PI Sign Off Revoked. Remarks: ' . $remarks];
+
              } else {
                  throw new Exception("Invalid workflow action: " . htmlspecialchars($workflow_action));
              }
@@ -1016,11 +1121,16 @@ try {
              $sdr_val = $sdr_submitted ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
              $mon_val = $monitor_reviewed ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
              $mgr_val = $manager_reviewed ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
+             $pi_val = $pi_signed_off ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
+             $pi_by_val = $pi_signed_off ? (int)$pi_signed_by : null;
+             $pi_at_val = $pi_signed_off ? ($pi_signed_at ?: date('Y-m-d H:i:s')) : null;
              
              // Update or Insert the subject_form_status row
              // We can calculate status text based on matrix for backward compatibility
              $status_text = 'in_progress';
-             if (!$sdr_submitted) {
+             if ($pi_signed_off) {
+                 $status_text = 'verified';
+             } elseif (!$sdr_submitted) {
                  // Determine completion status
                  $stmt_count_fields = $pdo->prepare("SELECT COUNT(*) FROM form_fields WHERE form_id = ?");
                  $stmt_count_fields->execute([$form_id]);
@@ -1039,9 +1149,7 @@ try {
                  if ($progress > 100) $progress = 100;
                  $status_text = ($progress == 100) ? 'complete' : 'in_progress';
              } else {
-                 if ($manager_reviewed) {
-                     $status_text = 'verified'; 
-                 } elseif ($monitor_reviewed) {
+                 if ($manager_reviewed || $monitor_reviewed) {
                      $status_text = 'verified'; 
                  } else {
                      $status_text = 'complete';
@@ -1050,22 +1158,25 @@ try {
              
              $is_complete_val = ($status_text === 'complete' || $status_text === 'verified') ? 'true' : 'false';
              
-             $is_verified_val = ($monitor_reviewed || $manager_reviewed) ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
+             $is_verified_val = ($monitor_reviewed || $manager_reviewed || $pi_signed_off) ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
              if ($status_row) {
                  $sql_upd = "UPDATE subject_form_status 
                              SET sdr_submitted = $sdr_val, 
                                  monitor_reviewed = $mon_val, 
                                  manager_reviewed = $mgr_val, 
                                  is_verified = $is_verified_val, 
+                                 pi_signed_off = $pi_val,
+                                 pi_signed_by = ?,
+                                 pi_signed_at = ?,
                                  status = ?, 
                                  is_complete = ?,
                                  updated_at = NOW() 
                              WHERE id = ?";
-                 $pdo->prepare($sql_upd)->execute([$status_text, $is_complete_val, $status_row['id']]);
+                 $pdo->prepare($sql_upd)->execute([$pi_by_val, $pi_at_val, $status_text, $is_complete_val, $status_row['id']]);
              } else {
-                 $sql_ins = "INSERT INTO subject_form_status (study_id, subject_id, visit_id, form_id, repeating_instance_id, sdr_submitted, monitor_reviewed, manager_reviewed, is_verified, status, is_complete, progress_percent, updated_at) 
-                             VALUES (?, ?, ?, ?, ?, $sdr_val, $mon_val, $mgr_val, $is_verified_val, ?, ?, 0, NOW())";
-                 $pdo->prepare($sql_ins)->execute([$study_id, $subject_id, $visit_id, $form_id, $repeating_instance_id, $status_text, $is_complete_val]);
+                 $sql_ins = "INSERT INTO subject_form_status (study_id, subject_id, visit_id, form_id, repeating_instance_id, sdr_submitted, monitor_reviewed, manager_reviewed, is_verified, pi_signed_off, pi_signed_by, pi_signed_at, status, is_complete, progress_percent, updated_at) 
+                             VALUES (?, ?, ?, ?, ?, $sdr_val, $mon_val, $mgr_val, $is_verified_val, $pi_val, ?, ?, ?, ?, 0, NOW())";
+                 $pdo->prepare($sql_ins)->execute([$study_id, $subject_id, $visit_id, $form_id, $repeating_instance_id, $pi_by_val, $pi_at_val, $status_text, $is_complete_val]);
              }
              
              // Insert Data Audit Logs
@@ -1095,7 +1206,8 @@ try {
                  'is_verified' => 0,
                  'sdr_submitted' => 0, 
                  'monitor_reviewed' => 0, 
-                 'manager_reviewed' => 0
+                 'manager_reviewed' => 0,
+                 'pi_signed_off' => 0
              ];
              
              $f_stat_curr['progress'] = $f_stat_curr['progress_percent'];
@@ -1106,13 +1218,14 @@ try {
              $sdr_submitted = (bool)($f_stat_curr['sdr_submitted'] ?? false);
              $monitor_reviewed = (bool)($f_stat_curr['monitor_reviewed'] ?? false);
              $manager_reviewed = (bool)($f_stat_curr['manager_reviewed'] ?? false);
+             $pi_signed_off = (bool)($f_stat_curr['pi_signed_off'] ?? false);
              $is_verified = ($f_stat_curr['status'] === 'verified' || !empty($f_stat_curr['is_verified']));
              $can_edit = $is_data_editor && hasPermission('enter_data');
-             if ($sdr_submitted || $monitor_reviewed || $manager_reviewed) {
+             if ($sdr_submitted || $monitor_reviewed || $manager_reviewed || $pi_signed_off) {
                  $can_edit = false;
              }
              
-             $buttons_html = renderWorkflowButtons($is_coordinator, $is_monitor, $is_manager, $sdr_submitted, $monitor_reviewed, $manager_reviewed, $all_mandatory_completed);
+             $buttons_html = renderWorkflowButtons($is_coordinator, $is_monitor, $is_manager, $sdr_submitted, $monitor_reviewed, $manager_reviewed, $all_mandatory_completed, $pi_signed_off, $is_pi);
              
              $prev_link = $_POST['prev_link'] ?? '';
              $next_link = $_POST['next_link'] ?? '';
@@ -1126,6 +1239,7 @@ try {
                  'sdr_submitted' => $sdr_submitted,
                  'monitor_reviewed' => $monitor_reviewed,
                  'manager_reviewed' => $manager_reviewed,
+                 'pi_signed_off' => $pi_signed_off,
                  'is_verified' => $is_verified,
                  'can_edit' => $can_edit,
                  'review_text' => $rev_status_curr['text'],
@@ -1429,14 +1543,16 @@ function calculateAndSaveProgress($pdo, $study_id, $subject_id, $visit_id, $form
                 }
             }
 
-            // If this is Screening visit, also cascade 'skipped' to all forms in Day 1 visit
+            // If this is Screening visit, also cascade 'skipped' to all forms in Day 1, Day 2, Day 3 visits
             if ($is_screening_visit) {
                 $stmt_day1 = $pdo->prepare("
                     SELECT sf.id, sf.visit_id 
                     FROM study_forms sf
                     JOIN study_visits sv ON sf.visit_id = sv.id
                     WHERE sv.study_id = ? 
-                      AND (LOWER(sv.name) LIKE '%day 1%' OR LOWER(sv.name) LIKE '%day-1%' OR LOWER(sv.name) LIKE '%day1%')
+                      AND (LOWER(sv.name) LIKE '%day 1%' OR LOWER(sv.name) LIKE '%day-1%' OR LOWER(sv.name) LIKE '%day1%'
+                           OR LOWER(sv.name) LIKE '%day 2%' OR LOWER(sv.name) LIKE '%day-2%' OR LOWER(sv.name) LIKE '%day2%'
+                           OR LOWER(sv.name) LIKE '%day 3%' OR LOWER(sv.name) LIKE '%day-3%' OR LOWER(sv.name) LIKE '%day3%')
                 ");
                 $stmt_day1->execute([$study_id]);
                 $day1_forms = $stmt_day1->fetchAll(PDO::FETCH_ASSOC);
@@ -1476,14 +1592,16 @@ function calculateAndSaveProgress($pdo, $study_id, $subject_id, $visit_id, $form
                 }
             }
 
-            // If this is Screening visit, revert any Day 1 forms that were marked 'skipped' and have no data
+            // If this is Screening visit, revert any Day 1, Day 2, Day 3 forms that were marked 'skipped' and have no data
             if ($is_screening_visit) {
                 $stmt_day1 = $pdo->prepare("
                     SELECT sf.id, sf.visit_id 
                     FROM study_forms sf
                     JOIN study_visits sv ON sf.visit_id = sv.id
                     WHERE sv.study_id = ? 
-                      AND (LOWER(sv.name) LIKE '%day 1%' OR LOWER(sv.name) LIKE '%day-1%' OR LOWER(sv.name) LIKE '%day1%')
+                      AND (LOWER(sv.name) LIKE '%day 1%' OR LOWER(sv.name) LIKE '%day-1%' OR LOWER(sv.name) LIKE '%day1%'
+                           OR LOWER(sv.name) LIKE '%day 2%' OR LOWER(sv.name) LIKE '%day-2%' OR LOWER(sv.name) LIKE '%day2%'
+                           OR LOWER(sv.name) LIKE '%day 3%' OR LOWER(sv.name) LIKE '%day-3%' OR LOWER(sv.name) LIKE '%day3%')
                 ");
                 $stmt_day1->execute([$study_id]);
                 $day1_forms = $stmt_day1->fetchAll(PDO::FETCH_ASSOC);

@@ -1,4 +1,7 @@
 <?php
+// Set timezone to India Standard Time (IST)
+date_default_timezone_set('Asia/Kolkata');
+
 // Database Configuration for PostgreSQL
 
 // Parse DATABASE_URL if available, otherwise fallback to individual environment variables or defaults
@@ -57,6 +60,7 @@ function getDB() {
 
         try {
             $pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
+            $pdo->exec("SET TIME ZONE 'Asia/Kolkata'");
         } catch (\PDOException $e) {
             throw new \PDOException("Database connection failed: " . $e->getMessage(), (int)$e->getCode());
         }

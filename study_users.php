@@ -1260,6 +1260,7 @@ $end_item = min($offset + $limit, $total_matching_users);
                             <select name="role" onchange="this.form.submit()" class="filter-control" style="width: auto;">
                                 <option value="">All Roles</option>
                                 <option value="Admin" <?php echo $filter_role === 'Admin' ? 'selected' : ''; ?>>Admin</option>
+                                <option value="Principal Investigator" <?php echo ($filter_role === 'Principal Investigator' || $filter_role === 'PI') ? 'selected' : ''; ?>>Principal Investigator (PI)</option>
                                 <option value="Data Coordinator" <?php echo ($filter_role === 'Data Coordinator' || $filter_role === 'Data Entry') ? 'selected' : ''; ?>>Data Coordinator</option>
                                 <option value="Data Monitor" <?php echo $filter_role === 'Data Monitor' ? 'selected' : ''; ?>>Data Monitor</option>
                                 <option value="Data Manager" <?php echo $filter_role === 'Data Manager' ? 'selected' : ''; ?>>Data Manager</option>
@@ -1507,6 +1508,9 @@ $end_item = min($offset + $limit, $total_matching_users);
                             <input type="checkbox" name="roles[]" value="Admin"> Admin (Full Access)
                         </label>
                         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
+                            <input type="checkbox" name="roles[]" value="Principal Investigator"> Principal Investigator (PI)
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
                             <input type="checkbox" name="roles[]" value="Data Coordinator" checked> Data Coordinator
                         </label>
                         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
@@ -1577,6 +1581,9 @@ $end_item = min($offset + $limit, $total_matching_users);
                     <div style="display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.25rem;">
                         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
                             <input type="checkbox" name="roles[]" value="Admin" id="role_Admin"> Admin
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
+                            <input type="checkbox" name="roles[]" value="Principal Investigator" id="role_PrincipalInvestigator"> Principal Investigator (PI)
                         </label>
                         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
                             <input type="checkbox" name="roles[]" value="Data Coordinator" id="role_DataCoordinator"> Data Coordinator
@@ -1715,6 +1722,9 @@ $end_item = min($offset + $limit, $total_matching_users);
                     <div style="display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.25rem;">
                         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
                             <input type="checkbox" name="roles[]" value="Admin"> Admin
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
+                            <input type="checkbox" name="roles[]" value="Principal Investigator"> Principal Investigator (PI)
                         </label>
                         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
                             <input type="checkbox" name="roles[]" value="Data Coordinator"> Data Coordinator
@@ -1866,7 +1876,7 @@ function openEditUserModal(e, id) {
     document.getElementById('editBatch').value = u.batch_name || '';
     document.getElementById('editStatus').value = u.status || 'active';
 
-    ['Admin', 'DataCoordinator', 'DataMonitor', 'DataManager'].forEach(rKey => {
+    ['Admin', 'PrincipalInvestigator', 'DataCoordinator', 'DataMonitor', 'DataManager'].forEach(rKey => {
         const cb = document.getElementById('role_' + rKey);
         if (cb) cb.checked = false;
     });
@@ -1875,6 +1885,7 @@ function openEditUserModal(e, id) {
         u.roles.forEach(r => {
             let clean = r.replace(/\s+/g, '');
             if (clean === 'DataEntry') clean = 'DataCoordinator';
+            if (clean === 'PI') clean = 'PrincipalInvestigator';
             const cb = document.getElementById('role_' + clean);
             if (cb) cb.checked = true;
         });
