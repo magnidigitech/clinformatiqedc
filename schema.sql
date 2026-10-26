@@ -184,6 +184,12 @@ CREATE TABLE IF NOT EXISTS subject_form_status (
     is_complete BOOLEAN DEFAULT FALSE,
     is_verified BOOLEAN DEFAULT FALSE,
     progress_percent INT DEFAULT 0,
+    sdr_submitted BOOLEAN DEFAULT FALSE,
+    monitor_reviewed BOOLEAN DEFAULT FALSE,
+    manager_reviewed BOOLEAN DEFAULT FALSE,
+    pi_signed_off BOOLEAN DEFAULT FALSE,
+    pi_signed_by INT NULL,
+    pi_signed_at TIMESTAMP NULL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

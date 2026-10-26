@@ -585,35 +585,72 @@ function ensureCommonFormsTables($pdo) {
 
     try {
         $pdo->exec($sql);
-        // Migrations for 3 roles and query closure value tracking
-        $pdo->exec("ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS sdr_submitted BOOLEAN DEFAULT FALSE");
-        $pdo->exec("ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS monitor_reviewed BOOLEAN DEFAULT FALSE");
-        $pdo->exec("ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS manager_reviewed BOOLEAN DEFAULT FALSE");
-        $pdo->exec("ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS monitor_by INT NULL");
-        $pdo->exec("ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS monitor_at TIMESTAMP NULL");
-        $pdo->exec("ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS manager_by INT NULL");
-        $pdo->exec("ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS manager_at TIMESTAMP NULL");
-        $pdo->exec("ALTER TABLE common_form_query_history ADD COLUMN IF NOT EXISTS old_value TEXT NULL");
-        $pdo->exec("ALTER TABLE common_form_query_history ADD COLUMN IF NOT EXISTS new_value TEXT NULL");
-        $pdo->exec("ALTER TABLE common_form_query_history ADD COLUMN IF NOT EXISTS status_from VARCHAR(50) NULL");
-        $pdo->exec("ALTER TABLE common_form_query_history ADD COLUMN IF NOT EXISTS status_to VARCHAR(50) NULL");
-        $pdo->exec("ALTER TABLE common_form_audit_log ADD COLUMN IF NOT EXISTS change_type VARCHAR(50) NULL");
-        $pdo->exec("ALTER TABLE data_queries ADD COLUMN IF NOT EXISTS raised_by_role VARCHAR(50)");
-        $pdo->exec("ALTER TABLE common_form_queries ADD COLUMN IF NOT EXISTS raised_by_role VARCHAR(50)");
-
-        // Ensure column sizes are expanded for compound statuses (e.g., 'sdved_and_dm_reviewed')
-        $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-        if ($driver === 'pgsql') {
-            $pdo->exec("ALTER TABLE subject_common_records ALTER COLUMN sdr_status TYPE VARCHAR(50)");
-            $pdo->exec("ALTER TABLE subject_common_records ALTER COLUMN status TYPE VARCHAR(50)");
-            $pdo->exec("ALTER TABLE common_form_queries ALTER COLUMN status TYPE VARCHAR(50)");
-        } else {
-            $pdo->exec("ALTER TABLE subject_common_records MODIFY sdr_status VARCHAR(50)");
-            $pdo->exec("ALTER TABLE subject_common_records MODIFY status VARCHAR(50)");
-            $pdo->exec("ALTER TABLE common_form_queries MODIFY status VARCHAR(50)");
-        }
     } catch (Exception $e) {
-        // Ignore if existing
+        // Ignore table create errors if already existing
+    }
+
+    $migrations = [
+        // Workflow & PI columns for subject_form_status
+        "ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS sdr_submitted BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS monitor_reviewed BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS manager_reviewed BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS pi_signed_off BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS pi_signed_by INT NULL",
+        "ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS pi_signed_at TIMESTAMP NULL",
+        "ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS is_complete BOOLEAN DEFAULT FALSE",
+
+        // Workflow & PI columns for subject_common_records
+        "ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS sdr_submitted BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS monitor_reviewed BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS manager_reviewed BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS monitor_by INT NULL",
+        "ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS monitor_at TIMESTAMP NULL",
+        "ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS manager_by INT NULL",
+        "ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS manager_at TIMESTAMP NULL",
+        "ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS pi_signed_off BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS pi_signed_by INT NULL",
+        "ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS pi_signed_at TIMESTAMP NULL",
+
+        // Common form query history and queries
+        "ALTER TABLE common_form_query_history ADD COLUMN IF NOT EXISTS old_value TEXT NULL",
+        "ALTER TABLE common_form_query_history ADD COLUMN IF NOT EXISTS new_value TEXT NULL",
+        "ALTER TABLE common_form_query_history ADD COLUMN IF NOT EXISTS status_from VARCHAR(50) NULL",
+        "ALTER TABLE common_form_query_history ADD COLUMN IF NOT EXISTS status_to VARCHAR(50) NULL",
+        "ALTER TABLE common_form_audit_log ADD COLUMN IF NOT EXISTS change_type VARCHAR(50) NULL",
+        "ALTER TABLE data_queries ADD COLUMN IF NOT EXISTS raised_by_role VARCHAR(50)",
+        "ALTER TABLE common_form_queries ADD COLUMN IF NOT EXISTS raised_by_role VARCHAR(50)",
+
+        // Instance tracking & user/subject enhancements
+        "ALTER TABLE data_queries ADD COLUMN IF NOT EXISTS repeating_instance_id INT DEFAULT 0",
+        "ALTER TABLE data_comments ADD COLUMN IF NOT EXISTS repeating_instance_id INT DEFAULT 0",
+        "ALTER TABLE data_audit_log ADD COLUMN IF NOT EXISTS repeating_instance_id INT DEFAULT 0",
+        "ALTER TABLE data_query_history ADD COLUMN IF NOT EXISTS old_value TEXT NULL",
+        "ALTER TABLE data_query_history ADD COLUMN IF NOT EXISTS new_value TEXT NULL",
+        "ALTER TABLE subjects ADD COLUMN IF NOT EXISTS progress INT DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR(255) NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS college_name VARCHAR(255) NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS batch_name VARCHAR(100) NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active'",
+    ];
+
+    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+    if ($driver === 'pgsql') {
+        $migrations[] = "ALTER TABLE subject_common_records ALTER COLUMN sdr_status TYPE VARCHAR(50)";
+        $migrations[] = "ALTER TABLE subject_common_records ALTER COLUMN status TYPE VARCHAR(50)";
+        $migrations[] = "ALTER TABLE common_form_queries ALTER COLUMN status TYPE VARCHAR(50)";
+    } else {
+        $migrations[] = "ALTER TABLE subject_common_records MODIFY sdr_status VARCHAR(50)";
+        $migrations[] = "ALTER TABLE subject_common_records MODIFY status VARCHAR(50)";
+        $migrations[] = "ALTER TABLE common_form_queries MODIFY status VARCHAR(50)";
+    }
+
+    foreach ($migrations as $stmt) {
+        try {
+            $pdo->exec($stmt);
+        } catch (Throwable $e) {
+            // Silently ignore if column already exists or syntax compatibility
+        }
     }
 }
 

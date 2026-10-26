@@ -23,18 +23,20 @@ if (!in_array($current_common_form, ['mh', 'ae', 'cm', 'ta', 'usv'], true)) {
     $current_common_form = '';
 }
 
-// --- AUTO-FIX SCHEMA (Temporary Migration) ---
-// Ensure the new columns exist on the remote server
+// --- AUTO-FIX SCHEMA ---
+// Ensure the new workflow and status columns exist on the remote server
 try {
-    $pdo->exec("ALTER TABLE data_queries ADD COLUMN repeating_instance_id INT DEFAULT 0 AFTER field_id");
-} catch (PDOException $e) { /* Column likely exists */ }
-try {
-    $pdo->exec("ALTER TABLE data_comments ADD COLUMN repeating_instance_id INT DEFAULT 0 AFTER field_id");
-} catch (PDOException $e) { /* Column likely exists */ }
-try {
-    $pdo->exec("ALTER TABLE data_audit_log ADD COLUMN repeating_instance_id INT DEFAULT 0 AFTER field_id");
-} catch (PDOException $e) { /* Column likely exists */ }
-// ---------------------------------------------
+    $pdo->exec("ALTER TABLE data_queries ADD COLUMN IF NOT EXISTS repeating_instance_id INT DEFAULT 0");
+    $pdo->exec("ALTER TABLE data_comments ADD COLUMN IF NOT EXISTS repeating_instance_id INT DEFAULT 0");
+    $pdo->exec("ALTER TABLE data_audit_log ADD COLUMN IF NOT EXISTS repeating_instance_id INT DEFAULT 0");
+    $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS sdr_submitted BOOLEAN DEFAULT FALSE");
+    $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS monitor_reviewed BOOLEAN DEFAULT FALSE");
+    $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS manager_reviewed BOOLEAN DEFAULT FALSE");
+    $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS pi_signed_off BOOLEAN DEFAULT FALSE");
+    $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS pi_signed_by INT NULL");
+    $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS pi_signed_at TIMESTAMP NULL");
+} catch (Throwable $e) { /* Column likely exists or handled */ }
+// -----------------------
 
 // Helper to check roles
 $current_role = strtolower($_SESSION['active_role_name'] ?? '');
@@ -120,9 +122,29 @@ $stmt->execute([$study_id]);
 $tree_data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Fetch ALL Form Statuses for this Subject
-$stmt_status = $pdo->prepare("SELECT form_id, status, progress_percent, is_verified, sdr_submitted, monitor_reviewed, manager_reviewed, pi_signed_off, COALESCE(repeating_instance_id, 0) as repeating_instance_id FROM subject_form_status WHERE subject_id = ?");
-$stmt_status->execute([$subject_id]);
-$raw_statuses = $stmt_status->fetchAll(PDO::FETCH_ASSOC);
+try {
+    $stmt_status = $pdo->prepare("SELECT form_id, status, progress_percent, is_verified, sdr_submitted, monitor_reviewed, manager_reviewed, pi_signed_off, COALESCE(repeating_instance_id, 0) as repeating_instance_id FROM subject_form_status WHERE subject_id = ?");
+    $stmt_status->execute([$subject_id]);
+    $raw_statuses = $stmt_status->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    // Attempt on-the-fly column additions if missing on database
+    try {
+        $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS sdr_submitted BOOLEAN DEFAULT FALSE");
+        $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS monitor_reviewed BOOLEAN DEFAULT FALSE");
+        $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS manager_reviewed BOOLEAN DEFAULT FALSE");
+        $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS pi_signed_off BOOLEAN DEFAULT FALSE");
+        $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS pi_signed_by INT NULL");
+        $pdo->exec("ALTER TABLE subject_form_status ADD COLUMN IF NOT EXISTS pi_signed_at TIMESTAMP NULL");
+        $stmt_status = $pdo->prepare("SELECT form_id, status, progress_percent, is_verified, sdr_submitted, monitor_reviewed, manager_reviewed, pi_signed_off, COALESCE(repeating_instance_id, 0) as repeating_instance_id FROM subject_form_status WHERE subject_id = ?");
+        $stmt_status->execute([$subject_id]);
+        $raw_statuses = $stmt_status->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e2) {
+        // Fallback query without workflow columns if permissions prevent ALTER TABLE
+        $stmt_status = $pdo->prepare("SELECT form_id, status, progress_percent, is_verified, COALESCE(repeating_instance_id, 0) as repeating_instance_id FROM subject_form_status WHERE subject_id = ?");
+        $stmt_status->execute([$subject_id]);
+        $raw_statuses = $stmt_status->fetchAll(PDO::FETCH_ASSOC);
+    }
+}
 $statuses = [];
 foreach($raw_statuses as $s) {
     // Key by form_id and instance_id (0 for main visits)

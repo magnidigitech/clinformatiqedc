@@ -17,6 +17,7 @@ try {
 
     $action = $_POST['action'] ?? '';
     $pdo = getDB();
+    ensureCommonFormsTables($pdo);
     $study_id = $_SESSION['active_study_id'];
 
     $role_lower = strtolower($_SESSION['active_role_name'] ?? '');
