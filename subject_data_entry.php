@@ -4996,9 +4996,9 @@ function setupEditorForm(rec, formType) {
         for (let i = 1; i <= existingTlCount; i++) {
             const org = d[`tl${i}_organ`] || '';
             const site = d[`tl${i}_site`] || '';
-            const axis = d[`tl${i}_axis`] || 'Long';
+            const axis = d[`tl${i}_axis`] || '';
             const dia = d[`tl${i}_longest_dia`] !== undefined && d[`tl${i}_longest_dia`] !== null ? d[`tl${i}_longest_dia`] : '';
-            const st = d[`tl${i}_status`] || 'Measured';
+            const st = d[`tl${i}_status`] || '';
             tlRowsHtml += renderTaTlRowHtml(i, { organ: org, site: site, axis: axis, dia: dia, status: st }, existingTlCount > 1);
         }
 
@@ -5018,7 +5018,7 @@ function setupEditorForm(rec, formType) {
         for (let i = 1; i <= existingNtlCount; i++) {
             const norg = d[`ntl${i}_organ`] || '';
             const site = d[`ntl${i}_site`] || '';
-            const nst = d[`ntl${i}_status`] || 'Present';
+            const nst = d[`ntl${i}_status`] || '';
             ntlRowsHtml += renderTaNtlRowHtml(i, { organ: norg, site: site, status: nst }, existingNtlCount > 1);
         }
 
@@ -5037,7 +5037,8 @@ function setupEditorForm(rec, formType) {
                         <div>
                             ${renderCommonFieldHeader(rec, 'tumor_assessed', 'Was Tumor Assessment Performed?', true)}
                             <select id="inp_ta_tumor_assessed" onchange="onTaAssessedChange()" class="form-input" style="width: 100%;">
-                                <option value="Yes" ${d.tumor_assessed !== 'No' ? 'selected' : ''}>Yes</option>
+                                <option value="">-- Select --</option>
+                                <option value="Yes" ${d.tumor_assessed === 'Yes' ? 'selected' : ''}>Yes</option>
                                 <option value="No" ${d.tumor_assessed === 'No' ? 'selected' : ''}>No</option>
                             </select>
                         </div>
@@ -5048,7 +5049,7 @@ function setupEditorForm(rec, formType) {
                         <input type="text" id="inp_ta_not_assessed_reason" class="form-input" value="${escapeHtml(d.tumor_not_assessed_reason || '')}" style="width: 100%;">
                     </div>
 
-                    <div id="taAssessmentDetailsContainer" style="display: ${d.tumor_assessed === 'No' ? 'none' : 'block'};">
+                    <div id="taAssessmentDetailsContainer" style="display: ${d.tumor_assessed === 'Yes' ? 'block' : 'none'};">
                         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
                             <div>
                                 ${renderCommonFieldHeader(rec, 'tumor_timepoint', 'Assessment Time Point', true)}
@@ -5078,7 +5079,7 @@ function setupEditorForm(rec, formType) {
                 </div>
 
                 <!-- Target Lesions Section -->
-                <div id="taTargetLesionsContainer" style="display: ${d.tumor_assessed === 'No' ? 'none' : 'block'}; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem;">
+                <div id="taTargetLesionsContainer" style="display: ${d.tumor_assessed === 'Yes' ? 'block' : 'none'}; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
                         <div style="font-weight: 700; color: #1e293b; font-size: 0.95rem; display: flex; align-items: center; gap: 0.5rem;">
                             <span class="material-icons-round" style="color: #2563eb;">center_focus_strong</span> Target Lesions (Max 5 total, max 2 per organ)
@@ -5086,14 +5087,15 @@ function setupEditorForm(rec, formType) {
                         <div style="display: flex; align-items: center; gap: 0.5rem;">
                             <label style="font-weight: 600; font-size: 0.85rem; color: #334155;">Target Lesions Present?</label>
                             ${renderCommonFieldHeader(rec, 'target_lesions_present', '', false)}
-                            <select id="inp_ta_target_present" onchange="onTaTargetPresentChange()" class="form-input" style="width: 100px; font-size: 0.85rem;">
-                                <option value="Yes" ${d.target_lesions_present !== 'No' ? 'selected' : ''}>Yes</option>
+                            <select id="inp_ta_target_present" onchange="onTaTargetPresentChange()" class="form-input" style="width: 120px; font-size: 0.85rem;">
+                                <option value="">-- Select --</option>
+                                <option value="Yes" ${d.target_lesions_present === 'Yes' ? 'selected' : ''}>Yes</option>
                                 <option value="No" ${d.target_lesions_present === 'No' ? 'selected' : ''}>No</option>
                             </select>
                         </div>
                     </div>
 
-                    <div id="taTargetTableContainer" style="display: ${d.target_lesions_present === 'No' ? 'none' : 'block'};">
+                    <div id="taTargetTableContainer" style="display: ${d.target_lesions_present === 'Yes' ? 'block' : 'none'};">
                         <table style="width: 100%; border-collapse: collapse; background: white; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden;">
                             <thead style="background: #f1f5f9; font-size: 0.8rem; color: #475569;">
                                 <tr>
@@ -5129,7 +5131,7 @@ function setupEditorForm(rec, formType) {
                 </div>
 
                 <!-- Non-Target Lesions Section -->
-                <div id="taNonTargetContainer" style="display: ${d.tumor_assessed === 'No' ? 'none' : 'block'}; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem;">
+                <div id="taNonTargetContainer" style="display: ${d.tumor_assessed === 'Yes' ? 'block' : 'none'}; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
                         <div style="font-weight: 700; color: #1e293b; font-size: 0.95rem; display: flex; align-items: center; gap: 0.5rem;">
                             <span class="material-icons-round" style="color: #059669;">bubble_chart</span> Non-Target Lesions
@@ -5137,14 +5139,15 @@ function setupEditorForm(rec, formType) {
                         <div style="display: flex; align-items: center; gap: 0.5rem;">
                             <label style="font-weight: 600; font-size: 0.85rem; color: #334155;">Non-Target Present?</label>
                             ${renderCommonFieldHeader(rec, 'nontarget_lesions_present', '', false)}
-                            <select id="inp_ta_nontarget_present" onchange="onTaNonTargetChange()" class="form-input" style="width: 100px; font-size: 0.85rem;">
-                                <option value="Yes" ${d.nontarget_lesions_present !== 'No' ? 'selected' : ''}>Yes</option>
+                            <select id="inp_ta_nontarget_present" onchange="onTaNonTargetChange()" class="form-input" style="width: 120px; font-size: 0.85rem;">
+                                <option value="">-- Select --</option>
+                                <option value="Yes" ${d.nontarget_lesions_present === 'Yes' ? 'selected' : ''}>Yes</option>
                                 <option value="No" ${d.nontarget_lesions_present === 'No' ? 'selected' : ''}>No</option>
                             </select>
                         </div>
                     </div>
 
-                    <div id="taNonTargetTableContainer" style="display: ${d.nontarget_lesions_present === 'No' ? 'none' : 'block'};">
+                    <div id="taNonTargetTableContainer" style="display: ${d.nontarget_lesions_present === 'Yes' ? 'block' : 'none'};">
                         <table style="width: 100%; border-collapse: collapse; background: white; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden;">
                             <thead style="background: #f1f5f9; font-size: 0.8rem; color: #475569;">
                                 <tr>
@@ -5173,7 +5176,7 @@ function setupEditorForm(rec, formType) {
                 </div>
 
                 <!-- RECIST Overall Response & Evaluation -->
-                <div id="taResponseContainer" style="display: ${d.tumor_assessed === 'No' ? 'none' : 'block'}; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem;">
+                <div id="taResponseContainer" style="display: ${d.tumor_assessed === 'Yes' ? 'block' : 'none'}; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem;">
                     <div style="font-weight: 700; color: #1e293b; margin-bottom: 0.75rem; font-size: 0.95rem; display: flex; align-items: center; gap: 0.5rem;">
                         <span class="material-icons-round" style="color: #d97706;">assessment</span> RECIST 1.1 Overall Evaluation
                     </div>
@@ -5181,6 +5184,7 @@ function setupEditorForm(rec, formType) {
                         <div>
                             ${renderCommonFieldHeader(rec, 'new_lesions_present', 'New Lesions Identified?', true)}
                             <select id="inp_ta_new_lesions" onchange="onTaNewLesionsChange()" class="form-input" style="width: 100%;">
+                                <option value="">-- Select --</option>
                                 <option value="No" ${d.new_lesions_present === 'No' ? 'selected' : ''}>No</option>
                                 <option value="Yes" ${d.new_lesions_present === 'Yes' ? 'selected' : ''}>Yes</option>
                                 <option value="Indeterminate" ${d.new_lesions_present === 'Indeterminate' ? 'selected' : ''}>Indeterminate</option>
@@ -5278,7 +5282,7 @@ function setupEditorForm(rec, formType) {
 }
 
 function onTaAssessedChange() {
-    const val = document.getElementById('inp_ta_tumor_assessed') ? document.getElementById('inp_ta_tumor_assessed').value : 'Yes';
+    const val = document.getElementById('inp_ta_tumor_assessed') ? document.getElementById('inp_ta_tumor_assessed').value : '';
     const notAssBox = document.getElementById('taNotAssessedReasonContainer');
     const detailsBox = document.getElementById('taAssessmentDetailsContainer');
     const tlBox = document.getElementById('taTargetLesionsContainer');
@@ -5291,12 +5295,18 @@ function onTaAssessedChange() {
         if (tlBox) tlBox.style.display = 'none';
         if (ntlBox) ntlBox.style.display = 'none';
         if (respBox) respBox.style.display = 'none';
-    } else {
+    } else if (val === 'Yes') {
         if (notAssBox) notAssBox.style.display = 'none';
         if (detailsBox) detailsBox.style.display = 'block';
         if (tlBox) tlBox.style.display = 'block';
         if (ntlBox) ntlBox.style.display = 'block';
         if (respBox) respBox.style.display = 'block';
+    } else {
+        if (notAssBox) notAssBox.style.display = 'none';
+        if (detailsBox) detailsBox.style.display = 'none';
+        if (tlBox) tlBox.style.display = 'none';
+        if (ntlBox) ntlBox.style.display = 'none';
+        if (respBox) respBox.style.display = 'none';
     }
 }
 
@@ -5307,19 +5317,19 @@ function onTaModalityChange() {
 }
 
 function onTaTargetPresentChange() {
-    const val = document.getElementById('inp_ta_target_present') ? document.getElementById('inp_ta_target_present').value : 'Yes';
+    const val = document.getElementById('inp_ta_target_present') ? document.getElementById('inp_ta_target_present').value : '';
     const box = document.getElementById('taTargetTableContainer');
     if (box) box.style.display = (val === 'Yes') ? 'block' : 'none';
 }
 
 function onTaNonTargetChange() {
-    const val = document.getElementById('inp_ta_nontarget_present') ? document.getElementById('inp_ta_nontarget_present').value : 'Yes';
+    const val = document.getElementById('inp_ta_nontarget_present') ? document.getElementById('inp_ta_nontarget_present').value : '';
     const box = document.getElementById('taNonTargetTableContainer');
     if (box) box.style.display = (val === 'Yes') ? 'block' : 'none';
 }
 
 function onTaNewLesionsChange() {
-    const val = document.getElementById('inp_ta_new_lesions') ? document.getElementById('inp_ta_new_lesions').value : 'No';
+    const val = document.getElementById('inp_ta_new_lesions') ? document.getElementById('inp_ta_new_lesions').value : '';
     const box = document.getElementById('taNewLesionsDetailsContainer');
     if (box) box.style.display = (val === 'Yes') ? 'block' : 'none';
 }
@@ -5327,9 +5337,9 @@ function onTaNewLesionsChange() {
 function renderTaTlRowHtml(i, data = {}, canDelete = false) {
     const org = data.organ || '';
     const site = data.site || '';
-    const axis = data.axis || 'Long';
+    const axis = data.axis || '';
     const dia = data.dia !== undefined && data.dia !== null ? data.dia : '';
-    const st = data.status || 'Measured';
+    const st = data.status || '';
 
     return `
         <tr class="ta-tl-row" data-index="${i}" style="border-bottom: 1px solid #e2e8f0; transition: background 0.15s;">
@@ -5342,6 +5352,7 @@ function renderTaTlRowHtml(i, data = {}, canDelete = false) {
             </td>
             <td style="padding: 0.5rem; width: 160px;">
                 <select id="inp_ta_tl${i}_axis" class="form-input ta-tl-axis" style="width: 100%; font-size: 0.85rem;">
+                    <option value="">-- Select Axis --</option>
                     <option value="Long" ${axis === 'Long' ? 'selected' : ''}>Long (Non-nodal)</option>
                     <option value="Short" ${axis === 'Short' ? 'selected' : ''}>Short (Nodal)</option>
                 </select>
@@ -5351,6 +5362,7 @@ function renderTaTlRowHtml(i, data = {}, canDelete = false) {
             </td>
             <td style="padding: 0.5rem; width: 160px;">
                 <select id="inp_ta_tl${i}_status" class="form-input ta-tl-status" style="width: 100%; font-size: 0.85rem;">
+                    <option value="">-- Select Status --</option>
                     <option value="Measured" ${st === 'Measured' ? 'selected' : ''}>Measured</option>
                     <option value="Absent" ${st === 'Absent' ? 'selected' : ''}>Absent</option>
                     <option value="Too small to measure" ${st === 'Too small to measure' ? 'selected' : ''}>Too small to measure</option>
@@ -5477,7 +5489,7 @@ function calcTaSumDia() {
 function renderTaNtlRowHtml(i, data = {}, canDelete = false) {
     const org = data.organ || '';
     const site = data.site || '';
-    const st = data.status || 'Present';
+    const st = data.status || '';
 
     return `
         <tr class="ta-ntl-row" data-index="${i}" style="border-bottom: 1px solid #e2e8f0; transition: background 0.15s;">
@@ -5490,6 +5502,7 @@ function renderTaNtlRowHtml(i, data = {}, canDelete = false) {
             </td>
             <td style="padding: 0.5rem; width: 200px;">
                 <select id="inp_ta_ntl${i}_status" class="form-input ta-ntl-status" style="width: 100%; font-size: 0.85rem;">
+                    <option value="">-- Select Status --</option>
                     <option value="Present" ${st === 'Present' ? 'selected' : ''}>Present</option>
                     <option value="Absent" ${st === 'Absent' ? 'selected' : ''}>Absent</option>
                     <option value="Unequivocal progression" ${st === 'Unequivocal progression' ? 'selected' : ''}>Unequivocal progression</option>
@@ -6478,16 +6491,16 @@ function saveCommonRecord(mode) {
         const inpComments = document.getElementById('inp_ta_comments');
 
         data.recist_method = inpMethod ? inpMethod.value : 'RECIST 1.1';
-        data.tumor_assessed = inpAssessed ? inpAssessed.value : 'Yes';
+        data.tumor_assessed = inpAssessed ? inpAssessed.value : '';
         data.tumor_not_assessed_reason = inpReason ? inpReason.value.trim() : '';
         data.tumor_timepoint = inpTimepoint ? inpTimepoint.value.trim() : '';
         data.imaging_date = inpDate ? inpDate.value : '';
         data.imaging_modality = inpMod ? inpMod.value : '';
         data.imaging_modality_other = inpModOther ? inpModOther.value.trim() : '';
-        data.target_lesions_present = inpTargetPres ? inpTargetPres.value : 'Yes';
+        data.target_lesions_present = inpTargetPres ? inpTargetPres.value : '';
         data.sum_longest_dia = inpSumDia ? inpSumDia.value : '';
-        data.nontarget_lesions_present = inpNonTargetPres ? inpNonTargetPres.value : 'Yes';
-        data.new_lesions_present = inpNewLes ? inpNewLes.value : 'No';
+        data.nontarget_lesions_present = inpNonTargetPres ? inpNonTargetPres.value : '';
+        data.new_lesions_present = inpNewLes ? inpNewLes.value : '';
         data.new_lesions_details = inpNewLesDet ? inpNewLesDet.value.trim() : '';
         data.recist_overall_response = inpResp ? inpResp.value : '';
         data.comments = inpComments ? inpComments.value.trim() : '';
@@ -6501,9 +6514,9 @@ function saveCommonRecord(mode) {
             if (org) {
                 data[`tl${i}_organ`] = org.value.trim();
                 data[`tl${i}_site`] = site ? site.value.trim() : '';
-                data[`tl${i}_axis`] = axis ? axis.value : 'Long';
+                data[`tl${i}_axis`] = axis ? axis.value : '';
                 data[`tl${i}_longest_dia`] = dia ? dia.value : '';
-                data[`tl${i}_status`] = st ? st.value : 'Measured';
+                data[`tl${i}_status`] = st ? st.value : '';
             } else {
                 data[`tl${i}_organ`] = '';
                 data[`tl${i}_site`] = '';
@@ -6520,7 +6533,7 @@ function saveCommonRecord(mode) {
             if (norg) {
                 data[`ntl${i}_organ`] = norg.value.trim();
                 data[`ntl${i}_site`] = nsite ? nsite.value.trim() : '';
-                data[`ntl${i}_status`] = nst ? nst.value : 'Present';
+                data[`ntl${i}_status`] = nst ? nst.value : '';
             } else {
                 data[`ntl${i}_organ`] = '';
                 data[`ntl${i}_site`] = '';
