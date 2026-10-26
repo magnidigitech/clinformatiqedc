@@ -942,5 +942,51 @@ function renderFieldInput($field, $saved_value = '', $choices_map = []) {
     }
 }
 
+/**
+ * Ensures that if a study uses a protocol template (e.g. oncology_protocol),
+ * any newly added visits/forms in that template (e.g. Day 2, Day 3) are automatically synchronized.
+ */
+function ensureStudyTemplateVisits($pdo, $study_id) {
+    if (!$study_id) return;
+    static $synced = [];
+    if (!empty($synced[$study_id])) return;
+    $synced[$study_id] = true;
+
+    try {
+        // Check if study has protocol template
+        $stmt = $pdo->prepare("SELECT template FROM studies WHERE id = ?");
+        $stmt->execute([$study_id]);
+        $tmpl = strtolower(trim($stmt->fetchColumn() ?: ''));
+        
+        $is_template_study = ($tmpl === 'oncology_protocol' || $tmpl === 'standard' || $tmpl === 'all');
+        
+        // If template flag wasn't explicitly set, check if the study visits match the oncology protocol pattern (Screening + Day 1 + End of Treatment)
+        if (!$is_template_study) {
+            $stmt_pattern = $pdo->prepare("SELECT COUNT(*) FROM study_visits WHERE study_id = ? AND (LOWER(name) LIKE '%screening%' OR LOWER(name) LIKE '%day 1%' OR LOWER(name) LIKE '%end of treatment%')");
+            $stmt_pattern->execute([$study_id]);
+            if ((int)$stmt_pattern->fetchColumn() >= 2) {
+                $is_template_study = true;
+            }
+        }
+        
+        if (!$is_template_study) {
+            return;
+        }
+
+        // Check if Day 2 and Day 3 exist
+        $stmt_check = $pdo->prepare("SELECT name FROM study_visits WHERE study_id = ? AND (LOWER(name) LIKE '%day 2%' OR LOWER(name) LIKE '%day 3%')");
+        $stmt_check->execute([$study_id]);
+        $found = $stmt_check->fetchAll(PDO::FETCH_COLUMN);
+
+        // If either Day 2 or Day 3 is missing, run importProtocolTemplate to self-heal
+        if (count($found) < 2) {
+            require_once __DIR__ . '/protocol_template.php';
+            importProtocolTemplate($pdo, $study_id);
+        }
+    } catch (Throwable $e) {
+        // Catch silently to avoid interfering with page loads
+    }
+}
+
 
 

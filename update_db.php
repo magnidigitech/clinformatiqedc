@@ -84,6 +84,26 @@ foreach ($queries as $index => $query) {
         }
     }
 }
+
+// Synchronize oncology_protocol template visits (Day 2, Day 3) for existing studies
+try {
+    require_once 'includes/protocol_template.php';
+    $stmt_studies = $pdo->query("SELECT id, name FROM studies WHERE template = 'oncology_protocol'");
+    while ($s = $stmt_studies->fetch(PDO::FETCH_ASSOC)) {
+        $sync_res = importProtocolTemplate($pdo, $s['id']);
+        if (!empty($sync_res['visits_created']) && $sync_res['visits_created'] > 0) {
+            $results[] = [
+                'sql' => "Synchronize protocol visits for study '{$s['name']}' (ID: {$s['id']})",
+                'title' => "Synced {$sync_res['visits_created']} new visits (Day 2, Day 3)",
+                'success' => true,
+                'message' => "Successfully created {$sync_res['visits_created']} visits, {$sync_res['forms_created']} forms, {$sync_res['fields_created']} fields."
+            ];
+            $success_count++;
+        }
+    }
+} catch (Exception $e) {
+    // Ignore template sync errors if any
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">

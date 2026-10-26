@@ -11,6 +11,9 @@ if (!isset($_SESSION['active_study_id'])) {
 $study_id = $_SESSION['active_study_id'];
 $pdo = getDB();
 
+// Ensure Study Template Visits (Day 2, Day 3) are synchronized
+ensureStudyTemplateVisits($pdo, $study_id);
+
 // Fetch Visits and Forms hierarchy
 $stmt = $pdo->prepare("
     SELECT v.id as visit_id, v.name as visit_name, v.order_index as visit_order,

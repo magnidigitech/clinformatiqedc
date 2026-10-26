@@ -112,6 +112,9 @@ if (!$subject) {
 
 // ... (Subject Fetching matches previous)
 
+// Ensure Study Template Visits (Day 2, Day 3) are synchronized
+ensureStudyTemplateVisits($pdo, $study_id);
+
 // Fetch Study Visits & Forms for Sidebar Tree
 $stmt = $pdo->prepare("SELECT v.id as visit_id, v.name as visit_name, f.id as form_id, f.name as form_name 
                        FROM study_visits v 
