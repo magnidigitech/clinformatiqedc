@@ -104,6 +104,33 @@ try {
 } catch (Exception $e) {
     // Ignore template sync errors if any
 }
+
+// Ensure all study admins have Principal Investigator role assigned
+try {
+    $inserted_pi = $pdo->exec("
+        INSERT INTO study_users (user_id, study_id, role_name, permissions)
+        SELECT su.user_id, su.study_id, 'Principal Investigator', '{\"view\": true, \"query\": true, \"sign_off\": true}'
+        FROM study_users su
+        WHERE LOWER(su.role_name) = 'admin'
+        AND NOT EXISTS (
+            SELECT 1 FROM study_users su2 
+            WHERE su2.user_id = su.user_id 
+            AND su2.study_id = su.study_id 
+            AND (LOWER(su2.role_name) = 'principal investigator' OR LOWER(su2.role_name) = 'pi')
+        )
+    ");
+    if ($inserted_pi && $inserted_pi > 0) {
+        $results[] = [
+            'sql' => "Provision Principal Investigator roles for study admins",
+            'title' => "Assigned Principal Investigator role to {$inserted_pi} study admin(s)",
+            'success' => true,
+            'message' => "Successfully provisioned {$inserted_pi} Principal Investigator assignment(s)."
+        ];
+        $success_count++;
+    }
+} catch (Exception $e) {
+    // Ignore if already assigned
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">

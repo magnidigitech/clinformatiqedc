@@ -5593,6 +5593,11 @@ function reindexTaNtlRows() {
 // USV (UNSCHEDULED VISITS) - FORM BUILDER & EVENT HANDLERS
 // =========================================================================
 function switchUsvSection(secNum, btn) {
+    const perfVal = document.getElementById('inp_usv_visit_performed')?.value || '';
+    if (secNum > 1 && perfVal !== 'Yes') {
+        return; // Block navigation to forms 2-5 when visit was not performed
+    }
+
     document.querySelectorAll('.usv-section-card').forEach(el => el.style.display = 'none');
     const target = document.getElementById('usv_sec_' + secNum);
     if (target) target.style.display = 'block';
@@ -5613,7 +5618,7 @@ function switchUsvSection(secNum, btn) {
 }
 
 function onUsvVisitPerfChange() {
-    const val = document.getElementById('inp_usv_visit_performed')?.value || 'Yes';
+    const val = document.getElementById('inp_usv_visit_performed')?.value || '';
     const dateBox = document.getElementById('usvDateBox');
     const reasonBox = document.getElementById('usvReasonBox');
     const notPerfBox = document.getElementById('usvNotPerfBox');
@@ -5621,10 +5626,42 @@ function onUsvVisitPerfChange() {
         if (dateBox) dateBox.style.display = 'block';
         if (reasonBox) reasonBox.style.display = 'block';
         if (notPerfBox) notPerfBox.style.display = 'none';
-    } else {
+    } else if (val === 'No') {
         if (dateBox) dateBox.style.display = 'none';
         if (reasonBox) reasonBox.style.display = 'none';
         if (notPerfBox) notPerfBox.style.display = 'block';
+    } else {
+        if (dateBox) dateBox.style.display = 'none';
+        if (reasonBox) reasonBox.style.display = 'none';
+        if (notPerfBox) notPerfBox.style.display = 'none';
+    }
+
+    // Toggle navigation tabs 2 to 5 in real time
+    const isYes = (val === 'Yes');
+    document.querySelectorAll('.btn-usv-nav').forEach(btn => {
+        const sec = parseInt(btn.getAttribute('data-sec') || '1', 10);
+        if (sec > 1) {
+            btn.disabled = !isYes;
+            if (!isYes) {
+                btn.style.opacity = '0.45';
+                btn.style.cursor = 'not-allowed';
+                btn.setAttribute('title', 'Disabled: Visit was not performed');
+            } else {
+                btn.style.opacity = '1';
+                btn.style.cursor = 'pointer';
+                btn.removeAttribute('title');
+            }
+        }
+    });
+
+    // If currently viewing section 2-5 and visit is not Yes, force switch back to section 1
+    if (!isYes) {
+        const activeSec = document.querySelector('.btn-usv-nav.active');
+        const activeNum = activeSec ? parseInt(activeSec.getAttribute('data-sec') || '1', 10) : 1;
+        if (activeNum > 1) {
+            const btn1 = document.querySelector('.btn-usv-nav[data-sec="1"]');
+            switchUsvSection(1, btn1);
+        }
     }
 }
 
@@ -5641,53 +5678,65 @@ function onUsvNotPerfReasonChange() {
 }
 
 function onUsvVitalsAssChange() {
-    const val = document.getElementById('inp_usv_vitals_assessed')?.value || 'Yes';
+    const val = document.getElementById('inp_usv_vitals_assessed')?.value || '';
     const notAssBox = document.getElementById('usvVitalsNotAssBox');
     const contentBox = document.getElementById('usvVitalsContentBox');
     if (val === 'Yes') {
         if (notAssBox) notAssBox.style.display = 'none';
         if (contentBox) contentBox.style.display = 'block';
-    } else {
+    } else if (val === 'No') {
         if (notAssBox) notAssBox.style.display = 'block';
+        if (contentBox) contentBox.style.display = 'none';
+    } else {
+        if (notAssBox) notAssBox.style.display = 'none';
         if (contentBox) contentBox.style.display = 'none';
     }
 }
 
 function onUsvHemaCollChange() {
-    const val = document.getElementById('inp_usv_hema_panel_collected')?.value || 'Yes';
+    const val = document.getElementById('inp_usv_hema_panel_collected')?.value || '';
     const notCollBox = document.getElementById('usvHemaNotCollBox');
     const contentBox = document.getElementById('usvHemaContentBox');
     if (val === 'Yes') {
         if (notCollBox) notCollBox.style.display = 'none';
         if (contentBox) contentBox.style.display = 'block';
-    } else {
+    } else if (val === 'No') {
         if (notCollBox) notCollBox.style.display = 'block';
+        if (contentBox) contentBox.style.display = 'none';
+    } else {
+        if (notCollBox) notCollBox.style.display = 'none';
         if (contentBox) contentBox.style.display = 'none';
     }
 }
 
 function onUsvChemCollChange() {
-    const val = document.getElementById('inp_usv_chem_panel_collected')?.value || 'Yes';
+    const val = document.getElementById('inp_usv_chem_panel_collected')?.value || '';
     const notCollBox = document.getElementById('usvChemNotCollBox');
     const contentBox = document.getElementById('usvChemContentBox');
     if (val === 'Yes') {
         if (notCollBox) notCollBox.style.display = 'none';
         if (contentBox) contentBox.style.display = 'block';
-    } else {
+    } else if (val === 'No') {
         if (notCollBox) notCollBox.style.display = 'block';
+        if (contentBox) contentBox.style.display = 'none';
+    } else {
+        if (notCollBox) notCollBox.style.display = 'none';
         if (contentBox) contentBox.style.display = 'none';
     }
 }
 
 function onUsvDrugAdminChange() {
-    const val = document.getElementById('inp_usv_drug_administered')?.value || 'Yes';
+    const val = document.getElementById('inp_usv_drug_administered')?.value || '';
     const notAdminBox = document.getElementById('usvDrugNotAdminBox');
     const adminBox = document.getElementById('usvDrugAdminBox');
     if (val === 'Yes') {
         if (notAdminBox) notAdminBox.style.display = 'none';
         if (adminBox) adminBox.style.display = 'block';
-    } else {
+    } else if (val === 'No') {
         if (notAdminBox) notAdminBox.style.display = 'block';
+        if (adminBox) adminBox.style.display = 'none';
+    } else {
+        if (notAdminBox) notAdminBox.style.display = 'none';
         if (adminBox) adminBox.style.display = 'none';
     }
 }
@@ -5699,7 +5748,7 @@ function onUsvDrugRouteChange() {
 }
 
 function onUsvFlagChange(prefix, code) {
-    const flagVal = document.getElementById(`inp_usv_${prefix}_${code}_flag`)?.value || 'Normal';
+    const flagVal = document.getElementById(`inp_usv_${prefix}_${code}_flag`)?.value || '';
     const clinSigBox = document.getElementById(`box_usv_${prefix}_${code}_clin_sig`);
     const dashBox = document.getElementById(`dash_usv_${prefix}_${code}_clin_sig`);
     const isAb = (flagVal === 'Low' || flagVal === 'High');
@@ -5709,18 +5758,19 @@ function onUsvFlagChange(prefix, code) {
 
 function renderUsvFormHtml(rec, d) {
     const today = getTodayIST();
-    const nowTime = (new Date()).toTimeString().slice(0, 5);
 
-    const visitPerf = d.visit_performed || 'Yes';
-    const vitalsAss = d.vitals_assessed || 'Yes';
-    const hemaColl = d.hema_panel_collected || 'Yes';
-    const chemColl = d.chem_panel_collected || 'Yes';
-    const drugAdmin = d.drug_administered || 'Yes';
+    const visitPerf = d.visit_performed || '';
+    const vitalsAss = d.vitals_assessed || '';
+    const hemaColl = d.hema_panel_collected || '';
+    const chemColl = d.chem_panel_collected || '';
+    const drugAdmin = d.drug_administered || '';
+    const isPerfYes = (visitPerf === 'Yes');
+    const isPerfNo = (visitPerf === 'No');
 
     function labRow(prefix, code, name, unit, refLow, refHigh) {
         const val = d[`${prefix}_${code}_val`] || '';
-        const flag = d[`${prefix}_${code}_flag`] || 'Normal';
-        const clinSig = d[`${prefix}_${code}_clin_sig`] || 'No';
+        const flag = d[`${prefix}_${code}_flag`] || '';
+        const clinSig = d[`${prefix}_${code}_clin_sig`] || '';
         const action = d[`${prefix}_${code}_action`] || '';
         const isAb = (flag === 'Low' || flag === 'High');
 
@@ -5732,12 +5782,13 @@ function renderUsvFormHtml(rec, d) {
                 </td>
                 <td style="padding: 0.5rem 0.75rem; width: 140px;">
                     <div style="display: flex; align-items: center; gap: 4px;">
-                        <input type="text" id="inp_usv_${prefix}_${code}_val" class="form-input" value="${escapeHtml(val)}" placeholder="${unit}" style="width: 100%; font-size: 0.85rem; padding: 0.35rem 0.5rem;">
+                        <input type="text" id="inp_usv_${prefix}_${code}_val" class="form-input" value="${escapeHtml(val)}" style="width: 100%; font-size: 0.85rem; padding: 0.35rem 0.5rem;">
                         ${renderCommonFieldHeader(rec, `${prefix}_${code}_val`, '', false)}
                     </div>
                 </td>
                 <td style="padding: 0.5rem 0.75rem; width: 130px;">
                     <select id="inp_usv_${prefix}_${code}_flag" onchange="onUsvFlagChange('${prefix}', '${code}')" class="form-input" style="width: 100%; font-size: 0.85rem; padding: 0.35rem 0.5rem;">
+                        <option value="">-- Select --</option>
                         <option value="Normal" ${flag === 'Normal' ? 'selected' : ''}>Normal</option>
                         <option value="Low" ${flag === 'Low' ? 'selected' : ''}>Low</option>
                         <option value="High" ${flag === 'High' ? 'selected' : ''}>High</option>
@@ -5747,6 +5798,7 @@ function renderUsvFormHtml(rec, d) {
                 <td style="padding: 0.5rem 0.75rem; width: 110px;">
                     <div id="box_usv_${prefix}_${code}_clin_sig" style="display: ${isAb ? 'block' : 'none'};">
                         <select id="inp_usv_${prefix}_${code}_clin_sig" class="form-input" style="width: 100%; font-size: 0.85rem; padding: 0.35rem 0.5rem;">
+                            <option value="">-- Select --</option>
                             <option value="No" ${clinSig === 'No' ? 'selected' : ''}>No</option>
                             <option value="Yes" ${clinSig === 'Yes' ? 'selected' : ''}>Yes (CS)</option>
                         </select>
@@ -5754,7 +5806,7 @@ function renderUsvFormHtml(rec, d) {
                     <div id="dash_usv_${prefix}_${code}_clin_sig" style="display: ${isAb ? 'none' : 'block'}; color: #94a3b8; text-align: center;">—</div>
                 </td>
                 <td style="padding: 0.5rem 0.75rem;">
-                    <input type="text" id="inp_usv_${prefix}_${code}_action" class="form-input" value="${escapeHtml(action)}" placeholder="Clinical comments / AE ref..." style="width: 100%; font-size: 0.85rem; padding: 0.35rem 0.5rem;">
+                    <input type="text" id="inp_usv_${prefix}_${code}_action" class="form-input" value="${escapeHtml(action)}" style="width: 100%; font-size: 0.85rem; padding: 0.35rem 0.5rem;">
                 </td>
             </tr>
         `;
@@ -5764,19 +5816,19 @@ function renderUsvFormHtml(rec, d) {
         <div style="display: flex; flex-direction: column; gap: 1.25rem;">
             <!-- USV Section Tabs Navigation -->
             <div style="display: flex; gap: 0.5rem; overflow-x: auto; padding: 0.35rem 0.5rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
-                <button type="button" class="btn-usv-nav active" onclick="switchUsvSection(1, this)" style="padding: 0.45rem 0.85rem; font-size: 0.8rem; font-weight: 600; border-radius: 6px; border: 1px solid #0284c7; background: #e0f2fe; color: #0369a1; cursor: pointer; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
+                <button type="button" class="btn-usv-nav active" data-sec="1" onclick="switchUsvSection(1, this)" style="padding: 0.45rem 0.85rem; font-size: 0.8rem; font-weight: 600; border-radius: 6px; border: 1px solid #0284c7; background: #e0f2fe; color: #0369a1; cursor: pointer; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
                     <span class="material-icons-round" style="font-size: 1rem;">event_available</span> 1. Visit Details
                 </button>
-                <button type="button" class="btn-usv-nav" onclick="switchUsvSection(2, this)" style="padding: 0.45rem 0.85rem; font-size: 0.8rem; font-weight: 600; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; color: #475569; cursor: pointer; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
+                <button type="button" class="btn-usv-nav" data-sec="2" ${!isPerfYes ? 'disabled' : ''} onclick="switchUsvSection(2, this)" style="padding: 0.45rem 0.85rem; font-size: 0.8rem; font-weight: 600; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; color: #475569; cursor: ${!isPerfYes ? 'not-allowed' : 'pointer'}; opacity: ${!isPerfYes ? '0.45' : '1'}; display: flex; align-items: center; gap: 5px; white-space: nowrap;" title="${!isPerfYes ? 'Disabled: Visit was not performed' : ''}">
                     <span class="material-icons-round" style="font-size: 1rem;">favorite_border</span> 2. Vital Signs
                 </button>
-                <button type="button" class="btn-usv-nav" onclick="switchUsvSection(3, this)" style="padding: 0.45rem 0.85rem; font-size: 0.8rem; font-weight: 600; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; color: #475569; cursor: pointer; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
+                <button type="button" class="btn-usv-nav" data-sec="3" ${!isPerfYes ? 'disabled' : ''} onclick="switchUsvSection(3, this)" style="padding: 0.45rem 0.85rem; font-size: 0.8rem; font-weight: 600; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; color: #475569; cursor: ${!isPerfYes ? 'not-allowed' : 'pointer'}; opacity: ${!isPerfYes ? '0.45' : '1'}; display: flex; align-items: center; gap: 5px; white-space: nowrap;" title="${!isPerfYes ? 'Disabled: Visit was not performed' : ''}">
                     <span class="material-icons-round" style="font-size: 1rem;">bloodtype</span> 3. Hematology
                 </button>
-                <button type="button" class="btn-usv-nav" onclick="switchUsvSection(4, this)" style="padding: 0.45rem 0.85rem; font-size: 0.8rem; font-weight: 600; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; color: #475569; cursor: pointer; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
+                <button type="button" class="btn-usv-nav" data-sec="4" ${!isPerfYes ? 'disabled' : ''} onclick="switchUsvSection(4, this)" style="padding: 0.45rem 0.85rem; font-size: 0.8rem; font-weight: 600; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; color: #475569; cursor: ${!isPerfYes ? 'not-allowed' : 'pointer'}; opacity: ${!isPerfYes ? '0.45' : '1'}; display: flex; align-items: center; gap: 5px; white-space: nowrap;" title="${!isPerfYes ? 'Disabled: Visit was not performed' : ''}">
                     <span class="material-icons-round" style="font-size: 1rem;">science</span> 4. Chemistry
                 </button>
-                <button type="button" class="btn-usv-nav" onclick="switchUsvSection(5, this)" style="padding: 0.45rem 0.85rem; font-size: 0.8rem; font-weight: 600; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; color: #475569; cursor: pointer; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
+                <button type="button" class="btn-usv-nav" data-sec="5" ${!isPerfYes ? 'disabled' : ''} onclick="switchUsvSection(5, this)" style="padding: 0.45rem 0.85rem; font-size: 0.8rem; font-weight: 600; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; color: #475569; cursor: ${!isPerfYes ? 'not-allowed' : 'pointer'}; opacity: ${!isPerfYes ? '0.45' : '1'}; display: flex; align-items: center; gap: 5px; white-space: nowrap;" title="${!isPerfYes ? 'Disabled: Visit was not performed' : ''}">
                     <span class="material-icons-round" style="font-size: 1rem;">medication</span> 5. Study Drug
                 </button>
             </div>
@@ -5791,17 +5843,18 @@ function renderUsvFormHtml(rec, d) {
                     <div>
                         ${renderCommonFieldHeader(rec, 'visit_performed', 'Was this Visit Performed?', true)}
                         <select id="inp_usv_visit_performed" onchange="onUsvVisitPerfChange()" class="form-input" style="width: 100%;">
+                            <option value="">-- Select --</option>
                             <option value="Yes" ${visitPerf === 'Yes' ? 'selected' : ''}>Yes</option>
                             <option value="No" ${visitPerf === 'No' ? 'selected' : ''}>No</option>
                         </select>
                     </div>
-                    <div id="usvDateBox" style="display: ${visitPerf === 'Yes' ? 'block' : 'none'};">
+                    <div id="usvDateBox" style="display: ${isPerfYes ? 'block' : 'none'};">
                         ${renderCommonFieldHeader(rec, 'date_of_visit', 'Date of Visit', true)}
                         <input type="date" id="inp_usv_date_of_visit" max="${today}" class="form-input" value="${escapeHtml(d.date_of_visit || '')}" style="width: 100%;">
                     </div>
                 </div>
 
-                <div id="usvReasonBox" style="display: ${visitPerf === 'Yes' ? 'block' : 'none'}; margin-bottom: 1rem;">
+                <div id="usvReasonBox" style="display: ${isPerfYes ? 'block' : 'none'}; margin-bottom: 1rem;">
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                         <div>
                             ${renderCommonFieldHeader(rec, 'visit_reason_unscheduled', 'Reason for Unscheduled Visit', true)}
@@ -5819,12 +5872,12 @@ function renderUsvFormHtml(rec, d) {
                         </div>
                         <div id="usvReasonOtherBox" style="display: ${d.visit_reason_unscheduled === 'Other' ? 'block' : 'none'};">
                             ${renderCommonFieldHeader(rec, 'unscheduled_reason_other', 'Specify Other Reason', true)}
-                            <input type="text" id="inp_usv_unscheduled_reason_other" class="form-input" value="${escapeHtml(d.unscheduled_reason_other || '')}" placeholder="Specify reason..." style="width: 100%;">
+                            <input type="text" id="inp_usv_unscheduled_reason_other" class="form-input" value="${escapeHtml(d.unscheduled_reason_other || '')}" style="width: 100%;">
                         </div>
                     </div>
                 </div>
 
-                <div id="usvNotPerfBox" style="display: ${visitPerf === 'No' ? 'block' : 'none'}; margin-bottom: 1rem;">
+                <div id="usvNotPerfBox" style="display: ${isPerfNo ? 'block' : 'none'}; margin-bottom: 1rem;">
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                         <div>
                             ${renderCommonFieldHeader(rec, 'visit_not_performed_reason', 'Primary reason visit was not performed', true)}
@@ -5847,7 +5900,7 @@ function renderUsvFormHtml(rec, d) {
 
                 <div>
                     ${renderCommonFieldHeader(rec, 'visit_comments', 'Visit Comments / Notes', false)}
-                    <textarea id="inp_usv_visit_comments" class="form-input" rows="2" placeholder="Clinical observations / notes regarding this visit..." style="width: 100%; resize: vertical;">${escapeHtml(d.visit_comments || '')}</textarea>
+                    <textarea id="inp_usv_visit_comments" class="form-input" rows="2" style="width: 100%; resize: vertical;">${escapeHtml(d.visit_comments || '')}</textarea>
                 </div>
             </div>
 
@@ -5861,6 +5914,7 @@ function renderUsvFormHtml(rec, d) {
                     <div>
                         ${renderCommonFieldHeader(rec, 'vitals_assessed', 'Were vital signs assessed?', true)}
                         <select id="inp_usv_vitals_assessed" onchange="onUsvVitalsAssChange()" class="form-input" style="width: 100%;">
+                            <option value="">-- Select --</option>
                             <option value="Yes" ${vitalsAss === 'Yes' ? 'selected' : ''}>Yes</option>
                             <option value="No" ${vitalsAss === 'No' ? 'selected' : ''}>No</option>
                         </select>
@@ -5881,53 +5935,53 @@ function renderUsvFormHtml(rec, d) {
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.25rem;">
                         <div>
                             ${renderCommonFieldHeader(rec, 'vitals_assessment_date', 'Assessment Date', true)}
-                            <input type="date" id="inp_usv_vitals_assessment_date" max="${today}" class="form-input" value="${escapeHtml(d.vitals_assessment_date || d.date_of_visit || '')}" style="width: 100%;">
+                            <input type="date" id="inp_usv_vitals_assessment_date" max="${today}" class="form-input" value="${escapeHtml(d.vitals_assessment_date || '')}" style="width: 100%;">
                         </div>
                         <div>
                             ${renderCommonFieldHeader(rec, 'vitals_assessment_time', 'Assessment Time', true)}
-                            <input type="time" id="inp_usv_vitals_assessment_time" class="form-input" value="${escapeHtml(d.vitals_assessment_time || nowTime)}" style="width: 100%;">
+                            <input type="time" id="inp_usv_vitals_assessment_time" class="form-input" value="${escapeHtml(d.vitals_assessment_time || '')}" style="width: 100%;">
                         </div>
                     </div>
 
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem;">
                         <div style="background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.75rem;">
                             ${renderCommonFieldHeader(rec, 'sbp_val', 'Systolic BP (mmHg)', true)}
-                            <input type="number" id="inp_usv_sbp_val" class="form-input" value="${escapeHtml(d.sbp_val || '')}" placeholder="e.g. 120" min="70" max="220" style="width: 100%;">
+                            <input type="number" id="inp_usv_sbp_val" class="form-input" value="${escapeHtml(d.sbp_val || '')}" min="70" max="220" style="width: 100%;">
                             <div style="font-size: 0.7rem; color: #64748b; margin-top: 3px;">Range: 70 – 200 mmHg</div>
                         </div>
 
                         <div style="background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.75rem;">
                             ${renderCommonFieldHeader(rec, 'dbp_val', 'Diastolic BP (mmHg)', true)}
-                            <input type="number" id="inp_usv_dbp_val" class="form-input" value="${escapeHtml(d.dbp_val || '')}" placeholder="e.g. 80" min="40" max="140" style="width: 100%;">
+                            <input type="number" id="inp_usv_dbp_val" class="form-input" value="${escapeHtml(d.dbp_val || '')}" min="40" max="140" style="width: 100%;">
                             <div style="font-size: 0.7rem; color: #64748b; margin-top: 3px;">Range: 40 – 130 mmHg</div>
                         </div>
 
                         <div style="background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.75rem;">
                             ${renderCommonFieldHeader(rec, 'hr_val', 'Heart Rate (bpm)', true)}
-                            <input type="number" id="inp_usv_hr_val" class="form-input" value="${escapeHtml(d.hr_val || '')}" placeholder="e.g. 72" min="40" max="200" style="width: 100%;">
+                            <input type="number" id="inp_usv_hr_val" class="form-input" value="${escapeHtml(d.hr_val || '')}" min="40" max="200" style="width: 100%;">
                             <div style="font-size: 0.7rem; color: #64748b; margin-top: 3px;">Range: 40 – 180 bpm</div>
                         </div>
 
                         <div style="background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.75rem;">
                             ${renderCommonFieldHeader(rec, 'rr_val', 'Resp. Rate (breaths/min)', true)}
-                            <input type="number" id="inp_usv_rr_val" class="form-input" value="${escapeHtml(d.rr_val || '')}" placeholder="e.g. 16" min="8" max="50" style="width: 100%;">
+                            <input type="number" id="inp_usv_rr_val" class="form-input" value="${escapeHtml(d.rr_val || '')}" min="8" max="50" style="width: 100%;">
                             <div style="font-size: 0.7rem; color: #64748b; margin-top: 3px;">Range: 8 – 40 /min</div>
                         </div>
 
                         <div style="background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.75rem;">
                             ${renderCommonFieldHeader(rec, 'temp_val', 'Body Temp (°C)', true)}
-                            <input type="number" step="0.1" id="inp_usv_temp_val" class="form-input" value="${escapeHtml(d.temp_val || '')}" placeholder="e.g. 36.8" min="34" max="43" style="width: 100%;">
+                            <input type="number" step="0.1" id="inp_usv_temp_val" class="form-input" value="${escapeHtml(d.temp_val || '')}" min="34" max="43" style="width: 100%;">
                             <div style="font-size: 0.7rem; color: #64748b; margin-top: 3px;">Range: 35.0 – 42.0 °C</div>
                         </div>
 
                         <div style="background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.75rem;">
                             ${renderCommonFieldHeader(rec, 'weight_val', 'Body Weight (kg)', false)}
-                            <input type="number" step="0.1" id="inp_usv_weight_val" class="form-input" value="${escapeHtml(d.weight_val || '')}" placeholder="e.g. 70.5" style="width: 100%;">
+                            <input type="number" step="0.1" id="inp_usv_weight_val" class="form-input" value="${escapeHtml(d.weight_val || '')}" style="width: 100%;">
                         </div>
 
                         <div style="background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.75rem;">
                             ${renderCommonFieldHeader(rec, 'height_val', 'Height (cm)', false)}
-                            <input type="number" step="0.1" id="inp_usv_height_val" class="form-input" value="${escapeHtml(d.height_val || '')}" placeholder="e.g. 172.0" style="width: 100%;">
+                            <input type="number" step="0.1" id="inp_usv_height_val" class="form-input" value="${escapeHtml(d.height_val || '')}" style="width: 100%;">
                         </div>
                     </div>
                 </div>
@@ -5943,6 +5997,7 @@ function renderUsvFormHtml(rec, d) {
                     <div>
                         ${renderCommonFieldHeader(rec, 'hema_panel_collected', 'Was Hematology sample collected?', true)}
                         <select id="inp_usv_hema_panel_collected" onchange="onUsvHemaCollChange()" class="form-input" style="width: 100%;">
+                            <option value="">-- Select --</option>
                             <option value="Yes" ${hemaColl === 'Yes' ? 'selected' : ''}>Yes</option>
                             <option value="No" ${hemaColl === 'No' ? 'selected' : ''}>No</option>
                         </select>
@@ -5964,11 +6019,11 @@ function renderUsvFormHtml(rec, d) {
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
                         <div>
                             ${renderCommonFieldHeader(rec, 'hema_collection_date', 'Sample Collection Date', true)}
-                            <input type="date" id="inp_usv_hema_collection_date" max="${today}" class="form-input" value="${escapeHtml(d.hema_collection_date || d.date_of_visit || '')}" style="width: 100%;">
+                            <input type="date" id="inp_usv_hema_collection_date" max="${today}" class="form-input" value="${escapeHtml(d.hema_collection_date || '')}" style="width: 100%;">
                         </div>
                         <div>
                             ${renderCommonFieldHeader(rec, 'hema_collection_time', 'Sample Collection Time', true)}
-                            <input type="time" id="inp_usv_hema_collection_time" class="form-input" value="${escapeHtml(d.hema_collection_time || nowTime)}" style="width: 100%;">
+                            <input type="time" id="inp_usv_hema_collection_time" class="form-input" value="${escapeHtml(d.hema_collection_time || '')}" style="width: 100%;">
                         </div>
                     </div>
 
@@ -6004,6 +6059,7 @@ function renderUsvFormHtml(rec, d) {
                     <div>
                         ${renderCommonFieldHeader(rec, 'chem_panel_collected', 'Was Chemistry sample collected?', true)}
                         <select id="inp_usv_chem_panel_collected" onchange="onUsvChemCollChange()" class="form-input" style="width: 100%;">
+                            <option value="">-- Select --</option>
                             <option value="Yes" ${chemColl === 'Yes' ? 'selected' : ''}>Yes</option>
                             <option value="No" ${chemColl === 'No' ? 'selected' : ''}>No</option>
                         </select>
@@ -6025,11 +6081,11 @@ function renderUsvFormHtml(rec, d) {
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
                         <div>
                             ${renderCommonFieldHeader(rec, 'chem_collection_date', 'Sample Collection Date', true)}
-                            <input type="date" id="inp_usv_chem_collection_date" max="${today}" class="form-input" value="${escapeHtml(d.chem_collection_date || d.date_of_visit || '')}" style="width: 100%;">
+                            <input type="date" id="inp_usv_chem_collection_date" max="${today}" class="form-input" value="${escapeHtml(d.chem_collection_date || '')}" style="width: 100%;">
                         </div>
                         <div>
                             ${renderCommonFieldHeader(rec, 'chem_collection_time', 'Sample Collection Time', true)}
-                            <input type="time" id="inp_usv_chem_collection_time" class="form-input" value="${escapeHtml(d.chem_collection_time || nowTime)}" style="width: 100%;">
+                            <input type="time" id="inp_usv_chem_collection_time" class="form-input" value="${escapeHtml(d.chem_collection_time || '')}" style="width: 100%;">
                         </div>
                     </div>
 
@@ -6069,6 +6125,7 @@ function renderUsvFormHtml(rec, d) {
                     <div>
                         ${renderCommonFieldHeader(rec, 'drug_administered', 'Was study treatment administered?', true)}
                         <select id="inp_usv_drug_administered" onchange="onUsvDrugAdminChange()" class="form-input" style="width: 100%;">
+                            <option value="">-- Select --</option>
                             <option value="Yes" ${drugAdmin === 'Yes' ? 'selected' : ''}>Yes</option>
                             <option value="No" ${drugAdmin === 'No' ? 'selected' : ''}>No</option>
                         </select>
@@ -6091,27 +6148,28 @@ function renderUsvFormHtml(rec, d) {
                     <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
                         <div>
                             ${renderCommonFieldHeader(rec, 'drug_name', 'Study Treatment Name / Code', true)}
-                            <input type="text" id="inp_usv_drug_name" class="form-input" value="${escapeHtml(d.drug_name || 'IMP-2026')}" style="width: 100%;">
+                            <input type="text" id="inp_usv_drug_name" class="form-input" value="${escapeHtml(d.drug_name || '')}" style="width: 100%;">
                         </div>
                         <div>
                             ${renderCommonFieldHeader(rec, 'drug_admin_date', 'Administration Date', true)}
-                            <input type="date" id="inp_usv_drug_admin_date" max="${today}" class="form-input" value="${escapeHtml(d.drug_admin_date || d.date_of_visit || '')}" style="width: 100%;">
+                            <input type="date" id="inp_usv_drug_admin_date" max="${today}" class="form-input" value="${escapeHtml(d.drug_admin_date || '')}" style="width: 100%;">
                         </div>
                         <div>
                             ${renderCommonFieldHeader(rec, 'drug_admin_start_time', 'Start Time', true)}
-                            <input type="time" id="inp_usv_drug_admin_start_time" class="form-input" value="${escapeHtml(d.drug_admin_start_time || nowTime)}" style="width: 100%;">
+                            <input type="time" id="inp_usv_drug_admin_start_time" class="form-input" value="${escapeHtml(d.drug_admin_start_time || '')}" style="width: 100%;">
                         </div>
                     </div>
 
                     <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
                         <div>
                             ${renderCommonFieldHeader(rec, 'drug_actual_dose', 'Actual Dose Administered', true)}
-                            <input type="text" id="inp_usv_drug_actual_dose" class="form-input" value="${escapeHtml(d.drug_actual_dose || '100.0')}" style="width: 100%;">
+                            <input type="text" id="inp_usv_drug_actual_dose" class="form-input" value="${escapeHtml(d.drug_actual_dose || '')}" style="width: 100%;">
                         </div>
                         <div>
                             ${renderCommonFieldHeader(rec, 'drug_dose_unit', 'Dose Unit', true)}
                             <select id="inp_usv_drug_dose_unit" class="form-input" style="width: 100%;">
-                                <option value="mg" ${d.drug_dose_unit === 'mg' || !d.drug_dose_unit ? 'selected' : ''}>mg</option>
+                                <option value="">-- Select Unit --</option>
+                                <option value="mg" ${d.drug_dose_unit === 'mg' ? 'selected' : ''}>mg</option>
                                 <option value="mg/kg" ${d.drug_dose_unit === 'mg/kg' ? 'selected' : ''}>mg/kg</option>
                                 <option value="mg/m²" ${d.drug_dose_unit === 'mg/m²' ? 'selected' : ''}>mg/m²</option>
                                 <option value="mL" ${d.drug_dose_unit === 'mL' ? 'selected' : ''}>mL</option>
@@ -6121,6 +6179,7 @@ function renderUsvFormHtml(rec, d) {
                         <div>
                             ${renderCommonFieldHeader(rec, 'drug_route', 'Route of Administration', true)}
                             <select id="inp_usv_drug_route" onchange="onUsvDrugRouteChange()" class="form-input" style="width: 100%;">
+                                <option value="">-- Select Route --</option>
                                 <option value="Oral" ${d.drug_route === 'Oral' ? 'selected' : ''}>Oral</option>
                                 <option value="IV infusion" ${d.drug_route === 'IV infusion' ? 'selected' : ''}>IV infusion</option>
                                 <option value="Subcutaneous" ${d.drug_route === 'Subcutaneous' ? 'selected' : ''}>Subcutaneous</option>
@@ -6139,7 +6198,8 @@ function renderUsvFormHtml(rec, d) {
                             <div>
                                 ${renderCommonFieldHeader(rec, 'iv_interrupted', 'Was infusion interrupted?', false)}
                                 <select id="inp_usv_iv_interrupted" class="form-input" style="width: 100%;">
-                                    <option value="No" ${d.iv_interrupted === 'No' || !d.iv_interrupted ? 'selected' : ''}>No</option>
+                                    <option value="">-- Select --</option>
+                                    <option value="No" ${d.iv_interrupted === 'No' ? 'selected' : ''}>No</option>
                                     <option value="Yes" ${d.iv_interrupted === 'Yes' ? 'selected' : ''}>Yes</option>
                                 </select>
                             </div>
@@ -6148,7 +6208,7 @@ function renderUsvFormHtml(rec, d) {
 
                     <div>
                         ${renderCommonFieldHeader(rec, 'drug_comments', 'Dose Comments / Notes', false)}
-                        <textarea id="inp_usv_drug_comments" class="form-input" rows="2" placeholder="Administration notes..." style="width: 100%; resize: vertical;">${escapeHtml(d.drug_comments || '')}</textarea>
+                        <textarea id="inp_usv_drug_comments" class="form-input" rows="2" style="width: 100%; resize: vertical;">${escapeHtml(d.drug_comments || '')}</textarea>
                     </div>
                 </div>
             </div>

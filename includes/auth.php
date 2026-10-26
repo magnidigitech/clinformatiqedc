@@ -47,6 +47,23 @@ function loginUser($identity, $password) {
 function initializeUserRoles($user_id) {
     $pdo = getDB();
     
+    // Ensure Admin users and study creators also have Principal Investigator role assigned for their studies
+    try {
+        $pdo->exec("
+            INSERT INTO study_users (user_id, study_id, role_name, permissions)
+            SELECT DISTINCT su.user_id, su.study_id, 'Principal Investigator', '{\"view\": true, \"query\": true, \"sign_off\": true}'
+            FROM study_users su
+            WHERE (LOWER(su.role_name) = 'admin' OR su.study_id IN (SELECT id FROM studies WHERE created_by = " . (int)$user_id . "))
+            AND su.user_id = " . (int)$user_id . "
+            AND NOT EXISTS (
+                SELECT 1 FROM study_users su2 
+                WHERE su2.user_id = su.user_id 
+                AND su2.study_id = su.study_id 
+                AND (LOWER(su2.role_name) = 'principal investigator' OR LOWER(su2.role_name) = 'pi')
+            )
+        ");
+    } catch (Throwable $e) { /* Ignore */ }
+
     // Get all assignments for this user
     // Updated to use 'study_users' table (New Schema)
     $stmt = $pdo->prepare("

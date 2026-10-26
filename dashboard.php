@@ -4,10 +4,8 @@ require_once 'includes/auth.php';
 
 requireLogin();
 
-// Refresh assignments if not set or if we are switching to a potentially new study
-if (!isset($_SESSION['assignments'])) {
-    initializeUserRoles($_SESSION['user_id']);
-}
+// Refresh assignments to ensure newly provisioned roles (such as Principal Investigator) and studies appear
+initializeUserRoles($_SESSION['user_id']);
 
 // Handle Context Switch directly via ID (Role Selection)
 if (isset($_GET['switch_context_id'])) {
