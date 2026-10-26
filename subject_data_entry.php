@@ -3844,7 +3844,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                 Voided records will be excluded from active selections but preserved for regulatory audit compliance.
             </p>
             <input type="hidden" id="cfVoidRecordId" value="0">
-            <textarea id="cfVoidReasonInput" class="form-input" rows="3" placeholder="Enter reason for voiding this record..." style="width: 100%; font-size: 0.875rem; resize: vertical;"></textarea>
+            <textarea id="cfVoidReasonInput" class="form-input" rows="3" style="width: 100%; font-size: 0.875rem; resize: vertical;"></textarea>
         </div>
         <div class="modal-footer" style="background: #f8fafc; padding: 0.85rem 1.5rem; display: flex; gap: 0.75rem; justify-content: flex-end; border-top: 1px solid #e2e8f0;">
             <button type="button" onclick="closeModal('modalCommonVoid')" class="btn btn-sm btn-outline">Cancel</button>
@@ -4765,7 +4765,7 @@ function setupEditorForm(rec, formType) {
             <div style="display: grid; grid-template-columns: 1fr; gap: 1.25rem;">
                 <div>
                     ${renderCommonFieldHeader(rec, 'mh_term', '1. MH Term / Condition', true)}
-                    <input type="text" id="inp_mh_term" class="form-input" value="${escapeHtml(d.mh_term || '')}" placeholder="e.g. Type 2 Diabetes Mellitus" style="width: 100%;">
+                    <input type="text" id="inp_mh_term" class="form-input" value="${escapeHtml(d.mh_term || '')}" style="width: 100%;">
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
@@ -4791,7 +4791,7 @@ function setupEditorForm(rec, formType) {
 
                 <div>
                     ${renderCommonFieldHeader(rec, 'comments', '5. Comments / Additional Details', false)}
-                    <textarea id="inp_mh_comments" class="form-input" rows="3" placeholder="Enter additional details..." style="width: 100%; resize: vertical;">${escapeHtml(d.comments || '')}</textarea>
+                    <textarea id="inp_mh_comments" class="form-input" rows="3" style="width: 100%; resize: vertical;">${escapeHtml(d.comments || '')}</textarea>
                 </div>
 
                 <div>
@@ -4820,7 +4820,7 @@ function setupEditorForm(rec, formType) {
             <div style="display: grid; grid-template-columns: 1fr; gap: 1.25rem;">
                 <div>
                     ${renderCommonFieldHeader(rec, 'ae_term', '1. AE Term / Verbatim', true)}
-                    <input type="text" id="inp_ae_term" class="form-input" value="${escapeHtml(d.ae_term || '')}" placeholder="e.g. Severe Headache" style="width: 100%;">
+                    <input type="text" id="inp_ae_term" class="form-input" value="${escapeHtml(d.ae_term || '')}" style="width: 100%;">
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 1rem;">
@@ -4934,7 +4934,7 @@ function setupEditorForm(rec, formType) {
             <div style="display: grid; grid-template-columns: 1fr; gap: 1.25rem;">
                 <div>
                     ${renderCommonFieldHeader(rec, 'medication_name', '1. Medication Name', true)}
-                    <input type="text" id="inp_cm_name" class="form-input" value="${escapeHtml(d.medication_name || '')}" placeholder="e.g. Metformin 500mg" style="width: 100%;">
+                    <input type="text" id="inp_cm_name" class="form-input" value="${escapeHtml(d.medication_name || '')}" style="width: 100%;">
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
@@ -4970,7 +4970,7 @@ function setupEditorForm(rec, formType) {
                 <!-- 6. Specify Other -->
                 <div id="cmSpecifyOtherContainer" style="display: ${indType === 'Other' ? 'block' : 'none'};">
                     ${renderCommonFieldHeader(rec, 'specify_other', '6. Specify Other Indication', true)}
-                    <input type="text" id="inp_cm_specify_other" class="form-input" value="${escapeHtml(d.specify_other || '')}" placeholder="Enter indication..." style="width: 100%;">
+                    <input type="text" id="inp_cm_specify_other" class="form-input" value="${escapeHtml(d.specify_other || '')}" style="width: 100%;">
                 </div>
             </div>
         `;
@@ -5017,9 +5017,9 @@ function setupEditorForm(rec, formType) {
         let ntlRowsHtml = '';
         for (let i = 1; i <= existingNtlCount; i++) {
             const norg = d[`ntl${i}_organ`] || '';
-            const nsite = d[`ntl${i}_site`] || '';
+            const site = d[`ntl${i}_site`] || '';
             const nst = d[`ntl${i}_status`] || 'Present';
-            ntlRowsHtml += renderTaNtlRowHtml(i, { organ: norg, site: nsite, status: nst }, existingNtlCount > 1);
+            ntlRowsHtml += renderTaNtlRowHtml(i, { organ: norg, site: site, status: nst }, existingNtlCount > 1);
         }
 
         fieldsBox.innerHTML = `
@@ -5045,14 +5045,14 @@ function setupEditorForm(rec, formType) {
 
                     <div id="taNotAssessedReasonContainer" style="display: ${d.tumor_assessed === 'No' ? 'block' : 'none'}; margin-bottom: 1rem;">
                         ${renderCommonFieldHeader(rec, 'tumor_not_assessed_reason', 'Reason Tumor Assessment Not Performed', true)}
-                        <input type="text" id="inp_ta_not_assessed_reason" class="form-input" value="${escapeHtml(d.tumor_not_assessed_reason || '')}" placeholder="Enter clinical reason..." style="width: 100%;">
+                        <input type="text" id="inp_ta_not_assessed_reason" class="form-input" value="${escapeHtml(d.tumor_not_assessed_reason || '')}" style="width: 100%;">
                     </div>
 
                     <div id="taAssessmentDetailsContainer" style="display: ${d.tumor_assessed === 'No' ? 'none' : 'block'};">
                         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
                             <div>
                                 ${renderCommonFieldHeader(rec, 'tumor_timepoint', 'Assessment Time Point', true)}
-                                <input type="text" id="inp_ta_timepoint" class="form-input" value="${escapeHtml(d.tumor_timepoint || '')}" placeholder="e.g. Screening, Cycle 2 Day 1, Week 6" style="width: 100%;">
+                                <input type="text" id="inp_ta_timepoint" class="form-input" value="${escapeHtml(d.tumor_timepoint || '')}" style="width: 100%;">
                             </div>
                             <div>
                                 ${renderCommonFieldHeader(rec, 'imaging_date', 'Imaging Assessment Date', true)}
@@ -5072,7 +5072,7 @@ function setupEditorForm(rec, formType) {
                         </div>
                         <div id="taModalityOtherContainer" style="display: ${d.imaging_modality === 'Other' ? 'block' : 'none'}; margin-top: 0.75rem;">
                             ${renderCommonFieldHeader(rec, 'imaging_modality_other', 'Other Modality — Specify', true)}
-                            <input type="text" id="inp_ta_imaging_modality_other" class="form-input" value="${escapeHtml(d.imaging_modality_other || '')}" placeholder="Specify imaging technique..." style="width: 100%;">
+                            <input type="text" id="inp_ta_imaging_modality_other" class="form-input" value="${escapeHtml(d.imaging_modality_other || '')}" style="width: 100%;">
                         </div>
                     </div>
                 </div>
@@ -5122,7 +5122,7 @@ function setupEditorForm(rec, formType) {
                             <div style="display: flex; align-items: center; gap: 0.75rem;">
                                 <label style="font-weight: 700; font-size: 0.875rem; color: #1e293b;">Sum of Longest Diameters (mm):</label>
                                 ${renderCommonFieldHeader(rec, 'sum_longest_dia', '', false)}
-                                <input type="number" step="0.1" id="inp_ta_sum_longest_dia" class="form-input" value="${escapeHtml(d.sum_longest_dia || '')}" placeholder="0.0" style="width: 110px; font-weight: 700; text-align: right; background: #f8fafc;" readonly>
+                                <input type="number" step="0.1" id="inp_ta_sum_longest_dia" class="form-input" value="${escapeHtml(d.sum_longest_dia || '')}" style="width: 110px; font-weight: 700; text-align: right; background: #f8fafc;" readonly>
                             </div>
                         </div>
                     </div>
@@ -5200,11 +5200,11 @@ function setupEditorForm(rec, formType) {
                     </div>
                     <div id="taNewLesionsDetailsContainer" style="display: ${d.new_lesions_present === 'Yes' ? 'block' : 'none'}; margin-bottom: 1rem;">
                         ${renderCommonFieldHeader(rec, 'new_lesions_details', 'New Lesion Details / Anatomical Location', true)}
-                        <input type="text" id="inp_ta_new_lesions_details" class="form-input" value="${escapeHtml(d.new_lesions_details || '')}" placeholder="Specify organ and location of new lesion..." style="width: 100%;">
+                        <input type="text" id="inp_ta_new_lesions_details" class="form-input" value="${escapeHtml(d.new_lesions_details || '')}" style="width: 100%;">
                     </div>
                     <div>
                         ${renderCommonFieldHeader(rec, 'comments', 'Clinical Comments / Radiology Notes', false)}
-                        <textarea id="inp_ta_comments" class="form-input" rows="3" placeholder="Enter additional radiological remarks..." style="width: 100%; resize: vertical;">${escapeHtml(d.comments || '')}</textarea>
+                        <textarea id="inp_ta_comments" class="form-input" rows="3" style="width: 100%; resize: vertical;">${escapeHtml(d.comments || '')}</textarea>
                     </div>
                 </div>
             </div>
@@ -5335,10 +5335,10 @@ function renderTaTlRowHtml(i, data = {}, canDelete = false) {
         <tr class="ta-tl-row" data-index="${i}" style="border-bottom: 1px solid #e2e8f0; transition: background 0.15s;">
             <td class="ta-tl-label" style="padding: 0.6rem 0.5rem; font-weight: 700; font-size: 0.85rem; color: #334155; white-space: nowrap;">TL ${i}</td>
             <td style="padding: 0.5rem;">
-                <input type="text" id="inp_ta_tl${i}_organ" class="form-input ta-tl-organ" style="width: 100%; font-size: 0.85rem;" value="${escapeHtml(org)}" placeholder="e.g. Lung, Liver, Lymph Node">
+                <input type="text" id="inp_ta_tl${i}_organ" class="form-input ta-tl-organ" style="width: 100%; font-size: 0.85rem;" value="${escapeHtml(org)}">
             </td>
             <td style="padding: 0.5rem;">
-                <input type="text" id="inp_ta_tl${i}_site" class="form-input ta-tl-site" style="width: 100%; font-size: 0.85rem;" value="${escapeHtml(site)}" placeholder="Anatomical location">
+                <input type="text" id="inp_ta_tl${i}_site" class="form-input ta-tl-site" style="width: 100%; font-size: 0.85rem;" value="${escapeHtml(site)}">
             </td>
             <td style="padding: 0.5rem; width: 160px;">
                 <select id="inp_ta_tl${i}_axis" class="form-input ta-tl-axis" style="width: 100%; font-size: 0.85rem;">
@@ -5347,7 +5347,7 @@ function renderTaTlRowHtml(i, data = {}, canDelete = false) {
                 </select>
             </td>
             <td style="padding: 0.5rem; width: 110px;">
-                <input type="number" step="0.1" id="inp_ta_tl${i}_longest_dia" class="form-input tl-dia-input ta-tl-dia" oninput="calcTaSumDia()" style="width: 100%; font-size: 0.85rem;" value="${escapeHtml(dia)}" placeholder="mm">
+                <input type="number" step="0.1" id="inp_ta_tl${i}_longest_dia" class="form-input tl-dia-input ta-tl-dia" oninput="calcTaSumDia()" style="width: 100%; font-size: 0.85rem;" value="${escapeHtml(dia)}">
             </td>
             <td style="padding: 0.5rem; width: 160px;">
                 <select id="inp_ta_tl${i}_status" class="form-input ta-tl-status" style="width: 100%; font-size: 0.85rem;">
@@ -5483,10 +5483,10 @@ function renderTaNtlRowHtml(i, data = {}, canDelete = false) {
         <tr class="ta-ntl-row" data-index="${i}" style="border-bottom: 1px solid #e2e8f0; transition: background 0.15s;">
             <td class="ta-ntl-label" style="padding: 0.6rem 0.5rem; font-weight: 700; font-size: 0.85rem; color: #334155; white-space: nowrap;">NTL ${i}</td>
             <td style="padding: 0.5rem;">
-                <input type="text" id="inp_ta_ntl${i}_organ" class="form-input ta-ntl-organ" style="width: 100%; font-size: 0.85rem;" value="${escapeHtml(org)}" placeholder="e.g. Bone, Peritoneum">
+                <input type="text" id="inp_ta_ntl${i}_organ" class="form-input ta-ntl-organ" style="width: 100%; font-size: 0.85rem;" value="${escapeHtml(org)}">
             </td>
             <td style="padding: 0.5rem;">
-                <input type="text" id="inp_ta_ntl${i}_site" class="form-input ta-ntl-site" style="width: 100%; font-size: 0.85rem;" value="${escapeHtml(site)}" placeholder="Anatomical location">
+                <input type="text" id="inp_ta_ntl${i}_site" class="form-input ta-ntl-site" style="width: 100%; font-size: 0.85rem;" value="${escapeHtml(site)}">
             </td>
             <td style="padding: 0.5rem; width: 200px;">
                 <select id="inp_ta_ntl${i}_status" class="form-input ta-ntl-status" style="width: 100%; font-size: 0.85rem;">
@@ -6840,15 +6840,15 @@ let currentCommonQueryTargetLabel = null;
 
 const COMMON_FORM_FIELD_MAP = {
     'MH': [
-        { key: 'mh_term', label: '1. MH Term / Condition', type: 'text', placeholder: 'e.g. Type 2 Diabetes Mellitus' },
+        { key: 'mh_term', label: '1. MH Term / Condition', type: 'text' },
         { key: 'ongoing', label: '2. Ongoing / Continuing', type: 'select', options: ['Yes', 'No'] },
         { key: 'start_date', label: '3. Start Date', type: 'date' },
         { key: 'end_date', label: '4. End Date', type: 'date' },
-        { key: 'comments', label: '5. Comments / Additional Details', type: 'textarea', placeholder: 'Enter additional details...' },
+        { key: 'comments', label: '5. Comments / Additional Details', type: 'textarea' },
         { key: 'medication_given', label: '6. Medication Given', type: 'select', options: ['Yes', 'No'] }
     ],
     'AE': [
-        { key: 'ae_term', label: '1. AE Term / Verbatim', type: 'text', placeholder: 'e.g. Severe Headache' },
+        { key: 'ae_term', label: '1. AE Term / Verbatim', type: 'text' },
         { key: 'start_date', label: '2. Start Date', type: 'date' },
         { key: 'end_date', label: '3. End Date', type: 'date' },
         { key: 'severity', label: '4. Severity / Intensity', type: 'select', options: ['Mild', 'Moderate', 'Severe'] },
@@ -6860,88 +6860,88 @@ const COMMON_FORM_FIELD_MAP = {
         { key: 'concomitant_treatment', label: '10. Concomitant Treatment Given', type: 'select', options: ['Yes', 'No'] }
     ],
     'CM': [
-        { key: 'medication_name', label: '1. Medication Name', type: 'text', placeholder: 'e.g. Metformin 500mg' },
+        { key: 'medication_name', label: '1. Medication Name', type: 'text' },
         { key: 'start_date', label: '2. Start Date', type: 'date' },
         { key: 'stop_date', label: '3. Stop Date', type: 'date' },
         { key: 'indication_type', label: '4. Medication Taken For (Indication Type)', type: 'select', options: [ { value: 'MH', label: 'Medical History (MH)' }, { value: 'AE', label: 'Adverse Event (AE)' }, { value: 'Other', label: 'Other Indication' } ] },
-        { key: 'linked_records', label: '5. Linked Condition / Event', type: 'text', placeholder: 'Linked Condition / Event' },
-        { key: 'specify_other', label: '6. Specify Other Indication', type: 'text', placeholder: 'Enter indication...' }
+        { key: 'linked_records', label: '5. Linked Condition / Event', type: 'text' },
+        { key: 'specify_other', label: '6. Specify Other Indication', type: 'text' }
     ],
     'TA': [
-        { key: 'recist_method', label: 'Assessment Method', type: 'text', placeholder: 'RECIST 1.1' },
+        { key: 'recist_method', label: 'Assessment Method', type: 'text' },
         { key: 'tumor_assessed', label: 'Was Tumor Assessment Performed?', type: 'select', options: ['Yes', 'No'] },
-        { key: 'tumor_not_assessed_reason', label: 'Reason Tumor Assessment Not Performed', type: 'text', placeholder: 'Enter clinical reason...' },
-        { key: 'tumor_timepoint', label: 'Assessment Time Point', type: 'text', placeholder: 'e.g. Screening, Cycle 2 Day 1, Week 6' },
+        { key: 'tumor_not_assessed_reason', label: 'Reason Tumor Assessment Not Performed', type: 'text' },
+        { key: 'tumor_timepoint', label: 'Assessment Time Point', type: 'text' },
         { key: 'imaging_date', label: 'Imaging Assessment Date', type: 'date' },
         { key: 'imaging_modality', label: 'Imaging Modality', type: 'select', options: ['CT', 'MRI', 'CT and MRI', 'PET-CT', 'Other'] },
-        { key: 'imaging_modality_other', label: 'Other Modality — Specify', type: 'text', placeholder: 'Specify imaging technique...' },
+        { key: 'imaging_modality_other', label: 'Other Modality — Specify', type: 'text' },
         { key: 'target_lesions_present', label: 'Target Lesions Present', type: 'select', options: ['Yes', 'No'] },
-        { key: 'sum_longest_dia', label: 'Sum of Longest Diameters (mm)', type: 'number', step: '0.1', placeholder: '0.0' },
+        { key: 'sum_longest_dia', label: 'Sum of Longest Diameters (mm)', type: 'number', step: '0.1' },
         { key: 'nontarget_lesions_present', label: 'Non-Target Present', type: 'select', options: ['Yes', 'No'] },
         { key: 'new_lesions_present', label: 'New Lesions Identified?', type: 'select', options: ['No', 'Yes', 'Indeterminate'] },
-        { key: 'new_lesions_details', label: 'New Lesion Details / Anatomical Location', type: 'text', placeholder: 'Specify organ and location of new lesion...' },
+        { key: 'new_lesions_details', label: 'New Lesion Details / Anatomical Location', type: 'text' },
         { key: 'recist_overall_response', label: 'RECIST 1.1 Overall Response', type: 'select', options: ['CR — Complete Response', 'PR — Partial Response', 'SD — Stable Disease', 'PD — Progressive Disease', 'NE — Not Evaluable'] },
-        { key: 'comments', label: 'Clinical Comments / Radiology Notes', type: 'textarea', placeholder: 'Enter additional radiological remarks...' }
+        { key: 'comments', label: 'Clinical Comments / Radiology Notes', type: 'textarea' }
     ],
     'USV': [
         { key: 'visit_performed', label: 'Was Visit Performed?', type: 'select', options: ['Yes', 'No'] },
         { key: 'date_of_visit', label: 'Date of Visit', type: 'date' },
         { key: 'visit_reason_unscheduled', label: 'Reason for Unscheduled Visit', type: 'select', options: ['Adverse Event (AE) Assessment / Follow-up', 'Concomitant Medication Assessment', 'Abnormal Laboratory Result Follow-up', 'Patient Reported Symptoms / Deterioration', 'Dose Modification / Toxicity Re-evaluation', 'Protocol Compliance / Safety Re-check', 'Other'] },
-        { key: 'unscheduled_reason_other', label: 'Specify Other Reason', type: 'text', placeholder: 'Specify reason...' },
+        { key: 'unscheduled_reason_other', label: 'Specify Other Reason', type: 'text' },
         { key: 'visit_not_performed_reason', label: 'Reason Visit Not Performed', type: 'select', options: ['Subject Missed / Failed to Attend', 'Subject Withdrew Consent', 'Subject Lost to Follow-up', 'Subject Hospitalized', 'Subject Deceased', 'Adverse Event', 'Site Logistical Issue / Weather / Transport', 'Other'] },
         { key: 'date_of_death', label: 'Date of Death', type: 'date' },
-        { key: 'visit_comments', label: 'Visit Comments / Remarks', type: 'textarea', placeholder: 'Enter clinical comments...' },
+        { key: 'visit_comments', label: 'Visit Comments / Remarks', type: 'textarea' },
         { key: 'vitals_assessed', label: 'Vital Signs Assessed?', type: 'select', options: ['Yes', 'No'] },
-        { key: 'vitals_not_assessed_reason', label: 'Reason Vitals Not Assessed', type: 'text', placeholder: 'Specify reason...' },
+        { key: 'vitals_not_assessed_reason', label: 'Reason Vitals Not Assessed', type: 'text' },
         { key: 'vitals_assessment_date', label: 'Vitals Assessment Date', type: 'date' },
-        { key: 'vitals_assessment_time', label: 'Vitals Assessment Time', type: 'text', placeholder: 'HH:MM' },
-        { key: 'sbp_val', label: 'Systolic Blood Pressure (mmHg)', type: 'number', placeholder: '120' },
-        { key: 'dbp_val', label: 'Diastolic Blood Pressure (mmHg)', type: 'number', placeholder: '80' },
-        { key: 'hr_val', label: 'Heart Rate (bpm)', type: 'number', placeholder: '72' },
-        { key: 'rr_val', label: 'Respiratory Rate (breaths/min)', type: 'number', placeholder: '16' },
-        { key: 'temp_val', label: 'Body Temperature (°C)', type: 'number', step: '0.1', placeholder: '36.8' },
-        { key: 'weight_val', label: 'Weight (kg)', type: 'number', step: '0.1', placeholder: '70.0' },
-        { key: 'height_val', label: 'Height (cm)', type: 'number', step: '0.5', placeholder: '172.0' },
+        { key: 'vitals_assessment_time', label: 'Vitals Assessment Time', type: 'text' },
+        { key: 'sbp_val', label: 'Systolic Blood Pressure (mmHg)', type: 'number' },
+        { key: 'dbp_val', label: 'Diastolic Blood Pressure (mmHg)', type: 'number' },
+        { key: 'hr_val', label: 'Heart Rate (bpm)', type: 'number' },
+        { key: 'rr_val', label: 'Respiratory Rate (breaths/min)', type: 'number' },
+        { key: 'temp_val', label: 'Body Temperature (°C)', type: 'number', step: '0.1' },
+        { key: 'weight_val', label: 'Weight (kg)', type: 'number', step: '0.1' },
+        { key: 'height_val', label: 'Height (cm)', type: 'number', step: '0.5' },
         { key: 'hema_panel_collected', label: 'Hematology Collected?', type: 'select', options: ['Yes', 'No'] },
-        { key: 'hema_not_collected_reason', label: 'Reason Hematology Not Collected', type: 'text', placeholder: 'Specify reason...' },
+        { key: 'hema_not_collected_reason', label: 'Reason Hematology Not Collected', type: 'text' },
         { key: 'hema_collection_date', label: 'Hematology Collection Date', type: 'date' },
-        { key: 'hema_hgb_val', label: 'Hemoglobin (g/dL)', type: 'number', step: '0.1', placeholder: '14.2' },
+        { key: 'hema_hgb_val', label: 'Hemoglobin (g/dL)', type: 'number', step: '0.1' },
         { key: 'hema_hgb_flag', label: 'Hemoglobin Normality', type: 'select', options: ['Normal', 'Low', 'High', 'Abnormal'] },
-        { key: 'hema_hct_val', label: 'Hematocrit (%)', type: 'number', step: '0.1', placeholder: '42.0' },
+        { key: 'hema_hct_val', label: 'Hematocrit (%)', type: 'number', step: '0.1' },
         { key: 'hema_hct_flag', label: 'Hematocrit Normality', type: 'select', options: ['Normal', 'Low', 'High', 'Abnormal'] },
-        { key: 'hema_rbc_val', label: 'RBC (10^12/L)', type: 'number', step: '0.01', placeholder: '4.8' },
+        { key: 'hema_rbc_val', label: 'RBC (10^12/L)', type: 'number', step: '0.01' },
         { key: 'hema_rbc_flag', label: 'RBC Normality', type: 'select', options: ['Normal', 'Low', 'High', 'Abnormal'] },
-        { key: 'hema_wbc_val', label: 'WBC (10^9/L)', type: 'number', step: '0.01', placeholder: '6.5' },
+        { key: 'hema_wbc_val', label: 'WBC (10^9/L)', type: 'number', step: '0.01' },
         { key: 'hema_wbc_flag', label: 'WBC Normality', type: 'select', options: ['Normal', 'Low', 'High', 'Abnormal'] },
-        { key: 'hema_anc_val', label: 'ANC (10^9/L)', type: 'number', step: '0.01', placeholder: '3.8' },
+        { key: 'hema_anc_val', label: 'ANC (10^9/L)', type: 'number', step: '0.01' },
         { key: 'hema_anc_flag', label: 'ANC Normality', type: 'select', options: ['Normal', 'Low', 'High', 'Abnormal'] },
-        { key: 'hema_plt_val', label: 'Platelet Count (10^9/L)', type: 'number', step: '1', placeholder: '240' },
+        { key: 'hema_plt_val', label: 'Platelet Count (10^9/L)', type: 'number', step: '1' },
         { key: 'hema_plt_flag', label: 'Platelet Normality', type: 'select', options: ['Normal', 'Low', 'High', 'Abnormal'] },
         { key: 'chem_panel_collected', label: 'Chemistry Collected?', type: 'select', options: ['Yes', 'No'] },
-        { key: 'chem_not_collected_reason', label: 'Reason Chemistry Not Collected', type: 'text', placeholder: 'Specify reason...' },
+        { key: 'chem_not_collected_reason', label: 'Reason Chemistry Not Collected', type: 'text' },
         { key: 'chem_collection_date', label: 'Chemistry Collection Date', type: 'date' },
-        { key: 'chem_sod_val', label: 'Sodium (mmol/L)', type: 'number', step: '0.1', placeholder: '140' },
-        { key: 'chem_pot_val', label: 'Potassium (mmol/L)', type: 'number', step: '0.1', placeholder: '4.2' },
-        { key: 'chem_glu_val', label: 'Glucose (mg/dL)', type: 'number', step: '1', placeholder: '95' },
-        { key: 'chem_cal_val', label: 'Calcium (mg/dL)', type: 'number', step: '0.1', placeholder: '9.2' },
-        { key: 'chem_alb_val', label: 'Albumin (g/dL)', type: 'number', step: '0.1', placeholder: '4.1' },
-        { key: 'chem_tp_val', label: 'Total Protein (g/dL)', type: 'number', step: '0.1', placeholder: '7.2' },
-        { key: 'chem_alt_val', label: 'ALT / SGPT (U/L)', type: 'number', step: '1', placeholder: '28' },
+        { key: 'chem_sod_val', label: 'Sodium (mmol/L)', type: 'number', step: '0.1' },
+        { key: 'chem_pot_val', label: 'Potassium (mmol/L)', type: 'number', step: '0.1' },
+        { key: 'chem_glu_val', label: 'Glucose (mg/dL)', type: 'number', step: '1' },
+        { key: 'chem_cal_val', label: 'Calcium (mg/dL)', type: 'number', step: '0.1' },
+        { key: 'chem_alb_val', label: 'Albumin (g/dL)', type: 'number', step: '0.1' },
+        { key: 'chem_tp_val', label: 'Total Protein (g/dL)', type: 'number', step: '0.1' },
+        { key: 'chem_alt_val', label: 'ALT / SGPT (U/L)', type: 'number', step: '1' },
         { key: 'chem_alt_flag', label: 'ALT Normality', type: 'select', options: ['Normal', 'Low', 'High', 'Abnormal'] },
-        { key: 'chem_ast_val', label: 'AST / SGOT (U/L)', type: 'number', step: '1', placeholder: '24' },
+        { key: 'chem_ast_val', label: 'AST / SGOT (U/L)', type: 'number', step: '1' },
         { key: 'chem_ast_flag', label: 'AST Normality', type: 'select', options: ['Normal', 'Low', 'High', 'Abnormal'] },
-        { key: 'chem_tbil_val', label: 'Total Bilirubin (mg/dL)', type: 'number', step: '0.1', placeholder: '0.8' },
+        { key: 'chem_tbil_val', label: 'Total Bilirubin (mg/dL)', type: 'number', step: '0.1' },
         { key: 'chem_tbil_flag', label: 'Total Bilirubin Normality', type: 'select', options: ['Normal', 'Low', 'High', 'Abnormal'] },
-        { key: 'chem_creat_val', label: 'Serum Creatinine (mg/dL)', type: 'number', step: '0.01', placeholder: '0.9' },
+        { key: 'chem_creat_val', label: 'Serum Creatinine (mg/dL)', type: 'number', step: '0.01' },
         { key: 'chem_creat_flag', label: 'Creatinine Normality', type: 'select', options: ['Normal', 'Low', 'High', 'Abnormal'] },
         { key: 'drug_administered', label: 'Study Drug Administered?', type: 'select', options: ['Yes', 'No'] },
-        { key: 'drug_not_administered_reason', label: 'Reason Drug Not Administered', type: 'text', placeholder: 'Specify reason...' },
-        { key: 'drug_name', label: 'Study Drug Name', type: 'text', placeholder: 'e.g. Investigational Product X' },
+        { key: 'drug_not_administered_reason', label: 'Reason Drug Not Administered', type: 'text' },
+        { key: 'drug_name', label: 'Study Drug Name', type: 'text' },
         { key: 'drug_admin_date', label: 'Administration Date', type: 'date' },
-        { key: 'drug_actual_dose', label: 'Actual Dose Administered', type: 'number', step: '0.1', placeholder: '100' },
+        { key: 'drug_actual_dose', label: 'Actual Dose Administered', type: 'number', step: '0.1' },
         { key: 'drug_dose_unit', label: 'Dose Unit', type: 'select', options: ['mg', 'g', 'mL', 'mg/kg', 'mg/m2', 'IU'] },
         { key: 'drug_route', label: 'Route of Administration', type: 'select', options: ['Oral (PO)', 'Intravenous (IV) Infusion', 'Subcutaneous (SC)', 'Intramuscular (IM)', 'Topical', 'Inhalation'] },
-        { key: 'drug_comments', label: 'Drug Administration Comments', type: 'textarea', placeholder: 'Enter comments...' }
+        { key: 'drug_comments', label: 'Drug Administration Comments', type: 'textarea' }
     ]
 };
 
@@ -6989,14 +6989,14 @@ function renderCommonQueryProposedInput(formType, fieldName, queryId, currentVal
 
     if (fType === 'textarea') {
         return `
-            <textarea id="inp_ans_val_${queryId}" class="form-input" rows="2" placeholder="${escapeHtml(fieldDef.placeholder || 'Proposed New Value (Leave blank if unchanged)...')}" style="width: 100%; font-size: 0.85rem; padding: 0.45rem 0.6rem; resize: vertical;"></textarea>
+            <textarea id="inp_ans_val_${queryId}" class="form-input" rows="2" style="width: 100%; font-size: 0.85rem; padding: 0.45rem 0.6rem; resize: vertical;"></textarea>
             <div style="font-size: 0.7rem; color: #64748b; margin-top: 3px;">Leave blank if comments remain unchanged. Proposed text will be applied upon closure.</div>
         `;
     }
 
     if (fType === 'number') {
         return `
-            <input type="number" step="${fieldDef.step || 'any'}" id="inp_ans_val_${queryId}" class="form-input" placeholder="${escapeHtml(fieldDef.placeholder || 'Proposed New Value (Leave blank if unchanged)')}" style="width: 100%; font-size: 0.85rem; padding: 0.45rem 0.6rem;">
+            <input type="number" step="${fieldDef.step || 'any'}" id="inp_ans_val_${queryId}" class="form-input" style="width: 100%; font-size: 0.85rem; padding: 0.45rem 0.6rem;">
             <div style="font-size: 0.7rem; color: #64748b; margin-top: 3px;">Enter proposed numeric value (leave blank if unchanged).</div>
         `;
     }
@@ -7030,7 +7030,7 @@ function renderCommonQueryProposedInput(formType, fieldName, queryId, currentVal
 
     // Default / text input
     return `
-        <input type="text" id="inp_ans_val_${queryId}" class="form-input" placeholder="${escapeHtml(fieldDef.placeholder || 'Proposed New Value (Leave blank if field value remains unchanged)')}" style="width: 100%; font-size: 0.85rem; padding: 0.45rem 0.6rem;">
+        <input type="text" id="inp_ans_val_${queryId}" class="form-input" style="width: 100%; font-size: 0.85rem; padding: 0.45rem 0.6rem;">
         <div style="font-size: 0.7rem; color: #64748b; margin-top: 3px;">Leave blank if field value remains unchanged. Value will be applied when reviewer closes the query.</div>
     `;
 }
