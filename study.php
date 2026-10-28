@@ -80,6 +80,10 @@ $num_sites = $stmt_sites_cnt->fetchColumn();
 // Number of Subjects
 $params_subs = [$study_id];
 $sql_subs = "SELECT COUNT(*) FROM subjects WHERE study_id = ?";
+if (!isCurrentUserAdmin()) {
+    $sql_subs .= " AND created_by = ?";
+    $params_subs[] = $user_id;
+}
 if (!empty($user_sites)) {
     $assigned_site_names = array_column($user_sites, 'name');
     $placeholders = implode(',', array_fill(0, count($assigned_site_names), '?'));
@@ -103,6 +107,10 @@ $num_subjects = $stmt_subs_cnt->fetchColumn();
 // Average Completion Progress
 $params_prog = [$study_id];
 $sql_prog = "SELECT AVG(COALESCE(progress, 0)) FROM subjects WHERE study_id = ?";
+if (!isCurrentUserAdmin()) {
+    $sql_prog .= " AND created_by = ?";
+    $params_prog[] = $user_id;
+}
 if (!empty($user_sites)) {
     $assigned_site_names = array_column($user_sites, 'name');
     $placeholders = implode(',', array_fill(0, count($assigned_site_names), '?'));
@@ -189,6 +197,13 @@ $sql_recent = "SELECT * FROM subjects WHERE study_id = ?";
 $sql_count = "SELECT COUNT(*) FROM subjects WHERE study_id = ?";
 $params_recent = [$study_id];
 $params_count = [$study_id];
+
+if (!isCurrentUserAdmin()) {
+    $sql_recent .= " AND created_by = ?";
+    $sql_count .= " AND created_by = ?";
+    $params_recent[] = $user_id;
+    $params_count[] = $user_id;
+}
 
 if (!empty($user_sites)) {
     $assigned_site_names = array_column($user_sites, 'name');
@@ -354,7 +369,7 @@ if (isApiRequest() || isset($_GET['ajax_search'])) {
                         <span class="material-icons-round" style="font-size: 1.5rem;">people</span>
                     </div>
                     <div>
-                        <div style="font-size: 0.75rem; color: var(--text-light); text-transform: uppercase; font-weight: 600;">Number of Subjects</div>
+                        <div style="font-size: 0.75rem; color: var(--text-light); text-transform: uppercase; font-weight: 600;"><?php echo isCurrentUserAdmin() ? 'Number of Subjects' : 'My Subjects'; ?></div>
                         <div style="font-size: 1.75rem; font-weight: 700; color: var(--primary-color); line-height: 1.2; margin-top: 0.25rem;"><?php echo $num_subjects; ?></div>
                     </div>
                 </div>
@@ -390,6 +405,10 @@ if (isApiRequest() || isset($_GET['ajax_search'])) {
                     
                     $sql_verify = "SELECT COUNT(*) FROM subject_form_status sfs JOIN subjects s ON sfs.subject_id = s.id WHERE s.study_id = ? AND sfs.is_complete = $is_complete_val AND (sfs.is_verified = $is_verified_val OR sfs.is_verified IS NULL)";
                     $params_verify = [$_SESSION['active_study_id']];
+                    if (!isCurrentUserAdmin()) {
+                        $sql_verify .= " AND s.created_by = ?";
+                        $params_verify[] = $user_id;
+                    }
                     
                     if (!empty($user_sites)) {
                         $assigned_site_names = array_column($user_sites, 'name');
@@ -424,6 +443,10 @@ if (isApiRequest() || isset($_GET['ajax_search'])) {
                     // Count open queries based on site_filter and restrictions
                     $sql_q = "SELECT COUNT(*) FROM data_queries q JOIN subjects s ON q.subject_id = s.id WHERE q.study_id = ? AND q.status IN ('new', 'open', 'answered', 'unconfirmed')";
                     $params_q = [$_SESSION['active_study_id']];
+                    if (!isCurrentUserAdmin()) {
+                        $sql_q .= " AND s.created_by = ?";
+                        $params_q[] = $user_id;
+                    }
                     
                     if (!empty($user_sites)) {
                         $assigned_site_names = array_column($user_sites, 'name');
@@ -458,7 +481,7 @@ if (isApiRequest() || isset($_GET['ajax_search'])) {
             <!-- Subject List Placeholder -->
             <div class="card">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
-                    <h3>Subjects</h3>
+                    <h3><?php echo isCurrentUserAdmin() ? 'Subjects' : 'My Subjects'; ?></h3>
                     <div style="display: flex; align-items: center; gap: 1rem;">
                         <div style="display: flex; align-items: center; gap: 0.5rem;">
                             <label style="font-size: 0.875rem; color: var(--text-light); white-space: nowrap;">Show:</label>
@@ -471,7 +494,7 @@ if (isApiRequest() || isset($_GET['ajax_search'])) {
                             </select>
                         </div>
                         <div style="position: relative;">
-                            <input type="text" id="subject-search" placeholder="Search subject..." class="form-input" style="padding-left: 2rem; width: 200px;">
+                            <input type="text" id="subject-search" placeholder="<?php echo isCurrentUserAdmin() ? 'Search subject...' : 'Search my subjects...'; ?>" class="form-input" style="padding-left: 2rem; width: 200px;">
                             <span class="material-icons-round" style="position: absolute; left: 0.5rem; top: 50%; transform: translateY(-50%); font-size: 1rem; color: var(--text-light);">search</span>
                         </div>
                     </div>

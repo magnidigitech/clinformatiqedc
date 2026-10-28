@@ -42,6 +42,14 @@ function jsonResponse($success, $message, $data = []) {
 }
 
 /**
+ * Check if the current user has the Admin role (in active context)
+ */
+function isCurrentUserAdmin() {
+    $role = strtolower($_SESSION['active_role_name'] ?? '');
+    return ($role === 'admin' || strpos($role, 'admin') !== false);
+}
+
+/**
  * Render Role Switcher in Study Header
  */
 function renderRoleSwitcher($study_id) {

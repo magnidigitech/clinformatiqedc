@@ -30,9 +30,29 @@ try {
     $is_monitor = (strpos($role_lower, 'monitor') !== false) || (strpos($role_lower, 'cra') !== false) || (strpos($role_lower, 'admin') !== false);
     $is_manager = (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'admin') !== false);
     $is_pi = (strpos($role_lower, 'investigator') !== false) || ($role_lower === 'pi') || (strpos($role_lower, 'admin') !== false);
-    $is_admin = (strpos($role_lower, 'admin') !== false);
     // Strict clinical content editor flag: Data Managers, Data Monitors, and Principal Investigators cannot create, edit, or void clinical content.
     $is_data_editor = ($is_coordinator || $is_admin) && (strpos($role_lower, 'manager') === false) && (strpos($role_lower, 'monitor') === false) && (strpos($role_lower, 'investigator') === false) && ($role_lower !== 'pi');
+
+    // Restrict all roles except Admin to only subjects they created
+    $posted_subject_id = (int)($_POST['subject_id'] ?? 0);
+    if ($posted_subject_id > 0 && !isCurrentUserAdmin()) {
+        $chk_sub = $pdo->prepare("SELECT created_by FROM subjects WHERE id = ? AND study_id = ?");
+        $chk_sub->execute([$posted_subject_id, $study_id]);
+        $sub_creator = $chk_sub->fetchColumn();
+        if ($sub_creator === false || (int)$sub_creator !== (int)$_SESSION['user_id']) {
+            throw new Exception("Unauthorized access. You can only view and manage records for subjects created by you.");
+        }
+    }
+
+    $posted_record_id = (int)($_POST['record_id'] ?? 0);
+    if ($posted_record_id > 0 && $posted_subject_id <= 0 && !isCurrentUserAdmin()) {
+        $chk_rec = $pdo->prepare("SELECT s.created_by FROM subject_common_records scr JOIN subjects s ON scr.subject_id = s.id WHERE scr.id = ? AND scr.study_id = ?");
+        $chk_rec->execute([$posted_record_id, $study_id]);
+        $sub_creator = $chk_rec->fetchColumn();
+        if ($sub_creator === false || (int)$sub_creator !== (int)$_SESSION['user_id']) {
+            throw new Exception("Unauthorized access. You can only view and manage records for subjects created by you.");
+        }
+    }
 
     // =========================================================================
     // 1. GET ALL RECORDS FOR A SUBJECT & FORM TYPE

@@ -31,6 +31,13 @@ $assigned_site_names = $stmt->fetchAll(PDO::FETCH_COLUMN);
 $sql = "SELECT * FROM subjects WHERE study_id = ?";
 $params = [$study_id];
 
+// Restrict all roles except Admin to only subjects they created
+$is_admin = isCurrentUserAdmin();
+if (!$is_admin) {
+    $sql .= " AND created_by = ?";
+    $params[] = $user_id;
+}
+
 if (!empty($assigned_site_names)) {
     $placeholders = implode(',', array_fill(0, count($assigned_site_names), '?'));
     $sql .= " AND site_name IN ($placeholders)";
@@ -80,7 +87,7 @@ if (isApiRequest()) {
     <main class="main-content">
         <header class="top-nav">
             <div>
-                <h2 style="font-size: 1.125rem;">Subjects</h2>
+                <h2 style="font-size: 1.125rem;"><?php echo $is_admin ? 'Subjects' : 'My Subjects'; ?></h2>
                 <?php renderRoleSwitcher($study_id); ?>
             </div>
              <div style="display: flex; align-items: center; gap: 0.5rem;">
@@ -93,7 +100,7 @@ if (isApiRequest()) {
             
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
                 <div style="position: relative;">
-                    <input type="text" placeholder="Search subjects..." class="form-input" style="padding-left: 2rem; width: 300px;">
+                    <input type="text" placeholder="<?php echo $is_admin ? 'Search subjects...' : 'Search my subjects...'; ?>" class="form-input" style="padding-left: 2rem; width: 300px;">
                     <span class="material-icons-round" style="position: absolute; left: 0.5rem; top: 50%; transform: translateY(-50%); font-size: 1rem; color: var(--text-light);">search</span>
                 </div>
 

@@ -20,8 +20,14 @@
             // Count open queries
             $q_count = 0;
             if (isset($_SESSION['active_study_id'])) {
-                $stmt_q = getDB()->prepare("SELECT COUNT(*) FROM data_queries WHERE study_id = ? AND status IN ('new', 'open', 'unconfirmed', 'answered')");
-                $stmt_q->execute([$_SESSION['active_study_id']]);
+                $sql_sb_q = "SELECT COUNT(*) FROM data_queries q JOIN subjects s ON q.subject_id = s.id WHERE q.study_id = ? AND q.status IN ('new', 'open', 'unconfirmed', 'answered')";
+                $params_sb_q = [$_SESSION['active_study_id']];
+                if (!isCurrentUserAdmin()) {
+                    $sql_sb_q .= " AND s.created_by = ?";
+                    $params_sb_q[] = $_SESSION['user_id'];
+                }
+                $stmt_q = getDB()->prepare($sql_sb_q);
+                $stmt_q->execute($params_sb_q);
                 $q_count = $stmt_q->fetchColumn();
             }
         ?>

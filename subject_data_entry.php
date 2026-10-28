@@ -106,8 +106,19 @@ $stmt->execute([$subject_id, $study_id]);
 $subject = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$subject) {
-    // If subject doesn't exist, might be testing. fallback.
-    $subject = ['subject_code' => 'Unknown Subject', 'id' => $subject_id];
+    // If subject doesn't exist, redirect to subjects list
+    redirect('subjects_list.php');
+}
+
+// Security Check: Restrict All Roles Except Admin to only subjects they created
+if (!isCurrentUserAdmin() && isset($subject['created_by']) && (int)$subject['created_by'] !== (int)$_SESSION['user_id']) {
+    die("
+    <div style='max-width: 500px; margin: 4rem auto; padding: 2rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; text-align: center; font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);'>
+        <h3 style='margin: 0 0 0.5rem; color: #1e293b; font-size: 1.25rem;'>Access Restricted</h3>
+        <p style='color: #64748b; font-size: 0.875rem; margin-bottom: 1.5rem;'>You can only view and enter data for subjects created by you.</p>
+        <a href='subjects_list.php' style='display: inline-block; padding: 0.5rem 1.25rem; background: #0284c7; color: white; text-decoration: none; border-radius: 6px; font-size: 0.875rem; font-weight: 500;'>Return to Subjects</a>
+    </div>
+    ");
 }
 
 // ... (Subject Fetching matches previous)

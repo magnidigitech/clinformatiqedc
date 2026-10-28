@@ -51,6 +51,11 @@ $sql = "
     AND (sfs.repeating_instance_id IS NULL OR sfs.repeating_instance_id = 0 OR sri.status = 'active')
 ";
 
+if (!isCurrentUserAdmin()) {
+    $sql .= " AND s.created_by = ?";
+    $params[] = $_SESSION['user_id'];
+}
+
 if ($site_filter) {
     $sql .= " AND s.site_name = ?";
     $params[] = $site_filter;

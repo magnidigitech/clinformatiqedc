@@ -19,6 +19,16 @@ $status_filter = $_GET['status'] ?? ''; // e.g. 'all', 'new', 'open', 'answered'
 $site_filter   = $_GET['site'] ?? '';
 $subject_filter = $_GET['subject'] ?? '';
 
+$user_id = $_SESSION['user_id'];
+$is_admin = isCurrentUserAdmin();
+
+$creator_clause = "";
+$params_counts = [$study_id];
+if (!$is_admin) {
+    $creator_clause = " AND s.created_by = ?";
+    $params_counts[] = $user_id;
+}
+
 // Fetch counts for each status tab
 $stmt_counts = $pdo->prepare("
     SELECT 
@@ -31,9 +41,10 @@ $stmt_counts = $pdo->prepare("
     JOIN subjects s ON q.subject_id = s.id
     LEFT JOIN subject_repeating_instances sri ON q.repeating_instance_id = sri.id
     WHERE q.study_id = ?
+    $creator_clause
     AND (q.repeating_instance_id = 0 OR q.repeating_instance_id IS NULL OR sri.status = 'active')
 ");
-$stmt_counts->execute([$study_id]);
+$stmt_counts->execute($params_counts);
 $counts = $stmt_counts->fetch(PDO::FETCH_ASSOC);
 
 $total_count = $counts['total'] ?? 0;
@@ -44,6 +55,11 @@ $closed_count = $counts['closed_count'] ?? 0;
 
 $status_clause = "";
 $params = [$study_id];
+
+if (!$is_admin) {
+    $status_clause .= " AND s.created_by = ?";
+    $params[] = $user_id;
+}
 
 if ($status_filter && $status_filter !== 'all') {
     $status_clause = "AND q.status = ?";

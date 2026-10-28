@@ -28,6 +28,17 @@ try {
     // Strict clinical content editor flag: Data Managers, Data Monitors, and Principal Investigators cannot edit clinical content.
     $is_data_editor = ($is_coordinator || (strpos($role_lower, 'admin') !== false)) && (strpos($role_lower, 'manager') === false) && (strpos($role_lower, 'monitor') === false) && (strpos($role_lower, 'investigator') === false) && ($role_lower !== 'pi');
 
+    // Restrict all roles except Admin to only subjects they created
+    $req_subject_id = (int)($_POST['subject_id'] ?? 0);
+    if ($req_subject_id > 0 && !isCurrentUserAdmin()) {
+        $chk_sub = $pdo->prepare("SELECT created_by FROM subjects WHERE id = ? AND study_id = ?");
+        $chk_sub->execute([$req_subject_id, $study_id]);
+        $sub_creator = $chk_sub->fetchColumn();
+        if ($sub_creator === false || (int)$sub_creator !== (int)$_SESSION['user_id']) {
+            throw new Exception("Unauthorized access. You can only access and modify subjects created by you.");
+        }
+    }
+
     if ($action === 'save_data') {
         if (!$is_data_editor || (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'monitor') !== false) || (strpos($role_lower, 'investigator') !== false) || ($role_lower === 'pi')) {
             throw new Exception("Unauthorized: Data Managers, Data Monitors, and Principal Investigators cannot edit clinical content.");
@@ -410,10 +421,13 @@ try {
         if (!$new_status) throw new Exception("Status required");
         
         // Enforce lock if form is signed off by Principal Investigator
-        $stmt_qchk = $pdo->prepare("SELECT subject_id, form_id, COALESCE(repeating_instance_id, 0) as repeating_instance_id FROM data_queries WHERE id = ?");
+        $stmt_qchk = $pdo->prepare("SELECT q.subject_id, q.form_id, COALESCE(q.repeating_instance_id, 0) as repeating_instance_id, s.created_by FROM data_queries q JOIN subjects s ON q.subject_id = s.id WHERE q.id = ?");
         $stmt_qchk->execute([$query_id]);
         $qchk = $stmt_qchk->fetch();
         if ($qchk) {
+            if (!isCurrentUserAdmin() && (int)$qchk['created_by'] !== (int)$_SESSION['user_id']) {
+                throw new Exception("Unauthorized access. You can only respond to queries for subjects created by you.");
+            }
             $stmt_pichk = $pdo->prepare("SELECT pi_signed_off FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
             $stmt_pichk->execute([$qchk['subject_id'], $qchk['form_id'], $qchk['repeating_instance_id'], $qchk['repeating_instance_id']]);
             if ((bool)$stmt_pichk->fetchColumn()) {
