@@ -4,16 +4,12 @@ require_once 'includes/auth.php';
 
 requireLogin();
 
-// Check if user is in Admin role
-$is_admin = (strtolower($_SESSION['active_role_name'] ?? '') === 'admin');
-if (!$is_admin && !empty($_SESSION['assignments'])) {
-    foreach ($_SESSION['assignments'] as $assign) {
-        if (strtolower($assign['role_name'] ?? '') === 'admin') {
-            $is_admin = true;
-            break;
-        }
-    }
+// Apart from admin, no other roles can create a new study
+if (!isUserAdmin()) {
+    redirect('dashboard.php');
 }
+
+$is_admin = true;
 
 $error = '';
 $success = '';

@@ -163,11 +163,12 @@ $username = $_SESSION['username'] ?? 'User';
                 </form>
 
                 <div style="display: flex; gap: 0.5rem;">
-                     <!-- "New Study" available for all users -->
+                     <?php if (isUserAdmin()): ?>
                      <a href="study_create.php" class="btn btn-primary">
                         <span class="material-icons-round" style="font-size: 1.25rem;">add</span>
                         New Study
                     </a>
+                    <?php endif; ?>
                     <button class="btn btn-outline">
                          <span class="material-icons-round" style="font-size: 1.25rem;">filter_list</span>
                          Filters

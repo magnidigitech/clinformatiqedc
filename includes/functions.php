@@ -50,6 +50,28 @@ function isCurrentUserAdmin() {
 }
 
 /**
+ * Check if the user has an Admin role in any assignment, active context, or is system admin
+ */
+function isUserAdmin() {
+    if (strtolower($_SESSION['username'] ?? '') === 'admin') {
+        return true;
+    }
+    $role = strtolower($_SESSION['active_role_name'] ?? '');
+    if ($role === 'admin' || strpos($role, 'admin') !== false) {
+        return true;
+    }
+    if (!empty($_SESSION['assignments'])) {
+        foreach ($_SESSION['assignments'] as $assign) {
+            $r = strtolower($assign['role_name'] ?? '');
+            if ($r === 'admin' || strpos($r, 'admin') !== false) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
  * Render Role Switcher in Study Header
  */
 function renderRoleSwitcher($study_id) {
