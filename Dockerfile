@@ -9,6 +9,12 @@ RUN install-php-extensions \
     zip \
     opcache
 
+# Use production php.ini with increased limits
+RUN cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" && \
+    sed -i 's/upload_max_filesize = 2M/upload_max_filesize = 50M/' "$PHP_INI_DIR/php.ini" && \
+    sed -i 's/post_max_size = 8M/post_max_size = 50M/' "$PHP_INI_DIR/php.ini" && \
+    sed -i 's/memory_limit = 128M/memory_limit = 256M/' "$PHP_INI_DIR/php.ini"
+
 # Set FrankenPHP server configuration
 ENV SERVER_NAME=":80"
 
