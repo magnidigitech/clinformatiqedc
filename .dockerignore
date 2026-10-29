@@ -1,0 +1,6 @@
+.git
+.gitignore
+.dockerignore
+.agents
+*.md
+.DS_Store

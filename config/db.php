@@ -47,6 +47,11 @@ function getDB() {
     static $pdo = null;
 
     if ($pdo === null) {
+        if (!in_array('pgsql', PDO::getAvailableDrivers())) {
+            $available = implode(', ', PDO::getAvailableDrivers()) ?: 'none';
+            throw new \PDOException("PHP PDO PostgreSQL driver (pdo_pgsql) is not installed. Available drivers: [{$available}]. Please ensure the pdo_pgsql extension is enabled in PHP.");
+        }
+
         $dsn = "pgsql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=" . DB_NAME;
         if (!empty(DB_SSLMODE)) {
             $dsn .= ";sslmode=" . DB_SSLMODE;

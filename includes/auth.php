@@ -256,7 +256,11 @@ function requireLogin() {
     }
 
     // Refresh assignments dynamically to pull in any database updates
-    refreshUserAssignments($_SESSION['user_id']);
+    try {
+        refreshUserAssignments($_SESSION['user_id']);
+    } catch (\Throwable $e) {
+        error_log("Failed to refresh assignments: " . $e->getMessage());
+    }
     
     // Prevent caching of protected pages
     header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");

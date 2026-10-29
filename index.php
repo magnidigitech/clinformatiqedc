@@ -16,11 +16,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($identity) || empty($password)) {
         $error = "Please enter both username and password.";
     } else {
-        $user = loginUser($identity, $password);
-        if ($user) {
-            redirect('dashboard.php');
-        } else {
-            $error = "Invalid credentials. Please try again.";
+        try {
+            $user = loginUser($identity, $password);
+            if ($user) {
+                redirect('dashboard.php');
+            } else {
+                $error = "Invalid credentials. Please try again.";
+            }
+        } catch (\Throwable $e) {
+            error_log("Login error: " . $e->getMessage());
+            $error = "Database or server connection error: " . $e->getMessage();
         }
     }
 }

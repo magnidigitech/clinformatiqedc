@@ -1,0 +1,11 @@
+{
+  "name": "clinformatiq/edc",
+  "description": "Clinformatiq EDC - Clinical Electronic Data Capture System",
+  "type": "project",
+  "require": {
+    "php": ">=8.2",
+    "ext-pdo": "*",
+    "ext-pdo_pgsql": "*",
+    "ext-pgsql": "*"
+  }
+}
