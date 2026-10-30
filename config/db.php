@@ -5,13 +5,13 @@ date_default_timezone_set('Asia/Kolkata');
 // Database Configuration for PostgreSQL
 
 // Parse DATABASE_URL if available, otherwise fallback to individual environment variables or defaults
-$dbUrl = getenv('DATABASE_URL') ?: 'postgres://postgres:JrLskPQkOWNzR22bhx1LRHkbVh8I4MGPFDrFkKeNZWC7IO60bnwC6Zlz9EMPAiPq@127.0.0.1:5432/postgres';
+$dbUrl = getenv('DATABASE_URL') ?: 'postgres://postgres:Q1sn4NpjT7KKCeeE46Q1E8zg06zqQ4nm6EF7jyt2chex4XY8PBma6oajRNDlBnfs@u7uonf6y780uxeujaw91ep8k:5432/postgres';
 
-$host = getenv('DB_HOST') ?: '127.0.0.1';
+$host = getenv('DB_HOST') ?: 'u7uonf6y780uxeujaw91ep8k';
 $port = getenv('DB_PORT') ?: '5432';
 $dbname = getenv('DB_NAME') ?: 'postgres';
 $user = getenv('DB_USER') ?: 'postgres';
-$pass = getenv('DB_PASS') ?: '';
+$pass = getenv('DB_PASS') ?: 'Q1sn4NpjT7KKCeeE46Q1E8zg06zqQ4nm6EF7jyt2chex4XY8PBma6oajRNDlBnfs';
 $sslmode = '';
 
 if (!empty($dbUrl)) {
