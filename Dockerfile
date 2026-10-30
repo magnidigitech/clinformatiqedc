@@ -31,4 +31,4 @@ RUN ln -s /app /app/public || true
 
 ENV SERVER_NAME=":80"
 
-EXPOSE 80 8080
+EXPOSE 80 8080 3000
