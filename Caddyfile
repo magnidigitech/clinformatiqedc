@@ -2,7 +2,13 @@
     frankenphp
 }
 
-:80, :8080, :3000 {
+http://:80 {
+    root * /app
+    encode zstd gzip
+    php_server
+}
+
+http://:3000 {
     root * /app
     encode zstd gzip
     php_server
