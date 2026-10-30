@@ -17,18 +17,21 @@ RUN cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" && \
 
 WORKDIR /app
 
+# Remove default FrankenPHP welcome page and public folder
+RUN rm -rf /app/* /app/.* 2>/dev/null || true
+
 # Copy application files to document root
 COPY . /app
 
-# Explicitly replace FrankenPHP default Caddyfile with custom Caddyfile
+# Replace FrankenPHP default Caddyfile with custom Caddyfile
 COPY Caddyfile /etc/caddy/Caddyfile
 
 # Ensure uploads directory exists and is writable
 RUN mkdir -p /app/uploads && chmod -R 777 /app/uploads
 
-# Create a symlink from /app/public to /app in case anything looks for public
-RUN ln -s /app /app/public || true
+# Create symlink public -> /app so both /app and /app/public resolve to our app
+RUN ln -s /app /app/public
 
-ENV SERVER_NAME=":80"
+ENV SERVER_NAME="http://:80"
 
-EXPOSE 80 8080 3000
+EXPOSE 80 3000
