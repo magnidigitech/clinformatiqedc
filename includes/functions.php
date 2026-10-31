@@ -46,7 +46,38 @@ function jsonResponse($success, $message, $data = []) {
  */
 function isCurrentUserAdmin() {
     $role = strtolower($_SESSION['active_role_name'] ?? '');
-    return ($role === 'admin' || strpos($role, 'admin') !== false);
+    return ($role === 'admin' || strpos($role, 'admin') !== false || strtolower($_SESSION['username'] ?? '') === 'admin');
+}
+
+/**
+ * Check if the current user is in a study-wide oversight/monitoring role
+ * (Admin, Data Monitor, Data Manager, Principal Investigator).
+ * These roles review, verify (SDV), and raise queries across subjects in the study/site
+ * and are not restricted to only subjects created by their own user account.
+ */
+function isOversightRole() {
+    if (isCurrentUserAdmin()) {
+        return true;
+    }
+    $role = strtolower(trim($_SESSION['active_role_name'] ?? ''));
+    if (strpos($role, 'monitor') !== false || strpos($role, 'cra') !== false || strpos($role, 'clinical research associate') !== false) {
+        return true;
+    }
+    if (strpos($role, 'manager') !== false) {
+        return true;
+    }
+    if (strpos($role, 'investigator') !== false || $role === 'pi') {
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Check if current user is restricted to only subjects they created.
+ * Only Data Coordinators / Data Entry users are restricted to their own subjects.
+ */
+function isRestrictedToCreatedSubjects() {
+    return !isOversightRole();
 }
 
 /**

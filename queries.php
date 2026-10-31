@@ -24,7 +24,7 @@ $is_admin = isCurrentUserAdmin();
 
 $creator_clause = "";
 $params_counts = [$study_id];
-if (!$is_admin) {
+if (isRestrictedToCreatedSubjects()) {
     $creator_clause = " AND s.created_by = ?";
     $params_counts[] = $user_id;
 }
@@ -56,13 +56,13 @@ $closed_count = $counts['closed_count'] ?? 0;
 $status_clause = "";
 $params = [$study_id];
 
-if (!$is_admin) {
+if (isRestrictedToCreatedSubjects()) {
     $status_clause .= " AND s.created_by = ?";
     $params[] = $user_id;
 }
 
 if ($status_filter && $status_filter !== 'all') {
-    $status_clause = "AND q.status = ?";
+    $status_clause .= " AND q.status = ?";
     $params[] = $status_filter;
 }
 

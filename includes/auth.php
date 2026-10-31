@@ -250,15 +250,20 @@ function hasPermission($permission_key) {
         return true;
     }
 
+    // Special permission: adding subjects - Data Coordinator & Admin only
+    if ($permission_key === 'add_subject') {
+        return isCoordinatorRole($role_lower) || userHasCoordinatorRole();
+    }
+
     // 2. Data Coordinator: The ONLY role (along with Admin) that can add subjects and enter clinical data
-    if (isCoordinatorRole($role_lower) || userHasCoordinatorRole()) {
+    if (isCoordinatorRole($role_lower)) {
         $allowed = ['view', 'add', 'add_subject', 'enter_data', 'edit', 'query'];
         return in_array($permission_key, $allowed);
     }
     
     // 3. Data Monitor / Data Manager: Can Query + Verify. CANNOT add subjects or edit clinical data.
-    if (strpos($role_lower, 'monitor') !== false || strpos($role_lower, 'manager') !== false || strpos($role_lower, 'cra') !== false) {
-        $allowed = ['view', 'query', 'raise_query', 'verify'];
+    if (strpos($role_lower, 'monitor') !== false || strpos($role_lower, 'manager') !== false || strpos($role_lower, 'cra') !== false || strpos($role_lower, 'clinical research associate') !== false) {
+        $allowed = ['view', 'query', 'raise_query', 'verify', 'monitor_review', 'manager_review'];
         return in_array($permission_key, $allowed);
     }
 

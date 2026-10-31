@@ -44,11 +44,11 @@ $current_role = strtolower($_SESSION['active_role_name'] ?? '');
 $is_monitor = (strpos($current_role, 'monitor') !== false) || (strpos($current_role, 'manager') !== false);
 // Manager includes coordinator (which represents data coordinator role)
 $is_manager = (strpos($current_role, 'coordinator') !== false); 
-$is_admin = (strpos($current_role, 'admin') !== false);
+$is_admin = isCurrentUserAdmin();
 
 // Specific precise roles for workflow
-$is_coordinator = (strpos($current_role, 'coordinator') !== false) || (strpos($current_role, 'entry') !== false) || (strpos($current_role, 'admin') !== false);
-$is_monitor_role = (strpos($current_role, 'monitor') !== false) || (strpos($current_role, 'cra') !== false) || (strpos($current_role, 'admin') !== false);
+$is_coordinator = isCoordinatorRole($current_role) || (strpos($current_role, 'admin') !== false);
+$is_monitor_role = (strpos($current_role, 'monitor') !== false) || (strpos($current_role, 'cra') !== false) || (strpos($current_role, 'clinical research associate') !== false) || (strpos($current_role, 'admin') !== false);
 $is_manager_role = (strpos($current_role, 'manager') !== false) || (strpos($current_role, 'admin') !== false);
 $is_pi_role = (strpos($current_role, 'investigator') !== false) || ($current_role === 'pi') || (strpos($current_role, 'admin') !== false);
 
@@ -110,8 +110,8 @@ if (!$subject) {
     redirect('subjects_list.php');
 }
 
-// Security Check: Restrict All Roles Except Admin to only subjects they created
-if (!isCurrentUserAdmin() && isset($subject['created_by']) && (int)$subject['created_by'] !== (int)$_SESSION['user_id']) {
+// Security Check: Restrict Data Coordinators to only subjects they created
+if (isRestrictedToCreatedSubjects() && isset($subject['created_by']) && (int)$subject['created_by'] !== (int)$_SESSION['user_id']) {
     die("
     <div style='max-width: 500px; margin: 4rem auto; padding: 2rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; text-align: center; font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);'>
         <h3 style='margin: 0 0 0.5rem; color: #1e293b; font-size: 1.25rem;'>Access Restricted</h3>

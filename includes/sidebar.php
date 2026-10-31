@@ -22,7 +22,7 @@
             if (isset($_SESSION['active_study_id'])) {
                 $sql_sb_q = "SELECT COUNT(*) FROM data_queries q JOIN subjects s ON q.subject_id = s.id WHERE q.study_id = ? AND q.status IN ('new', 'open', 'unconfirmed', 'answered')";
                 $params_sb_q = [$_SESSION['active_study_id']];
-                if (!isCurrentUserAdmin()) {
+                if (isRestrictedToCreatedSubjects()) {
                     $sql_sb_q .= " AND s.created_by = ?";
                     $params_sb_q[] = $_SESSION['user_id'];
                 }

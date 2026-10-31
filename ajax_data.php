@@ -21,16 +21,17 @@ try {
     $study_id = $_SESSION['active_study_id'];
 
     $role_lower = strtolower($_SESSION['active_role_name'] ?? '');
-    $is_coordinator = (strpos($role_lower, 'coordinator') !== false) || (strpos($role_lower, 'entry') !== false) || (strpos($role_lower, 'admin') !== false);
-    $is_monitor = (strpos($role_lower, 'monitor') !== false) || (strpos($role_lower, 'admin') !== false);
+    $is_admin = isCurrentUserAdmin();
+    $is_coordinator = isCoordinatorRole($role_lower) || (strpos($role_lower, 'admin') !== false);
+    $is_monitor = (strpos($role_lower, 'monitor') !== false) || (strpos($role_lower, 'cra') !== false) || (strpos($role_lower, 'clinical research associate') !== false) || (strpos($role_lower, 'admin') !== false);
     $is_manager = (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'admin') !== false);
     $is_pi = (strpos($role_lower, 'investigator') !== false) || ($role_lower === 'pi') || (strpos($role_lower, 'admin') !== false);
     // Strict clinical content editor flag: Data Managers, Data Monitors, and Principal Investigators cannot edit clinical content.
-    $is_data_editor = ($is_coordinator || (strpos($role_lower, 'admin') !== false)) && (strpos($role_lower, 'manager') === false) && (strpos($role_lower, 'monitor') === false) && (strpos($role_lower, 'investigator') === false) && ($role_lower !== 'pi');
+    $is_data_editor = ($is_coordinator || $is_admin) && (strpos($role_lower, 'manager') === false) && (strpos($role_lower, 'monitor') === false) && (strpos($role_lower, 'investigator') === false) && ($role_lower !== 'pi');
 
-    // Restrict all roles except Admin to only subjects they created
+    // Restrict Data Coordinators to only subjects they created
     $req_subject_id = (int)($_POST['subject_id'] ?? 0);
-    if ($req_subject_id > 0 && !isCurrentUserAdmin()) {
+    if ($req_subject_id > 0 && isRestrictedToCreatedSubjects()) {
         $chk_sub = $pdo->prepare("SELECT created_by FROM subjects WHERE id = ? AND study_id = ?");
         $chk_sub->execute([$req_subject_id, $study_id]);
         $sub_creator = $chk_sub->fetchColumn();
@@ -425,7 +426,7 @@ try {
         $stmt_qchk->execute([$query_id]);
         $qchk = $stmt_qchk->fetch();
         if ($qchk) {
-            if (!isCurrentUserAdmin() && (int)$qchk['created_by'] !== (int)$_SESSION['user_id']) {
+            if (isRestrictedToCreatedSubjects() && (int)$qchk['created_by'] !== (int)$_SESSION['user_id']) {
                 throw new Exception("Unauthorized access. You can only respond to queries for subjects created by you.");
             }
             $stmt_pichk = $pdo->prepare("SELECT pi_signed_off FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
@@ -880,13 +881,14 @@ try {
              $sdr_submitted = (bool)($f_stat_curr['sdr_submitted'] ?? false);
              $monitor_reviewed = (bool)($f_stat_curr['monitor_reviewed'] ?? false);
              $manager_reviewed = (bool)($f_stat_curr['manager_reviewed'] ?? false);
+             $pi_signed_off = (bool)($f_stat_curr['pi_signed_off'] ?? false);
              $is_verified = ($f_stat_curr['status'] === 'verified' || !empty($f_stat_curr['is_verified']));
              $can_edit = $is_data_editor && hasPermission('enter_data');
-             if ($sdr_submitted || $monitor_reviewed || $manager_reviewed) {
+             if ($sdr_submitted || $monitor_reviewed || $manager_reviewed || $pi_signed_off) {
                  $can_edit = false;
              }
              
-             $buttons_html = renderWorkflowButtons($is_coordinator, $is_monitor, $is_manager, $sdr_submitted, $monitor_reviewed, $manager_reviewed, $all_mandatory_completed);
+             $buttons_html = renderWorkflowButtons($is_coordinator, $is_monitor, $is_manager, $sdr_submitted, $monitor_reviewed, $manager_reviewed, $all_mandatory_completed, $pi_signed_off, $is_pi);
              
              $prev_link = $_POST['prev_link'] ?? '';
              $next_link = $_POST['next_link'] ?? '';

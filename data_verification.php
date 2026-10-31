@@ -51,7 +51,7 @@ $sql = "
     AND (sfs.repeating_instance_id IS NULL OR sfs.repeating_instance_id = 0 OR sri.status = 'active')
 ";
 
-if (!isCurrentUserAdmin()) {
+if (isRestrictedToCreatedSubjects()) {
     $sql .= " AND s.created_by = ?";
     $params[] = $_SESSION['user_id'];
 }

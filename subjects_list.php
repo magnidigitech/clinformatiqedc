@@ -31,9 +31,8 @@ $assigned_site_names = $stmt->fetchAll(PDO::FETCH_COLUMN);
 $sql = "SELECT * FROM subjects WHERE study_id = ?";
 $params = [$study_id];
 
-// Restrict all roles except Admin to only subjects they created
-$is_admin = isCurrentUserAdmin();
-if (!$is_admin) {
+// Restrict Data Coordinators to only subjects they created
+if (isRestrictedToCreatedSubjects()) {
     $sql .= " AND created_by = ?";
     $params[] = $user_id;
 }
@@ -87,7 +86,7 @@ if (isApiRequest()) {
     <main class="main-content">
         <header class="top-nav">
             <div>
-                <h2 style="font-size: 1.125rem;"><?php echo $is_admin ? 'Subjects' : 'My Subjects'; ?></h2>
+                <h2 style="font-size: 1.125rem;"><?php echo isRestrictedToCreatedSubjects() ? 'My Subjects' : 'Subjects'; ?></h2>
                 <?php renderRoleSwitcher($study_id); ?>
             </div>
              <div style="display: flex; align-items: center; gap: 0.5rem;">
