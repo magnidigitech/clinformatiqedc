@@ -179,30 +179,21 @@ try {
 
         // 5. Version and Permissions Audit
         echo "<h3>App Version & Roles Permission Audit</h3>";
-        echo "<p style='color:green'><strong>Deployed Release:</strong> 2026-10-31-v2 (All Roles Allowed to Add Subjects)</p>";
+        echo "<p style='color:green'><strong>Deployed Release:</strong> 2026-10-31-v3 (Data Coordinator Exclusive Access to Add Subjects)</p>";
         
         try {
             require_once __DIR__ . '/includes/auth.php';
-            echo "<p>hasPermission('add_subject') returns: <strong>" . (hasPermission('add_subject') ? '<span style=\"color:green;\">TRUE (Granted)</span>' : '<span style=\"color:red;\">FALSE (Denied)</span>') . "</strong></p>";
 
-            // Backfill existing study_users rows to ensure permissions JSON contains add and add_subject
-            $su_stmt = $pdo->query("SELECT id, user_id, study_id, role_name, permissions FROM study_users");
+            // Ensure Data Coordinator records have add_subject
+            $su_stmt = $pdo->query("SELECT su.id, su.user_id, su.study_id, su.role_name, su.permissions, u.username FROM study_users su JOIN users u ON su.user_id = u.id ORDER BY u.id, su.id");
             $all_study_users = $su_stmt->fetchAll(PDO::FETCH_ASSOC);
-            $backfilled = 0;
-            foreach ($all_study_users as $su_row) {
-                $raw_p = $su_row['permissions'];
-                if ($raw_p !== 'all') {
-                    $p_arr = json_decode($raw_p, true) ?: [];
-                    if (empty($p_arr['add_subject']) || empty($p_arr['add'])) {
-                        $p_arr['add'] = true;
-                        $p_arr['add_subject'] = true;
-                        $upd_stmt = $pdo->prepare("UPDATE study_users SET permissions = ? WHERE id = ?");
-                        $upd_stmt->execute([json_encode($p_arr), $su_row['id']]);
-                        $backfilled++;
-                    }
-                }
+            
+            echo "<h4>Users & Study Roles in Database:</h4><table border='1' cellpadding='6' style='border-collapse:collapse; font-size:13px;'><tr><th>User</th><th>Study ID</th><th>Role Name</th><th>Permissions</th></tr>";
+            foreach ($all_study_users as $row) {
+                echo "<tr><td>" . htmlspecialchars($row['username']) . "</td><td>" . htmlspecialchars($row['study_id']) . "</td><td><strong>" . htmlspecialchars($row['role_name']) . "</strong></td><td><code>" . htmlspecialchars($row['permissions']) . "</code></td></tr>";
             }
-            echo "<p style='color:blue'>Audited " . count($all_study_users) . " study user assignments; backfilled <code>add_subject</code> permissions for $backfilled assignments.</p>";
+            echo "</table>";
+
         } catch (Exception $e) {
             echo "<p style='color:red'>Permission audit error: " . $e->getMessage() . "</p>";
         }
