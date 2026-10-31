@@ -42,8 +42,8 @@ try {
 $current_role = strtolower($_SESSION['active_role_name'] ?? '');
 // Monitor includes data monitor and data manager roles
 $is_monitor = (strpos($current_role, 'monitor') !== false) || (strpos($current_role, 'manager') !== false);
-// Manager includes coordinator (which represents data coordinator role)
-$is_manager = (strpos($current_role, 'coordinator') !== false); 
+// Manager includes data manager and admin roles
+$is_manager = (strpos($current_role, 'manager') !== false) || (strpos($current_role, 'admin') !== false); 
 $is_admin = isCurrentUserAdmin();
 
 // Specific precise roles for workflow
@@ -736,10 +736,10 @@ $curr_stat = $statuses[$curr_stat_key] ?? [
 $is_complete = ($curr_stat['status'] === 'complete' || $curr_stat['progress'] == 100);
 $is_verified = ($curr_stat['status'] === 'verified' || !empty($curr_stat['is_verified'])); // Check both for safety
 
-$sdr_submitted = (bool)($curr_stat['sdr_submitted'] ?? false);
-$monitor_reviewed = (bool)($curr_stat['monitor_reviewed'] ?? false);
-$manager_reviewed = (bool)($curr_stat['manager_reviewed'] ?? false);
-$pi_signed_off = (bool)($curr_stat['pi_signed_off'] ?? false);
+$sdr_submitted = toBool($curr_stat['sdr_submitted'] ?? false);
+$monitor_reviewed = toBool($curr_stat['monitor_reviewed'] ?? false);
+$manager_reviewed = toBool($curr_stat['manager_reviewed'] ?? false);
+$pi_signed_off = toBool($curr_stat['pi_signed_off'] ?? false);
 
 if ($sdr_submitted || $monitor_reviewed || $manager_reviewed || $pi_signed_off || $is_current_form_disabled || !$is_data_editor) {
     $can_edit = false; // Lock editing!
@@ -1959,8 +1959,13 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
     }
 
     async function executeWorkflowAction() {
-        closeWorkflowModal();
         if (!pendingWorkflowAction) return;
+
+        let remarks = '';
+        const remarksEl = document.getElementById('revokeRemarksText');
+        if (remarksEl) remarks = remarksEl.value.trim();
+
+        closeWorkflowModal();
 
         const formData = new FormData();
         formData.append('action', 'update_review_status');
@@ -1972,8 +1977,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
         formData.append('prev_link', '<?php echo $prev_link; ?>');
         formData.append('next_link', '<?php echo $next_link; ?>');
         
-        if (pendingWorkflowAction === 'monitor_revoke' || pendingWorkflowAction === 'manager_revoke') {
-            const remarks = document.getElementById('revokeRemarksText').value;
+        if (pendingWorkflowAction === 'monitor_revoke' || pendingWorkflowAction === 'manager_revoke' || pendingWorkflowAction === 'pi_revoke') {
             formData.append('remarks', remarks);
         }
         
@@ -4712,9 +4716,9 @@ function setupEditorForm(rec, formType) {
             wfContainer.innerHTML = '';
         } else {
             let mBtns = '';
-            const sdrSub = !!rec.sdr_submitted;
-            const monRev = !!rec.monitor_reviewed;
-            const mgrRev = !!rec.manager_reviewed;
+            const sdrSub = (rec.sdr_submitted === true || rec.sdr_submitted === 't' || rec.sdr_submitted === 1 || rec.sdr_submitted === '1');
+            const monRev = (rec.monitor_reviewed === true || rec.monitor_reviewed === 't' || rec.monitor_reviewed === 1 || rec.monitor_reviewed === '1');
+            const mgrRev = (rec.manager_reviewed === true || rec.manager_reviewed === 't' || rec.manager_reviewed === 1 || rec.manager_reviewed === '1');
             const piSigned = (rec.pi_signed_off === true || rec.pi_signed_off === 't' || rec.pi_signed_off === 1 || rec.pi_signed_off === '1');
 
             if (piSigned) {
@@ -5234,7 +5238,8 @@ function setupEditorForm(rec, formType) {
 
     // Strict Enforcement of Read-Only / Non-editable state for Data Managers & Monitors, or SDR Submitted forms, or PI Signed Off forms
     const piSigned = (rec.pi_signed_off === true || rec.pi_signed_off === 't' || rec.pi_signed_off === 1 || rec.pi_signed_off === '1');
-    const isReadOnly = !USER_CAN_EDIT_CONTENT || !!rec.sdr_submitted || piSigned;
+    const sdrSubRec = (rec.sdr_submitted === true || rec.sdr_submitted === 't' || rec.sdr_submitted === 1 || rec.sdr_submitted === '1');
+    const isReadOnly = !USER_CAN_EDIT_CONTENT || sdrSubRec || piSigned;
     const existingNotice = document.getElementById('cfReadOnlyNotice');
     if (existingNotice) existingNotice.remove();
 

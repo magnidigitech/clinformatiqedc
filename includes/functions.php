@@ -21,6 +21,16 @@ function formatDate($date_string) {
 }
 
 /**
+ * Safe boolean evaluator for database boolean values (supports PostgreSQL 't'/'f', 1/0, 'true'/'false')
+ */
+function toBool($val) {
+    if ($val === true || $val === 1 || $val === '1' || $val === 't' || $val === 'true' || $val === 'TRUE') {
+        return true;
+    }
+    return false;
+}
+
+/**
  * Check if the request is an API request (JSON)
  */
 function isApiRequest() {
@@ -108,15 +118,21 @@ function isUserAdmin() {
 function renderRoleSwitcher($study_id) {
     $assignments = $_SESSION['assignments'] ?? [];
     $my_roles = [];
+    $seen = [];
     foreach ($assignments as $a) {
         if ($a['study_id'] == $study_id) {
-            $my_roles[] = $a;
+            $norm = strtolower(trim($a['role_name'] ?? ''));
+            if ($norm !== '' && !isset($seen[$norm])) {
+                $seen[$norm] = true;
+                $my_roles[] = $a;
+            }
         }
     }
     
     // If only 1 role, just show text
     if (count($my_roles) <= 1) {
-        echo '<span class="role-badge" style="font-size: 0.75rem;">'.htmlspecialchars($_SESSION['active_role_name']).'</span>';
+        $display_role = !empty($my_roles) ? ($my_roles[0]['role_name'] ?? $_SESSION['active_role_name']) : ($_SESSION['active_role_name'] ?? 'None');
+        echo '<span class="role-badge" style="font-size: 0.75rem;">'.htmlspecialchars($display_role).'</span>';
         return;
     }
     
@@ -124,16 +140,43 @@ function renderRoleSwitcher($study_id) {
     $current_url = $_SERVER['REQUEST_URI'] ?? 'study.php';
     
     // Dropdown for switching
-    echo '<form method="POST" action="study.php" style="display:inline-block;">';
+    $active_norm = strtolower(trim($_SESSION['active_role_name'] ?? ''));
+    $active_id = $_SESSION['active_assignment_id'] ?? null;
+    
+    echo '<form method="POST" action="study.php" style="display:inline-block; margin: 0;">';
     echo '<input type="hidden" name="switch_role_study" value="1">';
     echo '<input type="hidden" name="redirect_to" value="'.htmlspecialchars($current_url).'">';
-    echo '<select name="new_role_id" onchange="this.form.submit()" style="padding: 0.25rem; font-size: 0.75rem; border-radius: 4px; border: 1px solid var(--border-color);">';
+    echo '<select name="new_role_id" onchange="this.form.submit()" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; border-radius: 4px; border: 1px solid var(--border-color); background: #ffffff; color: var(--text-color); font-weight: 500; cursor: pointer;">';
     foreach ($my_roles as $role) {
-        $sel = ($role['id'] == $_SESSION['active_assignment_id']) ? 'selected' : '';
+        $role_norm = strtolower(trim($role['role_name'] ?? ''));
+        $sel = ($role['id'] == $active_id || $role_norm === $active_norm) ? 'selected' : '';
         echo '<option value="'.$role['id'].'" '.$sel.'>'.htmlspecialchars($role['role_name']).'</option>';
     }
     echo '</select>';
     echo '</form>';
+}
+
+/**
+ * Standard permissions JSON generator based on role name
+ */
+if (!function_exists('getPermissionsForRole')) {
+    function getPermissionsForRole($role_name) {
+        $r = strtolower(trim((string)$role_name));
+        if ($r === 'admin') return 'all';
+        if ($r === 'data coordinator' || $r === 'data entry' || (function_exists('isCoordinatorRole') && isCoordinatorRole($r))) {
+            return '{"view": true, "add": true, "add_subject": true, "enter_data": true, "edit": true}';
+        }
+        if ($r === 'data monitor' || strpos($r, 'monitor') !== false || strpos($r, 'cra') !== false || strpos($r, 'clinical research associate') !== false) {
+            return '{"view": true, "query": true, "raise_query": true, "verify": true}';
+        }
+        if ($r === 'data manager' || strpos($r, 'manager') !== false) {
+            return '{"view": true, "query": true, "raise_query": true, "verify": true}';
+        }
+        if ($r === 'principal investigator' || $r === 'pi' || strpos($r, 'investigator') !== false) {
+            return '{"view": true, "query": true, "sign_off": true}';
+        }
+        return '{"view": true}';
+    }
 }
 
 /**
@@ -158,10 +201,10 @@ function getCountryCode($country_name, $length = 2) {
  * Review status resolver based on Status Matrix
  */
 function getFormReviewStatus($f_stat) {
-    $sdr = (bool)($f_stat['sdr_submitted'] ?? false);
-    $monitor = (bool)($f_stat['monitor_reviewed'] ?? false);
-    $manager = (bool)($f_stat['manager_reviewed'] ?? false);
-    $pi_signed = (bool)($f_stat['pi_signed_off'] ?? false);
+    $sdr = toBool($f_stat['sdr_submitted'] ?? false);
+    $monitor = toBool($f_stat['monitor_reviewed'] ?? false);
+    $manager = toBool($f_stat['manager_reviewed'] ?? false);
+    $pi_signed = toBool($f_stat['pi_signed_off'] ?? false);
     $progress = (int)($f_stat['progress'] ?? 0);
     $status_str = $f_stat['status'] ?? 'empty';
     
@@ -198,6 +241,10 @@ function getFormReviewStatus($f_stat) {
  * Render SDR / Review Workflow buttons.
  */
 function renderWorkflowButtons($is_coordinator, $is_monitor_role, $is_manager_role, $sdr_submitted, $monitor_reviewed, $manager_reviewed, $all_mandatory_completed, $pi_signed_off = false, $is_pi_role = false) {
+    $sdr_submitted = toBool($sdr_submitted);
+    $monitor_reviewed = toBool($monitor_reviewed);
+    $manager_reviewed = toBool($manager_reviewed);
+    $pi_signed_off = toBool($pi_signed_off);
     $html = '';
 
     // If PI Signed Off is active:
@@ -474,8 +521,8 @@ function getSubjectReviewStatus($pdo, $subject_id) {
     } else {
         foreach ($main_form_ids as $fid) {
             $s = $status_map[$fid][0] ?? null;
-            $is_complete = $s ? ((bool)($s['is_complete'] ?? false) || ($s['status'] === 'complete') || ((int)($s['progress_percent'] ?? 0) === 100)) : false;
-            $is_reviewed = $s ? ((bool)($s['monitor_reviewed'] ?? false) && (bool)($s['manager_reviewed'] ?? false)) : false;
+            $is_complete = $s ? (toBool($s['is_complete'] ?? false) || ($s['status'] === 'complete') || ((int)($s['progress_percent'] ?? 0) === 100)) : false;
+            $is_reviewed = $s ? (toBool($s['monitor_reviewed'] ?? false) && toBool($s['manager_reviewed'] ?? false)) : false;
             
             if ($s) {
                 $any_form_started = true;
@@ -494,8 +541,8 @@ function getSubjectReviewStatus($pdo, $subject_id) {
         
         foreach ($forms as $fid) {
             $s = $status_map[$fid][$inst_id] ?? null;
-            $is_complete = $s ? ((bool)($s['is_complete'] ?? false) || ($s['status'] === 'complete') || ((int)($s['progress_percent'] ?? 0) === 100)) : false;
-            $is_reviewed = $s ? ((bool)($s['monitor_reviewed'] ?? false) && (bool)($s['manager_reviewed'] ?? false)) : false;
+            $is_complete = $s ? (toBool($s['is_complete'] ?? false) || ($s['status'] === 'complete') || ((int)($s['progress_percent'] ?? 0) === 100)) : false;
+            $is_reviewed = $s ? (toBool($s['monitor_reviewed'] ?? false) && toBool($s['manager_reviewed'] ?? false)) : false;
             
             if ($s) {
                 $any_form_started = true;
@@ -522,16 +569,16 @@ function getSubjectReviewStatus($pdo, $subject_id) {
     $all_manager = true;
     
     foreach ($status_rows as $s) {
-        $is_complete = (bool)($s['is_complete'] ?? false) || ($s['status'] === 'complete') || ((int)($s['progress_percent'] ?? 0) === 100);
+        $is_complete = toBool($s['is_complete'] ?? false) || ($s['status'] === 'complete') || ((int)($s['progress_percent'] ?? 0) === 100);
         if ($is_complete) {
             $any_completed = true;
-            if (empty($s['sdr_submitted'])) {
+            if (!toBool($s['sdr_submitted'] ?? false)) {
                 $all_sdr = false;
             }
-            if (empty($s['monitor_reviewed'])) {
+            if (!toBool($s['monitor_reviewed'] ?? false)) {
                 $all_monitor = false;
             }
-            if (empty($s['manager_reviewed'])) {
+            if (!toBool($s['manager_reviewed'] ?? false)) {
                 $all_manager = false;
             }
         }

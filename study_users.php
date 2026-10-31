@@ -62,13 +62,24 @@ function isTruthyRole($val) {
     return in_array($v, ['yes', 'y', '1', 'true', 'x', 'checked', 'yes!'], true);
 }
 
-function getPermissionsForRole($role_name) {
-    if ($role_name === 'Admin') return 'all';
-    if ($role_name === 'Data Coordinator' || $role_name === 'Data Entry' || (function_exists('isCoordinatorRole') && isCoordinatorRole($role_name))) return '{"view": true, "add": true, "add_subject": true, "enter_data": true, "edit": true}';
-    if ($role_name === 'Data Monitor') return '{"view": true, "query": true, "raise_query": true, "verify": true}';
-    if ($role_name === 'Data Manager') return '{"view": true, "query": true, "raise_query": true, "verify": true}';
-    if ($role_name === 'Principal Investigator' || $role_name === 'PI') return '{"view": true, "query": true, "sign_off": true}';
-    return '{"view": true}';
+if (!function_exists('getPermissionsForRole')) {
+    function getPermissionsForRole($role_name) {
+        $r = strtolower(trim((string)$role_name));
+        if ($r === 'admin') return 'all';
+        if ($r === 'data coordinator' || $r === 'data entry' || (function_exists('isCoordinatorRole') && isCoordinatorRole($r))) {
+            return '{"view": true, "add": true, "add_subject": true, "enter_data": true, "edit": true}';
+        }
+        if ($r === 'data monitor' || strpos($r, 'monitor') !== false || strpos($r, 'cra') !== false || strpos($r, 'clinical research associate') !== false) {
+            return '{"view": true, "query": true, "raise_query": true, "verify": true}';
+        }
+        if ($r === 'data manager' || strpos($r, 'manager') !== false) {
+            return '{"view": true, "query": true, "raise_query": true, "verify": true}';
+        }
+        if ($r === 'principal investigator' || $r === 'pi' || strpos($r, 'investigator') !== false) {
+            return '{"view": true, "query": true, "sign_off": true}';
+        }
+        return '{"view": true}';
+    }
 }
 
 function countActiveAdminsInStudy($pdo, $study_id, $exclude_user_ids = []) {
@@ -604,15 +615,27 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                             $stmt_del->execute(['uid' => $uid, 'sid' => $study_id]);
                         }
 
-                        $stmt_ins = $pdo->prepare("INSERT INTO study_users (user_id, study_id, role_name, permissions) VALUES (:uid, :sid, :role, :perms) ON CONFLICT DO NOTHING");
+                        $stmt_check = $pdo->prepare("SELECT id FROM study_users WHERE user_id = :uid AND study_id = :sid AND LOWER(TRIM(role_name)) = LOWER(TRIM(:role)) LIMIT 1");
+                        $stmt_ins = $pdo->prepare("INSERT INTO study_users (user_id, study_id, role_name, permissions) VALUES (:uid, :sid, :role, :perms)");
+                        $stmt_upd = $pdo->prepare("UPDATE study_users SET permissions = :perms, role_name = :role WHERE id = :id");
+
                         foreach ($selected_roles as $role_name) {
                             $perms = getPermissionsForRole($role_name);
-                            $stmt_ins->execute([
-                                'uid' => $uid,
-                                'sid' => $study_id,
-                                'role' => $role_name,
-                                'perms' => $perms
-                            ]);
+                            $stmt_check->execute(['uid' => $uid, 'sid' => $study_id, 'role' => $role_name]);
+                            $existing_id = $stmt_check->fetchColumn();
+                            if ($existing_id) {
+                                $stmt_upd->execute(['perms' => $perms, 'role' => $role_name, 'id' => $existing_id]);
+                            } else {
+                                $stmt_ins->execute([
+                                    'uid' => $uid,
+                                    'sid' => $study_id,
+                                    'role' => $role_name,
+                                    'perms' => $perms
+                                ]);
+                            }
+                        }
+                        if ($uid === $current_user_id) {
+                            refreshUserAssignments($uid);
                         }
                         $processed++;
                     }

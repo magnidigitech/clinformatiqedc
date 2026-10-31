@@ -92,7 +92,7 @@ try {
         $stmt_lock = $pdo->prepare("SELECT sdr_submitted, monitor_reviewed, manager_reviewed, pi_signed_off FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
         $stmt_lock->execute([$subject_id, $form_id, $repeating_instance_id, $repeating_instance_id]);
         $lock_row = $stmt_lock->fetch();
-        if ($lock_row && ((bool)$lock_row['sdr_submitted'] || (bool)$lock_row['monitor_reviewed'] || (bool)$lock_row['manager_reviewed'] || (bool)$lock_row['pi_signed_off'])) {
+        if ($lock_row && (toBool($lock_row['sdr_submitted']) || toBool($lock_row['monitor_reviewed']) || toBool($lock_row['manager_reviewed']) || toBool($lock_row['pi_signed_off']))) {
             throw new Exception("This form is locked (SDR submitted / reviewed / PI signed off) and cannot be edited.");
         }
 
@@ -346,9 +346,9 @@ try {
         $stmt_stat->execute([$subject_id, $form_id, $repeating_instance_id, $repeating_instance_id]);
         $status_row = $stmt_stat->fetch(PDO::FETCH_ASSOC);
         
-        $monitor_reviewed = $status_row ? (bool)$status_row['monitor_reviewed'] : false;
-        $manager_reviewed = $status_row ? (bool)$status_row['manager_reviewed'] : false;
-        $pi_signed_off = $status_row ? (bool)$status_row['pi_signed_off'] : false;
+        $monitor_reviewed = $status_row ? toBool($status_row['monitor_reviewed']) : false;
+        $manager_reviewed = $status_row ? toBool($status_row['manager_reviewed']) : false;
+        $pi_signed_off = $status_row ? toBool($status_row['pi_signed_off']) : false;
 
         if ($pi_signed_off) {
             throw new Exception("Cannot Raise Query as the form has been Signed Off by Principal Investigator");
@@ -431,7 +431,7 @@ try {
             }
             $stmt_pichk = $pdo->prepare("SELECT pi_signed_off FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
             $stmt_pichk->execute([$qchk['subject_id'], $qchk['form_id'], $qchk['repeating_instance_id'], $qchk['repeating_instance_id']]);
-            if ((bool)$stmt_pichk->fetchColumn()) {
+            if (toBool($stmt_pichk->fetchColumn())) {
                 throw new Exception("Action prohibited: Form has been Signed Off by Principal Investigator and is completely locked.");
             }
         }
@@ -723,7 +723,7 @@ try {
         $stmt_lock = $pdo->prepare("SELECT sdr_submitted FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
         $stmt_lock->execute([$subject_id, $form_id, $repeating_instance_id, $repeating_instance_id]);
         $lock_row = $stmt_lock->fetch();
-        if ($lock_row && (bool)$lock_row['sdr_submitted']) {
+        if ($lock_row && toBool($lock_row['sdr_submitted'])) {
             throw new Exception("This form is locked (SDR submitted) and cannot be edited.");
         }
 
@@ -785,7 +785,7 @@ try {
         $stmt_lock = $pdo->prepare("SELECT sdr_submitted FROM subject_form_status WHERE subject_id = ? AND form_id = ? AND (repeating_instance_id = ? OR (? = 0 AND repeating_instance_id IS NULL))");
         $stmt_lock->execute([$subject_id, $form_id, $repeating_instance_id, $repeating_instance_id]);
         $lock_row = $stmt_lock->fetch();
-        if ($lock_row && (bool)$lock_row['sdr_submitted']) {
+        if ($lock_row && toBool($lock_row['sdr_submitted'])) {
             throw new Exception("This form is locked (SDR submitted) and cannot be edited.");
         }
 
@@ -878,10 +878,10 @@ try {
              
              // Build buttons HTML
              $all_mandatory_completed = areAllMandatoryFieldsCompleted($pdo, $subject_id, $form_id, $repeating_instance_id);
-             $sdr_submitted = (bool)($f_stat_curr['sdr_submitted'] ?? false);
-             $monitor_reviewed = (bool)($f_stat_curr['monitor_reviewed'] ?? false);
-             $manager_reviewed = (bool)($f_stat_curr['manager_reviewed'] ?? false);
-             $pi_signed_off = (bool)($f_stat_curr['pi_signed_off'] ?? false);
+             $sdr_submitted = toBool($f_stat_curr['sdr_submitted'] ?? false);
+             $monitor_reviewed = toBool($f_stat_curr['monitor_reviewed'] ?? false);
+             $manager_reviewed = toBool($f_stat_curr['manager_reviewed'] ?? false);
+             $pi_signed_off = toBool($f_stat_curr['pi_signed_off'] ?? false);
              $is_verified = ($f_stat_curr['status'] === 'verified' || !empty($f_stat_curr['is_verified']));
              $can_edit = $is_data_editor && hasPermission('enter_data');
              if ($sdr_submitted || $monitor_reviewed || $manager_reviewed || $pi_signed_off) {
@@ -941,10 +941,10 @@ try {
          $stmt_stat->execute([$subject_id, $form_id, $repeating_instance_id, $repeating_instance_id]);
          $status_row = $stmt_stat->fetch(PDO::FETCH_ASSOC);
          
-         $sdr_submitted = $status_row ? (bool)$status_row['sdr_submitted'] : false;
-         $monitor_reviewed = $status_row ? (bool)$status_row['monitor_reviewed'] : false;
-         $manager_reviewed = $status_row ? (bool)$status_row['manager_reviewed'] : false;
-         $pi_signed_off = $status_row ? (bool)$status_row['pi_signed_off'] : false;
+         $sdr_submitted = $status_row ? toBool($status_row['sdr_submitted']) : false;
+         $monitor_reviewed = $status_row ? toBool($status_row['monitor_reviewed']) : false;
+         $manager_reviewed = $status_row ? toBool($status_row['manager_reviewed']) : false;
+         $pi_signed_off = $status_row ? toBool($status_row['pi_signed_off']) : false;
          $pi_signed_by = $status_row ? $status_row['pi_signed_by'] : null;
          $pi_signed_at = $status_row ? $status_row['pi_signed_at'] : null;
          
@@ -1127,7 +1127,7 @@ try {
                  throw new Exception("Invalid workflow action: " . htmlspecialchars($workflow_action));
              }
              
-             $was_srved = $status_row && (bool)$status_row['monitor_reviewed'] && (bool)$status_row['manager_reviewed'];
+             $was_srved = $status_row && toBool($status_row['monitor_reviewed']) && toBool($status_row['manager_reviewed']);
              $is_srved = $monitor_reviewed && $manager_reviewed;
              if ($is_srved && !$was_srved) {
                  $audit_logs[] = ['form_srved', 'SDVed & DM Reviewed'];
@@ -1232,10 +1232,10 @@ try {
              
              // Build buttons HTML
              $all_mandatory_completed = areAllMandatoryFieldsCompleted($pdo, $subject_id, $form_id, $repeating_instance_id);
-             $sdr_submitted = (bool)($f_stat_curr['sdr_submitted'] ?? false);
-             $monitor_reviewed = (bool)($f_stat_curr['monitor_reviewed'] ?? false);
-             $manager_reviewed = (bool)($f_stat_curr['manager_reviewed'] ?? false);
-             $pi_signed_off = (bool)($f_stat_curr['pi_signed_off'] ?? false);
+             $sdr_submitted = toBool($f_stat_curr['sdr_submitted'] ?? false);
+             $monitor_reviewed = toBool($f_stat_curr['monitor_reviewed'] ?? false);
+             $manager_reviewed = toBool($f_stat_curr['manager_reviewed'] ?? false);
+             $pi_signed_off = toBool($f_stat_curr['pi_signed_off'] ?? false);
              $is_verified = ($f_stat_curr['status'] === 'verified' || !empty($f_stat_curr['is_verified']));
              $can_edit = $is_data_editor && hasPermission('enter_data');
              if ($sdr_submitted || $monitor_reviewed || $manager_reviewed || $pi_signed_off) {
@@ -1509,9 +1509,9 @@ function calculateAndSaveProgress($pdo, $study_id, $subject_id, $visit_id, $form
     
     // Preserve Verified/SDR statuses
     if ($stat_row) {
-        $db_sdr = (bool)($stat_row['sdr_submitted'] ?? false);
-        $db_monitor = (bool)($stat_row['monitor_reviewed'] ?? false);
-        $db_manager = (bool)($stat_row['manager_reviewed'] ?? false);
+        $db_sdr = toBool($stat_row['sdr_submitted'] ?? false);
+        $db_monitor = toBool($stat_row['monitor_reviewed'] ?? false);
+        $db_manager = toBool($stat_row['manager_reviewed'] ?? false);
         if ($db_sdr) {
             if ($db_monitor || $db_manager) {
                 $status = 'verified';

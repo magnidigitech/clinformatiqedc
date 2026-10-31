@@ -313,6 +313,27 @@ function requireLogin() {
     } catch (\Throwable $e) {
         error_log("Failed to refresh assignments: " . $e->getMessage());
     }
+
+    // In-page Role Switch within Study support
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['switch_role_study']) && !empty($_POST['new_role_id'])) {
+        $target_id = $_POST['new_role_id'];
+        $valid_assignment_id = null;
+        $target_norm = strtolower(trim((string)$target_id));
+        
+        foreach (($_SESSION['assignments'] ?? []) as $assign) {
+            if ($assign['study_id'] == ($_SESSION['active_study_id'] ?? 0)) {
+                if ($assign['id'] == $target_id || strtolower(trim($assign['role_name'] ?? '')) === $target_norm) {
+                    $valid_assignment_id = $assign['id'];
+                    break;
+                }
+            }
+        }
+        
+        if ($valid_assignment_id && setActiveContext($valid_assignment_id)) {
+            $redirect_to = $_POST['redirect_to'] ?? $_SERVER['REQUEST_URI'] ?? 'study.php';
+            redirect($redirect_to);
+        }
+    }
     
     // Prevent caching of protected pages
     header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");

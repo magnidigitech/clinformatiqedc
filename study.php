@@ -11,17 +11,23 @@ if (!isset($_SESSION['active_study_id'])) {
 
 // Handle Role Switch within Study
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['switch_role_study'])) {
+    if (isset($_SESSION['user_id'])) {
+        refreshUserAssignments($_SESSION['user_id']);
+    }
     $new_role_id = $_POST['new_role_id'];
-    // Verify this assignment is for the CURRENT study
-    $valid = false;
-    foreach ($_SESSION['assignments'] as $assign) {
-        if ($assign['id'] == $new_role_id && $assign['study_id'] == $_SESSION['active_study_id']) {
-            $valid = true;
-            break;
+    $valid_assignment_id = null;
+    $target_norm = strtolower(trim((string)$new_role_id));
+    
+    foreach (($_SESSION['assignments'] ?? []) as $assign) {
+        if ($assign['study_id'] == $_SESSION['active_study_id']) {
+            if ($assign['id'] == $new_role_id || strtolower(trim($assign['role_name'] ?? '')) === $target_norm) {
+                $valid_assignment_id = $assign['id'];
+                break;
+            }
         }
     }
     
-    if ($valid && setActiveContext($new_role_id)) {
+    if ($valid_assignment_id && setActiveContext($valid_assignment_id)) {
         $redirect_to = $_POST['redirect_to'] ?? 'study.php';
         redirect($redirect_to);
     }

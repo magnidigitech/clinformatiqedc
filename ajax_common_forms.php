@@ -171,7 +171,7 @@ try {
                         'record_number' => $l_item['record_number'],
                         'form_type' => $l_item['form_type'],
                         'term' => $l_term,
-                        'is_voided' => (bool)$l_item['is_voided']
+                        'is_voided' => toBool($l_item['is_voided'])
                     ];
                 }
             }
@@ -203,20 +203,20 @@ try {
                 'record_number' => $r['record_number'],
                 'status' => $r['status'],
                 'sdr_status' => $r['sdr_status'],
-                'sdr_submitted' => (bool)($r['sdr_submitted'] ?? false),
-                'monitor_reviewed' => (bool)($r['monitor_reviewed'] ?? false),
-                'manager_reviewed' => (bool)($r['manager_reviewed'] ?? false),
+                'sdr_submitted' => toBool($r['sdr_submitted'] ?? false),
+                'monitor_reviewed' => toBool($r['monitor_reviewed'] ?? false),
+                'manager_reviewed' => toBool($r['manager_reviewed'] ?? false),
                 'sdr_by_name' => $r['sdr_user_name'] ?? $r['sdr_user_code'] ?? '',
                 'sdr_at' => $r['sdr_at'] ? date('d-M-Y H:i', strtotime($r['sdr_at'])) : null,
                 'monitor_by_name' => $r['monitor_user_name'] ?? $r['monitor_user_code'] ?? '',
                 'monitor_at' => $r['monitor_at'] ? date('d-M-Y H:i', strtotime($r['monitor_at'])) : null,
                 'manager_by_name' => $r['manager_user_name'] ?? $r['manager_user_code'] ?? '',
                 'manager_at' => $r['manager_at'] ? date('d-M-Y H:i', strtotime($r['manager_at'])) : null,
-                'pi_signed_off' => (bool)($r['pi_signed_off'] ?? false),
+                'pi_signed_off' => toBool($r['pi_signed_off'] ?? false),
                 'pi_signed_by_name' => $r['pi_user_name'] ?? $r['pi_user_code'] ?? '',
                 'pi_signed_at' => $r['pi_signed_at'] ? date('d-M-Y H:i', strtotime($r['pi_signed_at'])) : null,
                 'revision' => (int)$r['revision'],
-                'is_voided' => (bool)$r['is_voided'],
+                'is_voided' => toBool($r['is_voided']),
                 'void_reason' => $r['void_reason'] ?? '',
                 'data' => $data,
                 'created_by' => $r['creator_name'] ?? $r['creator_user'] ?? '',
@@ -357,7 +357,7 @@ try {
                     'record_number' => $l_item['record_number'],
                     'form_type' => $l_item['form_type'],
                     'term' => $l_term,
-                    'is_voided' => (bool)$l_item['is_voided']
+                    'is_voided' => toBool($l_item['is_voided'])
                 ];
             }
         }
@@ -461,10 +461,10 @@ try {
                 'record_number' => $rec['record_number'],
                 'status' => $rec['status'],
                 'sdr_status' => $rec['sdr_status'],
-                'sdr_submitted' => (bool)($rec['sdr_submitted'] ?? false),
-                'monitor_reviewed' => (bool)($rec['monitor_reviewed'] ?? false),
-                'manager_reviewed' => (bool)($rec['manager_reviewed'] ?? false),
-                'pi_signed_off' => (bool)($rec['pi_signed_off'] ?? false),
+                'sdr_submitted' => toBool($rec['sdr_submitted'] ?? false),
+                'monitor_reviewed' => toBool($rec['monitor_reviewed'] ?? false),
+                'manager_reviewed' => toBool($rec['manager_reviewed'] ?? false),
+                'pi_signed_off' => toBool($rec['pi_signed_off'] ?? false),
                 'sdr_by_name' => $rec['sdr_user_name'] ?? $rec['sdr_user_code'] ?? '',
                 'sdr_at' => $rec['sdr_at'] ? date('d-M-Y H:i', strtotime($rec['sdr_at'])) : null,
                 'monitor_by_name' => $rec['monitor_user_name'] ?? $rec['monitor_user_code'] ?? '',
@@ -474,7 +474,7 @@ try {
                 'pi_signed_by_name' => $rec['pi_user_name'] ?? $rec['pi_user_code'] ?? '',
                 'pi_signed_at' => $rec['pi_signed_at'] ? date('d-M-Y H:i', strtotime($rec['pi_signed_at'])) : null,
                 'revision' => (int)$rec['revision'],
-                'is_voided' => (bool)$rec['is_voided'],
+                'is_voided' => toBool($rec['is_voided']),
                 'void_reason' => $rec['void_reason'] ?? '',
                 'data' => $data,
                 'created_by' => $rec['creator_name'] ?? $rec['creator_user'] ?? '',
@@ -749,9 +749,8 @@ try {
                 $stmt_old->execute([$target_record_id, $study_id]);
                 $old_rec = $stmt_old->fetch(PDO::FETCH_ASSOC);
 
-                if (!$old_rec) throw new Exception("Record not found.");
-                if ($old_rec['is_voided']) throw new Exception("Cannot edit a voided record.");
-                if (!empty($old_rec['pi_signed_off'])) {
+                if (toBool($old_rec['is_voided'] ?? false)) throw new Exception("Cannot edit a voided record.");
+                if (toBool($old_rec['pi_signed_off'] ?? false)) {
                     throw new Exception("This record has been Signed Off by Principal Investigator and cannot be edited.");
                 }
 
@@ -800,9 +799,9 @@ try {
 
                 $new_revision = $old_revision;
                 $new_sdr_status = $old_sdr_status;
-                $new_sdr_submitted = (bool)($old_rec['sdr_submitted'] ?? false);
-                $new_monitor_reviewed = (bool)($old_rec['monitor_reviewed'] ?? false);
-                $new_manager_reviewed = (bool)($old_rec['manager_reviewed'] ?? false);
+                $new_sdr_submitted = toBool($old_rec['sdr_submitted'] ?? false);
+                $new_monitor_reviewed = toBool($old_rec['monitor_reviewed'] ?? false);
+                $new_manager_reviewed = toBool($old_rec['manager_reviewed'] ?? false);
 
                 // SDR STATUS TRANSITION IF CLINICAL DATA CHANGED AFTER SDR SUBMISSION OR REVIEW
                 $was_submitted_or_reviewed = $new_sdr_submitted || $new_monitor_reviewed || $new_manager_reviewed || in_array($old_sdr_status, ['under_review', 'sdved', 'reviewed'], true);
@@ -910,12 +909,12 @@ try {
         if ($study_id > 0 && (int)$rec['study_id'] !== (int)$study_id) {
             throw new Exception("Unauthorized: Record belongs to another study.");
         }
-        if (!empty($rec['is_voided'])) throw new Exception("Cannot update review status on a voided record.");
+        if (toBool($rec['is_voided'] ?? false)) throw new Exception("Cannot update review status on a voided record.");
 
-        $sdr_submitted = (bool)($rec['sdr_submitted'] ?? false);
-        $monitor_reviewed = (bool)($rec['monitor_reviewed'] ?? false);
-        $manager_reviewed = (bool)($rec['manager_reviewed'] ?? false);
-        $pi_signed_off = (bool)($rec['pi_signed_off'] ?? false);
+        $sdr_submitted = toBool($rec['sdr_submitted'] ?? false);
+        $monitor_reviewed = toBool($rec['monitor_reviewed'] ?? false);
+        $manager_reviewed = toBool($rec['manager_reviewed'] ?? false);
+        $pi_signed_off = toBool($rec['pi_signed_off'] ?? false);
         $curr_revision = (int)($rec['revision'] ?? 1);
         $curr_user_id = $user_id > 0 ? $user_id : (int)($_SESSION['user_id'] ?? $_SESSION['id'] ?? 1);
 
@@ -1106,7 +1105,7 @@ try {
                 throw new Exception("Invalid workflow action: " . htmlspecialchars($workflow_action));
             }
 
-            $was_srved = $rec && (bool)$rec['monitor_reviewed'] && (bool)$rec['manager_reviewed'];
+            $was_srved = $rec && toBool($rec['monitor_reviewed']) && toBool($rec['manager_reviewed']);
             $is_srved = $monitor_reviewed && $manager_reviewed;
             if ($is_srved && !$was_srved) {
                 $audit_logs[] = ['sdr_status', $rec['sdr_status'] ?? '', 'sdved', 'SDVed & DM Reviewed', 'form_srved'];
@@ -1243,8 +1242,8 @@ try {
         $stmt->execute([$record_id, $study_id]);
         $rec = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$rec) throw new Exception("Record not found.");
-        if ($rec['is_voided']) throw new Exception("Record is already voided.");
-        if (!empty($rec['pi_signed_off'])) throw new Exception("Cannot void a record that has been Signed Off by Principal Investigator.");
+        if (toBool($rec['is_voided'])) throw new Exception("Record is already voided.");
+        if (toBool($rec['pi_signed_off'] ?? false)) throw new Exception("Cannot void a record that has been Signed Off by Principal Investigator.");
 
         $pdo->beginTransaction();
         try {
@@ -1293,13 +1292,13 @@ try {
         $rec = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$rec) throw new Exception("Record not found.");
 
-        if (!empty($rec['pi_signed_off'])) {
+        if (toBool($rec['pi_signed_off'] ?? false)) {
             throw new Exception("Cannot Raise Query as the form has been Signed Off by Principal Investigator");
         }
-        if ($is_monitor && (bool)$rec['monitor_reviewed']) {
+        if ($is_monitor && toBool($rec['monitor_reviewed'])) {
             throw new Exception("Cannot Raise Query as the form is marked as SDVed");
         }
-        if ($is_manager && (bool)$rec['manager_reviewed']) {
+        if ($is_manager && toBool($rec['manager_reviewed'])) {
             throw new Exception("Cannot Raise Query as the form is marked as DM Reviewed");
         }
 
@@ -1391,7 +1390,7 @@ try {
         $q = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$q) throw new Exception("Query not found.");
 
-        if (!empty($q['pi_signed_off'])) {
+        if (toBool($q['pi_signed_off'] ?? false)) {
             throw new Exception("Action prohibited: Record has been Signed Off by Principal Investigator and is completely locked.");
         }
 
@@ -1488,7 +1487,7 @@ try {
         $q = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$q) throw new Exception("Query not found.");
 
-        if (!empty($q['pi_signed_off'])) {
+        if (toBool($q['pi_signed_off'] ?? false)) {
             throw new Exception("Action prohibited: Record has been Signed Off by Principal Investigator and is completely locked.");
         }
 
