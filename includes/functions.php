@@ -8,6 +8,9 @@ function sanitizeInput($data) {
 }
 
 function redirect($url) {
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close();
+    }
     header("Location: " . $url);
     exit();
 }
@@ -123,6 +126,9 @@ function isUserAdmin() {
  * Render Role Switcher in Study Header
  */
 function renderRoleSwitcher($study_id) {
+    if (empty($study_id) && isset($_SESSION['active_study_id'])) {
+        $study_id = $_SESSION['active_study_id'];
+    }
     $assignments = $_SESSION['assignments'] ?? [];
     $my_roles = [];
     $seen = [];
@@ -136,7 +142,7 @@ function renderRoleSwitcher($study_id) {
         }
     }
     
-    // If only 1 role, just show text
+    // If only 1 role, just show badge
     if (count($my_roles) <= 1) {
         $display_role = !empty($my_roles) ? ($my_roles[0]['role_name'] ?? $_SESSION['active_role_name']) : ($_SESSION['active_role_name'] ?? 'None');
         echo '<span class="role-badge" style="font-size: 0.75rem;">'.htmlspecialchars($display_role).'</span>';
@@ -150,14 +156,36 @@ function renderRoleSwitcher($study_id) {
     $active_norm = strtolower(trim($_SESSION['active_role_name'] ?? ''));
     $active_id = $_SESSION['active_assignment_id'] ?? null;
     
-    echo '<form method="POST" action="study.php" style="display:inline-block; margin: 0;">';
+    // Accurately determine the single selected assignment ID
+    $selected_assignment_id = null;
+    if ($active_id) {
+        foreach ($my_roles as $role) {
+            if ($role['id'] == $active_id) {
+                $selected_assignment_id = $role['id'];
+                break;
+            }
+        }
+    }
+    if (!$selected_assignment_id && $active_norm !== '') {
+        foreach ($my_roles as $role) {
+            if (strtolower(trim($role['role_name'] ?? '')) === $active_norm) {
+                $selected_assignment_id = $role['id'];
+                break;
+            }
+        }
+    }
+    if (!$selected_assignment_id && !empty($my_roles)) {
+        $selected_assignment_id = $my_roles[0]['id'];
+    }
+    
+    echo '<form method="POST" action="" style="display:inline-block; margin: 0;">';
     echo '<input type="hidden" name="switch_role_study" value="1">';
+    echo '<input type="hidden" name="switch_study_id" value="'.htmlspecialchars((string)$study_id).'">';
     echo '<input type="hidden" name="redirect_to" value="'.htmlspecialchars($current_url).'">';
     echo '<select name="new_role_id" onchange="this.form.submit()" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; border-radius: 4px; border: 1px solid var(--border-color); background: #ffffff; color: var(--text-color); font-weight: 500; cursor: pointer;">';
     foreach ($my_roles as $role) {
-        $role_norm = strtolower(trim($role['role_name'] ?? ''));
-        $sel = ($role['id'] == $active_id || $role_norm === $active_norm) ? 'selected' : '';
-        echo '<option value="'.$role['id'].'" '.$sel.'>'.htmlspecialchars($role['role_name']).'</option>';
+        $sel = ($role['id'] == $selected_assignment_id) ? 'selected' : '';
+        echo '<option value="'.$role['id'].'" data-role-name="'.htmlspecialchars($role['role_name']).'" '.$sel.'>'.htmlspecialchars($role['role_name']).'</option>';
     }
     echo '</select>';
     echo '</form>';

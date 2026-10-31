@@ -77,27 +77,56 @@ function initializeUserRoles($user_id) {
     
     $_SESSION['assignments'] = $assignments;
     
-    // Set default active context (first assignment)
+    // Set default active context only if no valid active assignment is already set
     if (!empty($assignments)) {
-        $default_id = $assignments[0]['id'];
-        $has_admin = false;
-        foreach ($assignments as $a) {
-            if (strtolower(trim($a['role_name'] ?? '')) === 'admin') {
-                $default_id = $a['id'];
-                $has_admin = true;
-                break;
-            }
-        }
-        // If not admin, prioritize Data Coordinator as the default active role
-        if (!$has_admin) {
+        $active_id = $_SESSION['active_assignment_id'] ?? null;
+        $active_role = $_SESSION['active_role_name'] ?? null;
+        $active_study = $_SESSION['active_study_id'] ?? null;
+        $already_valid = false;
+
+        if ($active_id) {
             foreach ($assignments as $a) {
-                if (isCoordinatorRole($a['role_name'] ?? '')) {
-                    $default_id = $a['id'];
+                if ($a['id'] == $active_id) {
+                    $already_valid = true;
+                    setActiveContext($a['id']);
                     break;
                 }
             }
         }
-        setActiveContext($default_id);
+
+        // If ID wasn't found (e.g. after bulk role re-assignment), try matching by role name and study
+        if (!$already_valid && $active_role && $active_study) {
+            $target_norm = strtolower(trim($active_role));
+            foreach ($assignments as $a) {
+                if ($a['study_id'] == $active_study && strtolower(trim($a['role_name'] ?? '')) === $target_norm) {
+                    $already_valid = true;
+                    setActiveContext($a['id']);
+                    break;
+                }
+            }
+        }
+
+        if (!$already_valid) {
+            $default_id = $assignments[0]['id'];
+            $has_admin = false;
+            foreach ($assignments as $a) {
+                if (strtolower(trim($a['role_name'] ?? '')) === 'admin') {
+                    $default_id = $a['id'];
+                    $has_admin = true;
+                    break;
+                }
+            }
+            // If not admin, prioritize Data Coordinator as the default active role
+            if (!$has_admin) {
+                foreach ($assignments as $a) {
+                    if (isCoordinatorRole($a['role_name'] ?? '')) {
+                        $default_id = $a['id'];
+                        break;
+                    }
+                }
+            }
+            setActiveContext($default_id);
+        }
     } else {
         // User has no studies assigned
         $_SESSION['active_assignment_id'] = null;
@@ -128,7 +157,7 @@ function refreshUserAssignments($user_id) {
     
     $_SESSION['assignments'] = $assignments;
     
-    // If we have an active assignment, verify it still exists. If not, reset/set to first.
+    // If we have an active assignment, verify it still exists.
     $active_id = $_SESSION['active_assignment_id'] ?? null;
     $still_valid = false;
     if ($active_id) {
@@ -152,8 +181,36 @@ function refreshUserAssignments($user_id) {
         }
     }
     
+    // If active assignment ID wasn't found (e.g. after bulk role re-assignment), try role name & study recovery
     if (!$still_valid && !empty($assignments)) {
-        setActiveContext($assignments[0]['id']);
+        $saved_role_norm = strtolower(trim($_SESSION['active_role_name'] ?? ''));
+        $saved_study_id = $_SESSION['active_study_id'] ?? null;
+
+        if ($saved_role_norm !== '' && $saved_study_id) {
+            foreach ($assignments as $assign) {
+                if ($assign['study_id'] == $saved_study_id && strtolower(trim($assign['role_name'] ?? '')) === $saved_role_norm) {
+                    $still_valid = true;
+                    setActiveContext($assign['id']);
+                    break;
+                }
+            }
+        }
+
+        // Try matching any assignment in the currently active study
+        if (!$still_valid && $saved_study_id) {
+            foreach ($assignments as $assign) {
+                if ($assign['study_id'] == $saved_study_id) {
+                    $still_valid = true;
+                    setActiveContext($assign['id']);
+                    break;
+                }
+            }
+        }
+
+        // If no assignment exists for the active study at all, fall back to first assignment
+        if (!$still_valid) {
+            setActiveContext($assignments[0]['id']);
+        }
     } elseif (empty($assignments)) {
         $_SESSION['active_assignment_id'] = null;
         $_SESSION['active_role_id'] = null;
@@ -307,21 +364,43 @@ function requireLogin() {
         // Ignore DB connection hiccups
     }
 
-    // Refresh assignments dynamically to pull in any database updates
-    try {
-        refreshUserAssignments($_SESSION['user_id']);
-    } catch (\Throwable $e) {
-        error_log("Failed to refresh assignments: " . $e->getMessage());
-    }
-
-    // In-page Role Switch within Study support
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['switch_role_study']) && !empty($_POST['new_role_id'])) {
+    // In-page Role Switch within Study support (Processed FIRST to avoid interference)
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['switch_role_study']) && isset($_POST['new_role_id']) && $_POST['new_role_id'] !== '') {
         $target_id = $_POST['new_role_id'];
+        $target_study_id = $_POST['switch_study_id'] ?? $_SESSION['active_study_id'] ?? null;
         $valid_assignment_id = null;
         $target_norm = strtolower(trim((string)$target_id));
         
-        foreach (($_SESSION['assignments'] ?? []) as $assign) {
-            if ($assign['study_id'] == ($_SESSION['active_study_id'] ?? 0)) {
+        $assignments = $_SESSION['assignments'] ?? [];
+        if (empty($assignments) && isset($_SESSION['user_id'])) {
+            try {
+                $pdo = getDB();
+                $stmt = $pdo->prepare("
+                    SELECT su.*, su.role_name, su.permissions, s.name as study_name, s.study_code, s.created_at as study_created_at 
+                    FROM study_users su 
+                    JOIN studies s ON su.study_id = s.id 
+                    WHERE su.user_id = :uid
+                ");
+                $stmt->execute(['uid' => $_SESSION['user_id']]);
+                $assignments = $stmt->fetchAll();
+                $_SESSION['assignments'] = $assignments;
+            } catch (\Throwable $e) {}
+        }
+        
+        // 1. Match within target study by assignment id or role name
+        foreach ($assignments as $assign) {
+            $study_match = (!$target_study_id || $assign['study_id'] == $target_study_id);
+            if ($study_match) {
+                if ($assign['id'] == $target_id || strtolower(trim($assign['role_name'] ?? '')) === $target_norm) {
+                    $valid_assignment_id = $assign['id'];
+                    break;
+                }
+            }
+        }
+        
+        // 2. Fallback: match across all user assignments
+        if (!$valid_assignment_id) {
+            foreach ($assignments as $assign) {
                 if ($assign['id'] == $target_id || strtolower(trim($assign['role_name'] ?? '')) === $target_norm) {
                     $valid_assignment_id = $assign['id'];
                     break;
@@ -330,9 +409,17 @@ function requireLogin() {
         }
         
         if ($valid_assignment_id && setActiveContext($valid_assignment_id)) {
-            $redirect_to = $_POST['redirect_to'] ?? $_SERVER['REQUEST_URI'] ?? 'study.php';
+            $raw_redirect = $_POST['redirect_to'] ?? $_SERVER['REQUEST_URI'] ?? 'study.php';
+            $redirect_to = htmlspecialchars_decode($raw_redirect, ENT_QUOTES);
             redirect($redirect_to);
         }
+    }
+
+    // Refresh assignments dynamically to pull in any database updates
+    try {
+        refreshUserAssignments($_SESSION['user_id']);
+    } catch (\Throwable $e) {
+        error_log("Failed to refresh assignments: " . $e->getMessage());
     }
     
     // Prevent caching of protected pages
