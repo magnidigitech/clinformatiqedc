@@ -74,7 +74,9 @@ function initializeUserRoles($user_id) {
     ");
     $stmt->execute(['uid' => $user_id]);
     $assignments = $stmt->fetchAll();
-    
+    if (function_exists('sortRolesByStandardOrder')) {
+        sortRolesByStandardOrder($assignments, 'role_name');
+    }
     $_SESSION['assignments'] = $assignments;
     
     // Set default active context only if no valid active assignment is already set
@@ -154,7 +156,9 @@ function refreshUserAssignments($user_id) {
     ");
     $stmt->execute(['uid' => $user_id]);
     $assignments = $stmt->fetchAll();
-    
+    if (function_exists('sortRolesByStandardOrder')) {
+        sortRolesByStandardOrder($assignments, 'role_name');
+    }
     $_SESSION['assignments'] = $assignments;
     
     // If we have an active assignment, verify it still exists.
@@ -383,6 +387,9 @@ function requireLogin() {
                 ");
                 $stmt->execute(['uid' => $_SESSION['user_id']]);
                 $assignments = $stmt->fetchAll();
+                if (function_exists('sortRolesByStandardOrder')) {
+                    sortRolesByStandardOrder($assignments, 'role_name');
+                }
                 $_SESSION['assignments'] = $assignments;
             } catch (\Throwable $e) {}
         }

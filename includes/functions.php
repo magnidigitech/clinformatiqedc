@@ -123,6 +123,61 @@ function isUserAdmin() {
 }
 
 /**
+ * Return display sort order weight for EDC user roles
+ * 1: Admin (always first)
+ * 2: Data Coordinator
+ * 3: Data Monitor
+ * 4: Data Manager
+ * 5: Principal Investigator
+ * 100: Other / Custom roles
+ */
+if (!function_exists('getRoleDisplayOrder')) {
+    function getRoleDisplayOrder($role_name) {
+        $r = strtolower(trim((string)$role_name));
+        if ($r === 'admin' || strpos($r, 'admin') !== false) {
+            return 1;
+        }
+        if (function_exists('isCoordinatorRole') && isCoordinatorRole($r)) {
+            return 2;
+        }
+        if ($r === 'data coordinator' || strpos($r, 'coordinator') !== false || strpos($r, 'cordinator') !== false || strpos($r, 'entry') !== false || strpos($r, 'crc') !== false) {
+            return 2;
+        }
+        if ($r === 'data monitor' || strpos($r, 'monitor') !== false || strpos($r, 'cra') !== false || strpos($r, 'clinical research associate') !== false) {
+            return 3;
+        }
+        if ($r === 'data manager' || strpos($r, 'manager') !== false || strpos($r, 'manage') !== false || $r === 'dm' || strpos($r, 'dm ') !== false) {
+            return 4;
+        }
+        if (strpos($r, 'investigator') !== false || $r === 'pi' || strpos($r, 'pi ') !== false) {
+            return 5;
+        }
+        return 100;
+    }
+}
+
+/**
+ * Sort an array of roles by standard EDC display order
+ */
+if (!function_exists('sortRolesByStandardOrder')) {
+    function sortRolesByStandardOrder(&$roles, $role_key = 'role_name') {
+        if (!is_array($roles) || empty($roles)) {
+            return;
+        }
+        usort($roles, function($a, $b) use ($role_key) {
+            $name_a = is_array($a) ? ($a[$role_key] ?? ($a['name'] ?? '')) : (string)$a;
+            $name_b = is_array($b) ? ($b[$role_key] ?? ($b['name'] ?? '')) : (string)$b;
+            $order_a = getRoleDisplayOrder($name_a);
+            $order_b = getRoleDisplayOrder($name_b);
+            if ($order_a !== $order_b) {
+                return $order_a - $order_b;
+            }
+            return strcasecmp($name_a, $name_b);
+        });
+    }
+}
+
+/**
  * Render Role Switcher in Study Header
  */
 function renderRoleSwitcher($study_id) {
@@ -141,6 +196,9 @@ function renderRoleSwitcher($study_id) {
             }
         }
     }
+    
+    // Sort roles by standard EDC order: Admin -> Data Coordinator -> Data Monitor -> Data Manager -> PI
+    sortRolesByStandardOrder($my_roles, 'role_name');
     
     // If only 1 role, just show badge
     if (count($my_roles) <= 1) {

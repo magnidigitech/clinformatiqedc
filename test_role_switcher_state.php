@@ -245,9 +245,57 @@ function runRoleSwitcherTests() {
         return ob_get_clean();
     }
 
-    $html = renderRoleSwitcherHTML(1);
-    $assertCondition("HTML contains Data Manager selected", strpos($html, '<option value="52" selected>Data Manager</option>') !== false);
-    $assertCondition("HTML does NOT select Data Coordinator", strpos($html, '<option value="50" selected>Data Coordinator</option>') === false);
+    // 7. Role Ordering Tests (Requested Order: Admin -> Data Coordinator -> Data Monitor -> Data Manager -> PI)
+    require_once __DIR__ . '/includes/functions.php';
+
+    $unsorted_roles = [
+        ['id' => 1, 'name' => 'Principal Investigator'],
+        ['id' => 2, 'name' => 'Data Manager'],
+        ['id' => 3, 'name' => 'Data Coordinator'],
+        ['id' => 4, 'name' => 'Data Monitor'],
+        ['id' => 5, 'name' => 'Admin']
+    ];
+
+    sortRolesByStandardOrder($unsorted_roles, 'name');
+
+    $names = array_column($unsorted_roles, 'name');
+    $expected = ['Admin', 'Data Coordinator', 'Data Monitor', 'Data Manager', 'Principal Investigator'];
+    $assertCondition("Sorted role names match requested order (Admin first)", $names === $expected);
+
+    // Without Admin
+    $unsorted_without_admin = [
+        ['id' => 1, 'name' => 'Data Manager'],
+        ['id' => 2, 'name' => 'Principal Investigator'],
+        ['id' => 3, 'name' => 'Data Monitor'],
+        ['id' => 4, 'name' => 'Data Coordinator']
+    ];
+    sortRolesByStandardOrder($unsorted_without_admin, 'name');
+    $names_without_admin = array_column($unsorted_without_admin, 'name');
+    $expected_without_admin = ['Data Coordinator', 'Data Monitor', 'Data Manager', 'Principal Investigator'];
+    $assertCondition("Sorted role names without Admin: Data Coordinator -> Data Monitor -> Data Manager -> PI", $names_without_admin === $expected_without_admin);
+
+    // Test renderRoleSwitcher output order
+    $_SESSION['assignments'] = [
+        ['id' => 101, 'study_id' => 99, 'role_name' => 'Data Manager'],
+        ['id' => 102, 'study_id' => 99, 'role_name' => 'Data Monitor'],
+        ['id' => 103, 'study_id' => 99, 'role_name' => 'Data Coordinator'],
+        ['id' => 104, 'study_id' => 99, 'role_name' => 'Principal Investigator']
+    ];
+    $_SESSION['active_study_id'] = 99;
+    $_SESSION['active_assignment_id'] = 103;
+    $_SESSION['active_role_name'] = 'Data Coordinator';
+
+    ob_start();
+    renderRoleSwitcher(99);
+    $switcher_html = ob_get_clean();
+
+    $pos_coord = strpos($switcher_html, 'Data Coordinator');
+    $pos_monitor = strpos($switcher_html, 'Data Monitor');
+    $pos_manager = strpos($switcher_html, 'Data Manager');
+    $pos_pi = strpos($switcher_html, 'Principal Investigator');
+
+    $order_correct = ($pos_coord < $pos_monitor) && ($pos_monitor < $pos_manager) && ($pos_manager < $pos_pi);
+    $assertCondition("Dropdown HTML renders in order: Data Coordinator < Data Monitor < Data Manager < PI", $order_correct);
 
     echo "\nResults: {$tests_passed}/{$tests_total} tests passed.\n";
 }

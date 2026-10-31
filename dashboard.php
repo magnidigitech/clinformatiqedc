@@ -198,6 +198,13 @@ $username = $_SESSION['username'] ?? 'User';
                         ];
                     }
                     
+                    // Always follow standard role order: Admin -> Data Coordinator -> Data Monitor -> Data Manager -> PI
+                    foreach ($unique_studies as $sid => $study) {
+                        if (function_exists('sortRolesByStandardOrder')) {
+                            sortRolesByStandardOrder($unique_studies[$sid]['roles_data'], 'name');
+                        }
+                    }
+                    
                     foreach ($unique_studies as $study): 
                     ?>
                         <div class="card" style="transition: transform 0.2s; cursor: pointer;" onclick="openRoleModal('<?php echo htmlspecialchars($study['study_name']); ?>', <?php echo htmlspecialchars(json_encode($study['roles_data'])); ?>)">
@@ -252,7 +259,23 @@ function openRoleModal(studyName, roles) {
     const list = document.getElementById('modalRoleList');
     list.innerHTML = '';
     
-    roles.forEach(role => {
+    const roleRank = (name) => {
+        const r = (name || '').toLowerCase().trim();
+        if (r.includes('admin')) return 1;
+        if (r.includes('coordinator') || r.includes('cordinator') || r.includes('entry') || r.includes('crc')) return 2;
+        if (r.includes('monitor') || r.includes('cra')) return 3;
+        if (r.includes('manager') || r.includes('manage') || r === 'dm' || r.includes('dm ')) return 4;
+        if (r.includes('investigator') || r === 'pi') return 5;
+        return 100;
+    };
+    
+    const sortedRoles = (roles || []).slice().sort((a, b) => {
+        const rankA = roleRank(a.name);
+        const rankB = roleRank(b.name);
+        return rankA !== rankB ? rankA - rankB : (a.name || '').localeCompare(b.name || '');
+    });
+    
+    sortedRoles.forEach(role => {
         const btn = document.createElement('a');
         btn.href = 'dashboard.php?switch_context_id=' + role.id; // Direct switch to assignment ID
         btn.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 1rem; background: #f8fafc; border: 1px solid var(--border-color); border-radius: 8px; text-decoration: none; color: var(--text-main); font-weight: 500; transition: all 0.2s;';
