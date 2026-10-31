@@ -187,7 +187,12 @@ function setActiveContext($assignment_id) {
  * Check if current user has specific permission
  */
 function hasPermission($permission_key) {
-    // 1. Admin Override (Full access to all EDC actions including adding subjects)
+    // 1. Adding subjects is permitted across all roles
+    if ($permission_key === 'add_subject' || $permission_key === 'add') {
+        return true;
+    }
+
+    // 2. Admin Override (Full access to all EDC actions)
     $role = $_SESSION['active_role_name'] ?? '';
     // Normalize mainly for comparison
     $role_lower = strtolower($role);
@@ -196,7 +201,7 @@ function hasPermission($permission_key) {
         return true;
     }
 
-    // 2. Strict Role Definitions (Admin, Data Coordinator, Data Monitor, Data Manager)
+    // 3. Strict Role Definitions (Admin, Data Coordinator, Data Monitor, Data Manager)
     
     // Data Coordinator (Data Entry maps to Data Coordinator): Can add subjects, enter data, edit, view queries.
     if ($role_lower === 'data coordinator' || $role_lower === 'data entry') {
@@ -204,16 +209,16 @@ function hasPermission($permission_key) {
         return in_array($permission_key, $allowed);
     }
     
-    // Data Monitor / Data Manager: Can Query + Verify. NO add/edit subjects/data.
+    // Data Monitor / Data Manager: Can Query + Verify.
     if ($role_lower === 'data monitor' || $role_lower === 'data manager') {
         // Added 'verify' for SDV (Source Data Verification)
-        $allowed = ['view', 'query', 'raise_query', 'verify'];
+        $allowed = ['view', 'add', 'add_subject', 'query', 'raise_query', 'verify'];
         return in_array($permission_key, $allowed);
     }
 
     // Principal Investigator (PI): Can view data, view queries, and perform PI Sign Off ('sign_off').
     if ($role_lower === 'principal investigator' || $role_lower === 'pi' || strpos($role_lower, 'investigator') !== false) {
-        $allowed = ['view', 'query', 'sign_off'];
+        $allowed = ['view', 'add', 'add_subject', 'query', 'sign_off'];
         return in_array($permission_key, $allowed);
     }
 
