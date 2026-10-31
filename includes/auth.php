@@ -279,24 +279,11 @@ function isCoordinatorRole($role_name) {
 }
 
 /**
- * Check if logged-in user is assigned the Data Coordinator role in the current study
+ * Check if logged-in user is currently in the Data Coordinator role
  */
 function userHasCoordinatorRole($study_id = null) {
     $active = $_SESSION['active_role_name'] ?? '';
-    if (isCoordinatorRole($active)) {
-        return true;
-    }
-    if (!$study_id && isset($_SESSION['active_study_id'])) {
-        $study_id = $_SESSION['active_study_id'];
-    }
-    if ($study_id && !empty($_SESSION['assignments'])) {
-        foreach ($_SESSION['assignments'] as $assign) {
-            if ($assign['study_id'] == $study_id && isCoordinatorRole($assign['role_name'] ?? '')) {
-                return true;
-            }
-        }
-    }
-    return false;
+    return isCoordinatorRole($active);
 }
 
 /**
@@ -306,29 +293,30 @@ function hasPermission($permission_key) {
     $role = $_SESSION['active_role_name'] ?? '';
     $role_lower = strtolower(trim($role));
 
-    // 1. Admin Override (Full access to all EDC actions when in Admin role or no specific role)
+    // 1. Admin Override (Full access to all EDC actions when in Admin role or system admin without explicit role)
     if ($role_lower === 'admin' || (isset($_SESSION['username']) && strtolower(trim($_SESSION['username'])) === 'admin' && ($role_lower === 'admin' || $role_lower === 'none' || $role_lower === ''))) {
         return true;
     }
 
-    // Special permission: adding subjects - Data Coordinator & Admin only
-    if ($permission_key === 'add_subject') {
-        return isCoordinatorRole($role_lower) || userHasCoordinatorRole();
+    // 2. Strict EDC rule: Adding subjects is ONLY permitted for Data Coordinator (and Admin)
+    // For Data Monitor, Data Manager, and Principal Investigator there is NO option to add subject.
+    if ($permission_key === 'add_subject' || $permission_key === 'add') {
+        return isCoordinatorRole($role_lower);
     }
 
-    // 2. Data Coordinator: The ONLY role (along with Admin) that can add subjects and enter clinical data
+    // 3. Data Coordinator: The ONLY role (along with Admin) that can add subjects and enter clinical data
     if (isCoordinatorRole($role_lower)) {
         $allowed = ['view', 'add', 'add_subject', 'enter_data', 'edit', 'query'];
         return in_array($permission_key, $allowed);
     }
     
-    // 3. Data Monitor / Data Manager: Can Query + Verify. CANNOT add subjects or edit clinical data.
+    // 4. Data Monitor / Data Manager: Can Query + Verify. CANNOT add subjects or edit clinical data.
     if (strpos($role_lower, 'monitor') !== false || strpos($role_lower, 'manager') !== false || strpos($role_lower, 'manage') !== false || $role_lower === 'dm' || strpos($role_lower, 'dm ') !== false || strpos($role_lower, 'cra') !== false || strpos($role_lower, 'clinical research associate') !== false) {
         $allowed = ['view', 'query', 'raise_query', 'verify', 'monitor_review', 'manager_review', 'monitor_revoke', 'manager_revoke'];
         return in_array($permission_key, $allowed);
     }
 
-    // 4. Principal Investigator (PI): Can view data, view queries, and perform PI Sign Off ('sign_off'). CANNOT add subjects.
+    // 5. Principal Investigator (PI): Can view data, view queries, and perform PI Sign Off ('sign_off'). CANNOT add subjects.
     if (strpos($role_lower, 'investigator') !== false || $role_lower === 'pi') {
         $allowed = ['view', 'query', 'sign_off'];
         return in_array($permission_key, $allowed);

@@ -68,10 +68,20 @@ runTest("Multi-role in Monitor: isOversightRole", isOversightRole() === true);
 runTest("Multi-role in Monitor: isRestrictedToCreatedSubjects is false", isRestrictedToCreatedSubjects() === false);
 runTest("Multi-role in Monitor: hasPermission('raise_query')", hasPermission('raise_query') === true);
 runTest("Multi-role in Monitor: hasPermission('verify')", hasPermission('verify') === true);
-runTest("Multi-role in Monitor: hasPermission('add_subject') via coordinator assignment", hasPermission('add_subject') === true);
+runTest("Multi-role in Monitor: hasPermission('add_subject') is false", hasPermission('add_subject') === false);
 runTest("Multi-role in Monitor: hasPermission('enter_data') is false (monitor cannot edit data)", hasPermission('enter_data') === false);
 
-// 5. Test Multi-role user: Switch active role to Data Coordinator
+// 5. Test Multi-role user: Switch active role to Data Manager
+$_SESSION['active_role_name'] = 'Data Manager';
+runTest("Multi-role in Manager: hasPermission('add_subject') is false", hasPermission('add_subject') === false);
+runTest("Multi-role in Manager: hasPermission('verify')", hasPermission('verify') === true);
+
+// 6. Test Multi-role user: Switch active role to Principal Investigator
+$_SESSION['active_role_name'] = 'Principal Investigator';
+runTest("Multi-role in PI: hasPermission('add_subject') is false", hasPermission('add_subject') === false);
+runTest("Multi-role in PI: hasPermission('sign_off')", hasPermission('sign_off') === true);
+
+// 7. Test Multi-role user: Switch active role to Data Coordinator
 $_SESSION['active_role_name'] = 'Data Coordinator';
 
 runTest("Multi-role in Coord: isOversightRole is false", isOversightRole() === false);
@@ -79,5 +89,9 @@ runTest("Multi-role in Coord: isRestrictedToCreatedSubjects is true", isRestrict
 runTest("Multi-role in Coord: hasPermission('raise_query') is false", hasPermission('raise_query') === false);
 runTest("Multi-role in Coord: hasPermission('enter_data')", hasPermission('enter_data') === true);
 runTest("Multi-role in Coord: hasPermission('add_subject')", hasPermission('add_subject') === true);
+
+// 8. Test Admin role: Can add subjects
+$_SESSION['active_role_name'] = 'Admin';
+runTest("Admin: hasPermission('add_subject')", hasPermission('add_subject') === true);
 
 echo "\nALL ROLE & PERMISSION TESTS PASSED!\n";
