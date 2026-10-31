@@ -39,21 +39,19 @@ try {
 // -----------------------
 
 // Helper to check roles
-$current_role = strtolower($_SESSION['active_role_name'] ?? '');
-// Monitor includes data monitor and data manager roles
-$is_monitor = (strpos($current_role, 'monitor') !== false) || (strpos($current_role, 'manager') !== false);
-// Manager includes data manager and admin roles
-$is_manager = (strpos($current_role, 'manager') !== false) || (strpos($current_role, 'admin') !== false); 
+$current_role = strtolower(trim($_SESSION['active_role_name'] ?? ''));
 $is_admin = isCurrentUserAdmin();
 
 // Specific precise roles for workflow
-$is_coordinator = isCoordinatorRole($current_role) || (strpos($current_role, 'admin') !== false);
-$is_monitor_role = (strpos($current_role, 'monitor') !== false) || (strpos($current_role, 'cra') !== false) || (strpos($current_role, 'clinical research associate') !== false) || (strpos($current_role, 'admin') !== false);
-$is_manager_role = (strpos($current_role, 'manager') !== false) || (strpos($current_role, 'admin') !== false);
-$is_pi_role = (strpos($current_role, 'investigator') !== false) || ($current_role === 'pi') || (strpos($current_role, 'admin') !== false);
+$is_monitor_role = (strpos($current_role, 'monitor') !== false) || (strpos($current_role, 'cra') !== false) || (strpos($current_role, 'clinical research associate') !== false) || $is_admin;
+$is_manager_role = (strpos($current_role, 'manager') !== false) || (strpos($current_role, 'manage') !== false) || ($current_role === 'dm') || (strpos($current_role, 'dm ') !== false) || $is_admin;
+$is_monitor = $is_monitor_role;
+$is_manager = $is_manager_role;
+$is_coordinator = isCoordinatorRole($current_role) || $is_admin;
+$is_pi_role = (strpos($current_role, 'investigator') !== false) || ($current_role === 'pi') || $is_admin;
 
 // Strict clinical content editor flag: Data Managers, Data Monitors, and Principal Investigators cannot edit clinical content.
-$is_data_editor = ($is_coordinator || $is_admin) && (strpos($current_role, 'manager') === false) && (strpos($current_role, 'monitor') === false) && (strpos($current_role, 'investigator') === false) && ($current_role !== 'pi');
+$is_data_editor = ($is_coordinator || $is_admin) && (strpos($current_role, 'manager') === false) && (strpos($current_role, 'manage') === false) && ($current_role !== 'dm') && (strpos($current_role, 'monitor') === false) && (strpos($current_role, 'investigator') === false) && ($current_role !== 'pi');
 $can_edit = $is_data_editor;
 
 // Review status resolver is now defined in includes/functions.php
@@ -1363,7 +1361,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                                                     $query_color = '#94a3b8'; // default gray
                                                     $query_tooltip = 'Queries';
                                                     $click_handler = '';
-                                                    $is_form_reviewed_for_role = ($is_monitor_role && $monitor_reviewed) || ($is_manager_role && $manager_reviewed) || $pi_signed_off;
+                                                    $is_form_reviewed_for_role = (!$is_admin && (($is_monitor_role && !$is_manager_role && $monitor_reviewed) || ($is_manager_role && !$is_monitor_role && $manager_reviewed))) || $pi_signed_off;
                                                     $reviewed_label = $pi_signed_off ? 'PI Signed Off' : (($is_monitor_role && $monitor_reviewed) ? 'SDVed' : 'DM Reviewed');
                                                     
                                                     if ($active_query_count > 0) {
@@ -1559,6 +1557,13 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
 </div>
 
 <script>
+    function toBoolJS(val) {
+        if (val === true || val === 1 || val === '1' || val === 'true') return true;
+        if (val === 't' || val === 'T') return true;
+        return false;
+    }
+    window.toBoolJS = toBoolJS;
+
     function toggleClickTooltip(el, event) {
         event.stopPropagation();
         const tooltip = el.querySelector('.click-tooltip-text');
@@ -1686,22 +1691,9 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
         const valMsg = document.getElementById('revokeRemarksValMsg');
         const charCount = document.getElementById('revokeRemarksCharCount');
         const btn = document.getElementById('workflowConfirmBtn');
-        const trimmed = text.trim();
-        charCount.textContent = text.length + ' / 500';
-        if (trimmed.length === 0) {
-            valMsg.textContent = "Please enter a reason before revoking the review.";
-            valMsg.style.display = 'block';
-            btn.disabled = true;
-            btn.style.opacity = '0.6';
-            btn.style.cursor = 'not-allowed';
-        } else if (trimmed.length < 10) {
-            valMsg.textContent = "Remarks must be at least 10 characters.";
-            valMsg.style.display = 'block';
-            btn.disabled = true;
-            btn.style.opacity = '0.6';
-            btn.style.cursor = 'not-allowed';
-        } else {
-            valMsg.style.display = 'none';
+        if (charCount) charCount.textContent = text.length + ' / 500';
+        if (valMsg) valMsg.style.display = 'none';
+        if (btn) {
             btn.disabled = false;
             btn.style.opacity = '1';
             btn.style.cursor = 'pointer';
@@ -1805,21 +1797,21 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                 remarksText.value = '';
                 if (remarksLabel) {
                     if (workflowAction === 'monitor_revoke') {
-                        remarksLabel.innerHTML = 'Reason for Revoking SDVed <span style="color: red;">*</span>';
+                        remarksLabel.innerHTML = 'Reason for Revoking SDVed (Optional)';
                     } else if (workflowAction === 'manager_revoke') {
-                        remarksLabel.innerHTML = 'Reason for Revoking DM Reviewed <span style="color: red;">*</span>';
+                        remarksLabel.innerHTML = 'Reason for Revoking DM Reviewed (Optional)';
                     } else if (workflowAction === 'pi_revoke') {
-                        remarksLabel.innerHTML = 'Reason for Revoking PI Sign Off <span style="color: red;">*</span>';
+                        remarksLabel.innerHTML = 'Reason for Revoking PI Sign Off (Optional)';
                     }
                 }
-                validateRevokeRemarks(); // disables by default
+                validateRevokeRemarks();
             } else {
                 remarksContainer.style.display = 'none';
-                confirmBtn.disabled = false;
-                confirmBtn.style.opacity = '1';
-                confirmBtn.style.cursor = 'pointer';
             }
         }
+        confirmBtn.disabled = false;
+        confirmBtn.style.opacity = '1';
+        confirmBtn.style.cursor = 'pointer';
         
         document.getElementById('workflowConfirmModal').classList.add('active');
     }
@@ -1910,9 +1902,9 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
         }
 
         // 8. Update query buttons dynamically
-        if (data.monitor_reviewed !== undefined) window.monitorReviewed = data.monitor_reviewed;
-        if (data.manager_reviewed !== undefined) window.managerReviewed = data.manager_reviewed;
-        if (data.pi_signed_off !== undefined) window.piSignedOff = data.pi_signed_off;
+        if (data.monitor_reviewed !== undefined) window.monitorReviewed = toBoolJS(data.monitor_reviewed);
+        if (data.manager_reviewed !== undefined) window.managerReviewed = toBoolJS(data.manager_reviewed);
+        if (data.pi_signed_off !== undefined) window.piSignedOff = toBoolJS(data.pi_signed_off);
 
         if (window.piSignedOff) {
             const queryButtons = document.querySelectorAll('.field-direct-actions button[title*="Query"], .field-direct-actions button[title*="query"], .field-direct-actions button[title*="add"], .field-direct-actions button[title*="Add"]');
@@ -1928,7 +1920,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                 }
             });
         } else {
-            const isFormReviewedForRole = (window.monitorReviewed && isMonitorRole) || (window.managerReviewed && isManagerRole);
+            const isFormReviewedForRole = (!USER_IS_ADMIN && ((window.monitorReviewed && isMonitorRole && !isManagerRole) || (window.managerReviewed && isManagerRole && !isMonitorRole)));
             if (isFormReviewedForRole) {
                 const queryButtons = document.querySelectorAll('.field-direct-actions button[title*="Query"], .field-direct-actions button[title*="query"], .field-direct-actions button[title*="add"], .field-direct-actions button[title*="Add"]');
                 queryButtons.forEach(btn => {
@@ -1964,6 +1956,13 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
         let remarks = '';
         const remarksEl = document.getElementById('revokeRemarksText');
         if (remarksEl) remarks = remarksEl.value.trim();
+        if (pendingWorkflowAction === 'monitor_revoke' && !remarks) {
+            remarks = 'SDV Revoked by Data Monitor';
+        } else if (pendingWorkflowAction === 'manager_revoke' && !remarks) {
+            remarks = 'DM Review Revoked by Data Manager';
+        } else if (pendingWorkflowAction === 'pi_revoke' && !remarks) {
+            remarks = 'PI Sign Off Revoked by Principal Investigator';
+        }
 
         closeWorkflowModal();
 
@@ -2973,7 +2972,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                 alert("Cannot Raise Query\nas the form is Signed Off by Principal Investigator");
                 return;
             }
-            const isFormReviewedForRole = (window.monitorReviewed && isMonitorRole) || (window.managerReviewed && isManagerRole);
+            const isFormReviewedForRole = (!USER_IS_ADMIN && ((window.monitorReviewed && isMonitorRole && !isManagerRole) || (window.managerReviewed && isManagerRole && !isMonitorRole)));
             if (isFormReviewedForRole) {
                 alert("Cannot Raise Query\nas the form is marked as review");
                 return;
@@ -3967,14 +3966,11 @@ function showConfirmModal(options) {
             let remarks = '';
             if (requireRemarks) {
                 remarks = remarksInput ? remarksInput.value.trim() : '';
-                if (remarks.length < 10) {
-                    showToast('Remarks must be at least 10 characters.', 'warning');
-                    if (remarksInput) remarksInput.focus();
-                    return;
+                if (!remarks) {
+                    remarks = 'Revoked by user';
                 }
                 if (remarks.length > 500) {
-                    showToast('Remarks cannot exceed 500 characters.', 'warning');
-                    return;
+                    remarks = remarks.substring(0, 500);
                 }
             }
             closeModal('modalConfirmAction');
@@ -4219,10 +4215,10 @@ function renderCommonTable(records, formType) {
         }
 
         // SDR & Review Badge
-        const monRev = (r.monitor_reviewed === true || r.monitor_reviewed === 't' || r.monitor_reviewed === 1 || r.monitor_reviewed === '1');
-        const mgrRev = (r.manager_reviewed === true || r.manager_reviewed === 't' || r.manager_reviewed === 1 || r.manager_reviewed === '1');
-        const sdrSub = (r.sdr_submitted === true || r.sdr_submitted === 't' || r.sdr_submitted === 1 || r.sdr_submitted === '1');
-        const piSigned = (r.pi_signed_off === true || r.pi_signed_off === 't' || r.pi_signed_off === 1 || r.pi_signed_off === '1');
+        const monRev = toBoolJS(r.monitor_reviewed);
+        const mgrRev = toBoolJS(r.manager_reviewed);
+        const sdrSub = toBoolJS(r.sdr_submitted);
+        const piSigned = toBoolJS(r.pi_signed_off);
 
         let sdrBadge = `<span style="background: #f1f5f9; color: #64748b; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 500; white-space: nowrap;">Pending SDR</span>`;
         if (piSigned || r.sdr_status === 'pi_signed_off') {
@@ -4451,10 +4447,10 @@ function renderCommonTable(records, formType) {
 function renderRecordActionButtons(r, formType) {
     let btns = '';
 
-    const sdrSub = (r.sdr_submitted === true || r.sdr_submitted === 't' || r.sdr_submitted === 1 || r.sdr_submitted === '1');
-    const monRev = (r.monitor_reviewed === true || r.monitor_reviewed === 't' || r.monitor_reviewed === 1 || r.monitor_reviewed === '1');
-    const mgrRev = (r.manager_reviewed === true || r.manager_reviewed === 't' || r.manager_reviewed === 1 || r.manager_reviewed === '1');
-    const piSigned = (r.pi_signed_off === true || r.pi_signed_off === 't' || r.pi_signed_off === 1 || r.pi_signed_off === '1');
+    const sdrSub = toBoolJS(r.sdr_submitted);
+    const monRev = toBoolJS(r.monitor_reviewed);
+    const mgrRev = toBoolJS(r.manager_reviewed);
+    const piSigned = toBoolJS(r.pi_signed_off);
     const isLocked = (sdrSub && (monRev || mgrRev)) || piSigned;
 
     // Open/Edit/View
@@ -4494,7 +4490,7 @@ function renderRecordActionButtons(r, formType) {
             }
 
             // Data Monitor Actions
-            if ((USER_IS_MONITOR || USER_IS_ADMIN) && sdrSub) {
+            if (USER_IS_MONITOR || USER_IS_ADMIN) {
                 if (!monRev) {
                     btns += `<button class="btn btn-sm" onclick="triggerCommonReviewAction(${r.id}, 'monitor_review', '${formType}')" title="Mark as SDVed" style="padding: 0.25rem 0.55rem; font-size: 0.75rem; background: #059669; color: #fff; border: 1px solid #059669; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;"><span class="material-icons-round" style="font-size: 14px;">verified</span> SDVed</button>`;
                 } else {
@@ -4503,7 +4499,7 @@ function renderRecordActionButtons(r, formType) {
             }
 
             // Data Manager Actions
-            if ((USER_IS_MANAGER || USER_IS_ADMIN) && sdrSub) {
+            if (USER_IS_MANAGER || USER_IS_ADMIN) {
                 if (!mgrRev) {
                     btns += `<button class="btn btn-sm" onclick="triggerCommonReviewAction(${r.id}, 'manager_review', '${formType}')" title="Mark as DM Reviewed" style="padding: 0.25rem 0.55rem; font-size: 0.75rem; background: #6d28d9; color: #fff; border: 1px solid #6d28d9; font-weight: 600; display: inline-flex; align-items: center; gap: 3px;"><span class="material-icons-round" style="font-size: 14px;">verified</span> DM Review</button>`;
                 } else {
@@ -4680,10 +4676,10 @@ function setupEditorForm(rec, formType) {
     const bBox = document.getElementById('cfEditorBadges');
     let stBadge = rec.status === 'complete' ? '<span style="background: #ecfdf5; color: #047857; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600; white-space: nowrap;">Complete</span>' : '<span style="background: #eff6ff; color: #1d4ed8; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600; white-space: nowrap;">Draft</span>';
 
-    const recMonRev = (rec.monitor_reviewed === true || rec.monitor_reviewed === 't' || rec.monitor_reviewed === 1 || rec.monitor_reviewed === '1');
-    const recMgrRev = (rec.manager_reviewed === true || rec.manager_reviewed === 't' || rec.manager_reviewed === 1 || rec.manager_reviewed === '1');
-    const recSdrSub = (rec.sdr_submitted === true || rec.sdr_submitted === 't' || rec.sdr_submitted === 1 || rec.sdr_submitted === '1');
-    const recPiSigned = (rec.pi_signed_off === true || rec.pi_signed_off === 't' || rec.pi_signed_off === 1 || rec.pi_signed_off === '1');
+    const recMonRev = toBoolJS(rec.monitor_reviewed);
+    const recMgrRev = toBoolJS(rec.manager_reviewed);
+    const recSdrSub = toBoolJS(rec.sdr_submitted);
+    const recPiSigned = toBoolJS(rec.pi_signed_off);
 
     let sdrBadge = '<span style="background: #f1f5f9; color: #64748b; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 500; white-space: nowrap;">Pending SDR</span>';
     if (recPiSigned || rec.sdr_status === 'pi_signed_off') {
@@ -4716,10 +4712,10 @@ function setupEditorForm(rec, formType) {
             wfContainer.innerHTML = '';
         } else {
             let mBtns = '';
-            const sdrSub = (rec.sdr_submitted === true || rec.sdr_submitted === 't' || rec.sdr_submitted === 1 || rec.sdr_submitted === '1');
-            const monRev = (rec.monitor_reviewed === true || rec.monitor_reviewed === 't' || rec.monitor_reviewed === 1 || rec.monitor_reviewed === '1');
-            const mgrRev = (rec.manager_reviewed === true || rec.manager_reviewed === 't' || rec.manager_reviewed === 1 || rec.manager_reviewed === '1');
-            const piSigned = (rec.pi_signed_off === true || rec.pi_signed_off === 't' || rec.pi_signed_off === 1 || rec.pi_signed_off === '1');
+            const sdrSub = toBoolJS(rec.sdr_submitted);
+            const monRev = toBoolJS(rec.monitor_reviewed);
+            const mgrRev = toBoolJS(rec.manager_reviewed);
+            const piSigned = toBoolJS(rec.pi_signed_off);
 
             if (piSigned) {
                 // If PI Signed Off, only PI or Admin can revoke
@@ -4745,7 +4741,7 @@ function setupEditorForm(rec, formType) {
                 }
 
                 // Monitor
-                if ((USER_IS_MONITOR || USER_IS_ADMIN) && sdrSub) {
+                if (USER_IS_MONITOR || USER_IS_ADMIN) {
                     if (!monRev) {
                         mBtns += `<button type="button" class="btn btn-sm" onclick="closeModal('modalCommonFormEditor'); triggerCommonReviewAction(${rec.id}, 'monitor_review', '${formType}')" style="background: #059669; color: #fff; border: 1px solid #059669; font-weight: 600; padding: 0.5rem 1.1rem; display: inline-flex; align-items: center; gap: 4px;"><span class="material-icons-round" style="font-size: 1rem;">verified</span> Mark as SDVed</button>`;
                     } else {
@@ -4754,7 +4750,7 @@ function setupEditorForm(rec, formType) {
                 }
 
                 // Manager
-                if ((USER_IS_MANAGER || USER_IS_ADMIN) && sdrSub) {
+                if (USER_IS_MANAGER || USER_IS_ADMIN) {
                     if (!mgrRev) {
                         mBtns += `<button type="button" class="btn btn-sm" onclick="closeModal('modalCommonFormEditor'); triggerCommonReviewAction(${rec.id}, 'manager_review', '${formType}')" style="background: #6d28d9; color: #fff; border: 1px solid #6d28d9; font-weight: 600; padding: 0.5rem 1.1rem; display: inline-flex; align-items: center; gap: 4px;"><span class="material-icons-round" style="font-size: 1rem;">verified</span> Mark as DM Reviewed</button>`;
                     } else {
@@ -7141,9 +7137,9 @@ function openCommonQueryModal(recordId, targetFieldKey = null, targetFieldLabel 
 
         // Query Raising Box (Monitor / Manager / Admin)
         if (isMonitorOrManager) {
-            const isMonReviewed = !!rec.monitor_reviewed;
-            const isMgrReviewed = !!rec.manager_reviewed;
-            const isPiSigned = (rec.pi_signed_off === true || rec.pi_signed_off === 't' || rec.pi_signed_off === 1 || rec.pi_signed_off === '1');
+            const isMonReviewed = toBoolJS(rec.monitor_reviewed);
+            const isMgrReviewed = toBoolJS(rec.manager_reviewed);
+            const isPiSigned = toBoolJS(rec.pi_signed_off);
 
             if (isPiSigned) {
                 html += `
@@ -7152,14 +7148,14 @@ function openCommonQueryModal(recordId, targetFieldKey = null, targetFieldLabel 
                         <div>Cannot Raise Query as the record is Signed Off by <strong>Principal Investigator</strong>. All queries, field changes, and revocations are completely locked.</div>
                     </div>
                 `;
-            } else if (isMonReviewed && !isManager) {
+            } else if (isMonReviewed && isMonitor && !isManager && !USER_IS_ADMIN) {
                 html += `
                     <div style="background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 0.85rem; border-radius: 8px; margin-bottom: 1.25rem; font-size: 0.85rem; display: flex; align-items: center; gap: 8px;">
                         <span class="material-icons-round" style="font-size: 1.2rem;">lock</span>
                         <div>Cannot Raise Query as the form is marked as <strong>SDVed</strong>. Please revoke SDV first to raise queries.</div>
                     </div>
                 `;
-            } else if (isMgrReviewed && !isMonitor) {
+            } else if (isMgrReviewed && isManager && !isMonitor && !USER_IS_ADMIN) {
                 html += `
                     <div style="background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 0.85rem; border-radius: 8px; margin-bottom: 1.25rem; font-size: 0.85rem; display: flex; align-items: center; gap: 8px;">
                         <span class="material-icons-round" style="font-size: 1.2rem;">lock</span>
@@ -7557,9 +7553,9 @@ function openCommonAuditModal(recordId) {
         const aBody = document.getElementById('cfAuditBody');
 
         // Header Summary Card
-        let sdrSubText = rec.sdr_submitted ? `<span style="color: #1d4ed8; font-weight: 600;">Yes (${escapeHtml(rec.sdr_by_name || 'Coordinator')} on ${rec.sdr_at || '-'})</span>` : '<span style="color: #64748b;">Pending</span>';
-        let monRevText = rec.monitor_reviewed ? `<span style="color: #047857; font-weight: 600;">SDVed (${escapeHtml(rec.monitor_by_name || 'Monitor')} on ${rec.monitor_at || '-'})</span>` : '<span style="color: #64748b;">Not SDVed</span>';
-        let mgrRevText = rec.manager_reviewed ? `<span style="color: #6d28d9; font-weight: 600;">DM Reviewed (${escapeHtml(rec.manager_by_name || 'Manager')} on ${rec.manager_at || '-'})</span>` : '<span style="color: #64748b;">Not Reviewed</span>';
+        let sdrSubText = toBoolJS(rec.sdr_submitted) ? `<span style="color: #1d4ed8; font-weight: 600;">Yes (${escapeHtml(rec.sdr_by_name || 'Coordinator')} on ${rec.sdr_at || '-'})</span>` : '<span style="color: #64748b;">Pending</span>';
+        let monRevText = toBoolJS(rec.monitor_reviewed) ? `<span style="color: #047857; font-weight: 600;">SDVed (${escapeHtml(rec.monitor_by_name || 'Monitor')} on ${rec.monitor_at || '-'})</span>` : '<span style="color: #64748b;">Not SDVed</span>';
+        let mgrRevText = toBoolJS(rec.manager_reviewed) ? `<span style="color: #6d28d9; font-weight: 600;">DM Reviewed (${escapeHtml(rec.manager_by_name || 'Manager')} on ${rec.manager_at || '-'})</span>` : '<span style="color: #64748b;">Not Reviewed</span>';
 
         let html = `
             <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; margin-bottom: 1.25rem;">

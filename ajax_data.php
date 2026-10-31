@@ -20,14 +20,14 @@ try {
     ensureCommonFormsTables($pdo);
     $study_id = $_SESSION['active_study_id'];
 
-    $role_lower = strtolower($_SESSION['active_role_name'] ?? '');
+    $role_lower = strtolower(trim($_SESSION['active_role_name'] ?? ''));
     $is_admin = isCurrentUserAdmin();
-    $is_coordinator = isCoordinatorRole($role_lower) || (strpos($role_lower, 'admin') !== false);
-    $is_monitor = (strpos($role_lower, 'monitor') !== false) || (strpos($role_lower, 'cra') !== false) || (strpos($role_lower, 'clinical research associate') !== false) || (strpos($role_lower, 'admin') !== false);
-    $is_manager = (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'admin') !== false);
-    $is_pi = (strpos($role_lower, 'investigator') !== false) || ($role_lower === 'pi') || (strpos($role_lower, 'admin') !== false);
+    $is_coordinator = isCoordinatorRole($role_lower) || $is_admin;
+    $is_monitor = (strpos($role_lower, 'monitor') !== false) || (strpos($role_lower, 'cra') !== false) || (strpos($role_lower, 'clinical research associate') !== false) || $is_admin;
+    $is_manager = (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'manage') !== false) || ($role_lower === 'dm') || (strpos($role_lower, 'dm ') !== false) || $is_admin;
+    $is_pi = (strpos($role_lower, 'investigator') !== false) || ($role_lower === 'pi') || $is_admin;
     // Strict clinical content editor flag: Data Managers, Data Monitors, and Principal Investigators cannot edit clinical content.
-    $is_data_editor = ($is_coordinator || $is_admin) && (strpos($role_lower, 'manager') === false) && (strpos($role_lower, 'monitor') === false) && (strpos($role_lower, 'investigator') === false) && ($role_lower !== 'pi');
+    $is_data_editor = ($is_coordinator || $is_admin) && (strpos($role_lower, 'manager') === false) && (strpos($role_lower, 'manage') === false) && ($role_lower !== 'dm') && (strpos($role_lower, 'monitor') === false) && (strpos($role_lower, 'investigator') === false) && ($role_lower !== 'pi');
 
     // Restrict Data Coordinators to only subjects they created
     $req_subject_id = (int)($_POST['subject_id'] ?? 0);
@@ -353,10 +353,10 @@ try {
         if ($pi_signed_off) {
             throw new Exception("Cannot Raise Query as the form has been Signed Off by Principal Investigator");
         }
-        if ($is_monitor && $monitor_reviewed) {
+        if (!$is_admin && $is_monitor && !$is_manager && $monitor_reviewed) {
             throw new Exception("Cannot Raise Query as the form is marked as SDVed");
         }
-        if ($is_manager && $manager_reviewed) {
+        if (!$is_admin && $is_manager && !$is_monitor && $manager_reviewed) {
             throw new Exception("Cannot Raise Query as the form is marked as DM Reviewed");
         }
         
@@ -991,9 +991,6 @@ try {
                  if (!$is_monitor) {
                      throw new Exception("Unauthorized: Only Data Monitors can mark as SDVed.");
                  }
-                 if (!$sdr_submitted) {
-                     throw new Exception("Cannot mark as SDVed: Form must be SDR submitted first.");
-                 }
                  if ($monitor_reviewed) {
                      throw new Exception("Form is already marked as SDVed.");
                  }
@@ -1006,6 +1003,7 @@ try {
                  }
 
                  $monitor_reviewed = true;
+                  $sdr_submitted = true;
                  $audit_logs[] = ['monitor_reviewed', 'Marked as SDVed by Data Monitor'];
                  
               } elseif ($workflow_action === 'monitor_revoke') {
@@ -1017,19 +1015,15 @@ try {
                   }
                   
                   $remarks = trim($_POST['remarks'] ?? '');
-                  if ($remarks === '') {
-                      throw new Exception("Please enter a reason before revoking SDVed.");
-                  }
-                  if (mb_strlen($remarks) < 10) {
-                      throw new Exception("Remarks must be at least 10 characters.");
-                  }
-                  if (mb_strlen($remarks) > 500) {
-                      throw new Exception("Remarks cannot exceed 500 characters.");
-                  }
+                   if ($remarks === '') {
+                       $remarks = 'SDV Revoked by Data Monitor';
+                   }
+                   if (mb_strlen($remarks) > 500) {
+                       $remarks = mb_substr($remarks, 0, 500);
+                   }
                   
                   $sdr_submitted = false;
                   $monitor_reviewed = false;
-                  $manager_reviewed = false;
                   $audit_logs[] = ['monitor_revoked', $remarks];
                   $audit_logs[] = ['sdr_revoked', 'SDR Revoked due to SDVed Revocation. Remarks: ' . $remarks];
                  
@@ -1037,14 +1031,12 @@ try {
                  if (!$is_manager) {
                      throw new Exception("Unauthorized: Only Data Managers can mark as DM Reviewed.");
                  }
-                 if (!$sdr_submitted) {
-                     throw new Exception("Cannot review: Form must be SDR submitted first.");
-                 }
                  if ($manager_reviewed) {
                      throw new Exception("Form is already marked as DM Reviewed.");
                  }
                  
                  $manager_reviewed = true;
+                  $sdr_submitted = true;
                  $audit_logs[] = ['manager_reviewed', 'Marked as DM Reviewed by Data Manager'];
                  
              } elseif ($workflow_action === 'manager_revoke') {
@@ -1056,19 +1048,15 @@ try {
                    }
                    
                    $remarks = trim($_POST['remarks'] ?? '');
-                   if ($remarks === '') {
-                       throw new Exception("Please enter a reason before revoking DM Reviewed.");
-                   }
-                   if (mb_strlen($remarks) < 10) {
-                       throw new Exception("Remarks must be at least 10 characters.");
-                   }
-                   if (mb_strlen($remarks) > 500) {
-                       throw new Exception("Remarks cannot exceed 500 characters.");
-                   }
+                    if ($remarks === '') {
+                        $remarks = 'DM Review Revoked by Data Manager';
+                    }
+                    if (mb_strlen($remarks) > 500) {
+                        $remarks = mb_substr($remarks, 0, 500);
+                    }
                    
                    $sdr_submitted = false;
                    $monitor_reviewed = false;
-                   $manager_reviewed = false;
                    $audit_logs[] = ['manager_revoked', $remarks];
                    $audit_logs[] = ['sdr_revoked', 'SDR Revoked due to DM Reviewed Revocation. Remarks: ' . $remarks];
                  
@@ -1104,15 +1092,12 @@ try {
                  }
                  
                  $remarks = trim($_POST['remarks'] ?? '');
-                 if ($remarks === '') {
-                     throw new Exception("Please enter a reason before revoking PI Sign Off.");
-                 }
-                 if (mb_strlen($remarks) < 10) {
-                     throw new Exception("Remarks must be at least 10 characters.");
-                 }
-                 if (mb_strlen($remarks) > 500) {
-                     throw new Exception("Remarks cannot exceed 500 characters.");
-                 }
+                  if ($remarks === '') {
+                      $remarks = 'PI Sign Off Revoked by Principal Investigator';
+                  }
+                  if (mb_strlen($remarks) > 500) {
+                      $remarks = mb_substr($remarks, 0, 500);
+                  }
                  
                  // If the PI Sign Off is Revoked it goes back to previous stage of SDVed & DM Reviewed
                  $pi_signed_off = false;

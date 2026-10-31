@@ -25,14 +25,14 @@ try {
     // Lazy load Common Form Tables DDL
     ensureCommonFormsTables($pdo);
 
-    $role_lower = strtolower($_SESSION['active_role_name'] ?? '');
+    $role_lower = strtolower(trim($_SESSION['active_role_name'] ?? ''));
     $is_admin = isCurrentUserAdmin();
-    $is_coordinator = isCoordinatorRole($role_lower) || (strpos($role_lower, 'admin') !== false);
-    $is_monitor = (strpos($role_lower, 'monitor') !== false) || (strpos($role_lower, 'cra') !== false) || (strpos($role_lower, 'clinical research associate') !== false) || (strpos($role_lower, 'admin') !== false);
-    $is_manager = (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'admin') !== false);
-    $is_pi = (strpos($role_lower, 'investigator') !== false) || ($role_lower === 'pi') || (strpos($role_lower, 'admin') !== false);
+    $is_coordinator = isCoordinatorRole($role_lower) || $is_admin;
+    $is_monitor = (strpos($role_lower, 'monitor') !== false) || (strpos($role_lower, 'cra') !== false) || (strpos($role_lower, 'clinical research associate') !== false) || $is_admin;
+    $is_manager = (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'manage') !== false) || ($role_lower === 'dm') || (strpos($role_lower, 'dm ') !== false) || $is_admin;
+    $is_pi = (strpos($role_lower, 'investigator') !== false) || ($role_lower === 'pi') || $is_admin;
     // Strict clinical content editor flag: Data Managers, Data Monitors, and Principal Investigators cannot create, edit, or void clinical content.
-    $is_data_editor = ($is_coordinator || $is_admin) && (strpos($role_lower, 'manager') === false) && (strpos($role_lower, 'monitor') === false) && (strpos($role_lower, 'investigator') === false) && ($role_lower !== 'pi');
+    $is_data_editor = ($is_coordinator || $is_admin) && (strpos($role_lower, 'manager') === false) && (strpos($role_lower, 'manage') === false) && ($role_lower !== 'dm') && (strpos($role_lower, 'monitor') === false) && (strpos($role_lower, 'investigator') === false) && ($role_lower !== 'pi');
 
     // Restrict Data Coordinators to only subjects they created
     $posted_subject_id = (int)($_POST['subject_id'] ?? 0);
@@ -961,9 +961,6 @@ try {
                 if (!$is_monitor) {
                     throw new Exception("Unauthorized: Only Data Monitors can mark as SDVed.");
                 }
-                if (!$sdr_submitted) {
-                    throw new Exception("Cannot mark as SDVed: Form must be SDR submitted first.");
-                }
                 if ($monitor_reviewed) {
                     throw new Exception("Record is already marked as SDVed.");
                 }
@@ -976,6 +973,7 @@ try {
                 }
 
                 $monitor_reviewed = true;
+                $sdr_submitted = true;
                 $rec['monitor_by'] = $curr_user_id;
                 $rec['monitor_at'] = date('Y-m-d H:i:s');
                 $sdr_hist_action = 'monitor_review';
@@ -991,13 +989,10 @@ try {
 
                 $remarks = trim($_POST['remarks'] ?? '');
                 if ($remarks === '') {
-                    throw new Exception("Please enter a reason before revoking SDVed.");
-                }
-                if (mb_strlen($remarks) < 10) {
-                    throw new Exception("Remarks must be at least 10 characters.");
+                    $remarks = 'SDV Revoked by Data Monitor';
                 }
                 if (mb_strlen($remarks) > 500) {
-                    throw new Exception("Remarks cannot exceed 500 characters.");
+                    $remarks = mb_substr($remarks, 0, 500);
                 }
 
                 $sdr_submitted = false;
@@ -1011,14 +1006,12 @@ try {
                 if (!$is_manager) {
                     throw new Exception("Unauthorized: Only Data Managers can mark as DM Reviewed.");
                 }
-                if (!$sdr_submitted) {
-                    throw new Exception("Cannot review: Form must be SDR submitted first.");
-                }
                 if ($manager_reviewed) {
                     throw new Exception("Record is already marked as DM Reviewed.");
                 }
 
                 $manager_reviewed = true;
+                $sdr_submitted = true;
                 $rec['manager_by'] = $curr_user_id;
                 $rec['manager_at'] = date('Y-m-d H:i:s');
                 $sdr_hist_action = 'manager_review';
@@ -1034,13 +1027,10 @@ try {
 
                 $remarks = trim($_POST['remarks'] ?? '');
                 if ($remarks === '') {
-                    throw new Exception("Please enter a reason before revoking DM Reviewed.");
-                }
-                if (mb_strlen($remarks) < 10) {
-                    throw new Exception("Remarks must be at least 10 characters.");
+                    $remarks = 'DM Review Revoked by Data Manager';
                 }
                 if (mb_strlen($remarks) > 500) {
-                    throw new Exception("Remarks cannot exceed 500 characters.");
+                    $remarks = mb_substr($remarks, 0, 500);
                 }
 
                 $sdr_submitted = false;
@@ -1084,13 +1074,10 @@ try {
 
                 $remarks = trim($_POST['remarks'] ?? '');
                 if ($remarks === '') {
-                    throw new Exception("Please enter a reason before revoking PI Sign Off.");
-                }
-                if (mb_strlen($remarks) < 10) {
-                    throw new Exception("Remarks must be at least 10 characters.");
+                    $remarks = 'PI Sign Off Revoked by Principal Investigator';
                 }
                 if (mb_strlen($remarks) > 500) {
-                    throw new Exception("Remarks cannot exceed 500 characters.");
+                    $remarks = mb_substr($remarks, 0, 500);
                 }
 
                 // If the PI Sign Off is Revoked it goes back to previous stage of SDVed & DM Reviewed
@@ -1295,10 +1282,10 @@ try {
         if (toBool($rec['pi_signed_off'] ?? false)) {
             throw new Exception("Cannot Raise Query as the form has been Signed Off by Principal Investigator");
         }
-        if ($is_monitor && toBool($rec['monitor_reviewed'])) {
+        if (!$is_admin && $is_monitor && !$is_manager && toBool($rec['monitor_reviewed'])) {
             throw new Exception("Cannot Raise Query as the form is marked as SDVed");
         }
-        if ($is_manager && toBool($rec['manager_reviewed'])) {
+        if (!$is_admin && $is_manager && !$is_monitor && toBool($rec['manager_reviewed'])) {
             throw new Exception("Cannot Raise Query as the form is marked as DM Reviewed");
         }
 

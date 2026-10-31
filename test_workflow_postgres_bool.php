@@ -118,6 +118,14 @@ assertCondition("Manager sees 'Mark as DM Reviewed' button when manager_reviewed
 $btn_manager_reviewed = renderWorkflowButtons(false, false, true, 't', 'f', 't', true, 'f', false);
 assertCondition("Manager sees 'Revoke DM Reviewed' button when manager_reviewed is 't'", strpos($btn_manager_reviewed, 'Revoke DM Reviewed') !== false);
 
+// Data Manager on form without SDR submission ('sdr_submitted' => 'f', 'manager_reviewed' => 'f')
+$btn_manager_no_sdr = renderWorkflowButtons(false, false, true, 'f', 'f', 'f', true, 'f', false);
+assertCondition("Manager sees 'Mark as DM Reviewed' button even when sdr_submitted is 'f'", strpos($btn_manager_no_sdr, 'Mark as DM Reviewed') !== false);
+
+// Data Monitor on form without SDR submission ('sdr_submitted' => 'f', 'monitor_reviewed' => 'f')
+$btn_monitor_no_sdr = renderWorkflowButtons(false, true, false, 'f', 'f', 'f', true, 'f', false);
+assertCondition("Monitor sees 'Mark as SDVed' button even when sdr_submitted is 'f'", strpos($btn_monitor_no_sdr, 'Mark as SDVed') !== false);
+
 // When PI signed off is 't'
 $btn_pi_locked = renderWorkflowButtons(false, true, true, 't', 't', 't', true, 't', false);
 assertCondition("When PI signed off is 't', form shows 'PI Signed Off' badge", strpos($btn_pi_locked, 'PI Signed Off') !== false);
@@ -129,21 +137,33 @@ assertCondition("getPermissionsForRole('data monitor') in small case contains ra
 assertCondition("getPermissionsForRole('DATA MONITOR') in upper case contains raise_query", strpos(getPermissionsForRole('DATA MONITOR'), 'raise_query') !== false);
 assertCondition("getPermissionsForRole('Data Manager') contains raise_query", strpos(getPermissionsForRole('Data Manager'), 'raise_query') !== false);
 assertCondition("getPermissionsForRole('data manager') in small case contains raise_query", strpos(getPermissionsForRole('data manager'), 'raise_query') !== false);
+assertCondition("getPermissionsForRole('DM') in uppercase contains raise_query", strpos(getPermissionsForRole('DM'), 'raise_query') !== false);
+assertCondition("getPermissionsForRole('dm') in lowercase contains raise_query", strpos(getPermissionsForRole('dm'), 'raise_query') !== false);
 assertCondition("getPermissionsForRole('data coordinator') in small case contains add_subject", strpos(getPermissionsForRole('data coordinator'), 'add_subject') !== false);
 
 // Check hasPermission with small case session
 $_SESSION['active_role_name'] = 'data monitor';
 assertCondition("hasPermission('raise_query') with 'data monitor'", hasPermission('raise_query') === true);
 assertCondition("hasPermission('verify') with 'data monitor'", hasPermission('verify') === true);
+assertCondition("hasPermission('monitor_review') with 'data monitor'", hasPermission('monitor_review') === true);
+assertCondition("hasPermission('monitor_revoke') with 'data monitor'", hasPermission('monitor_revoke') === true);
 assertCondition("isOversightRole() with 'data monitor'", isOversightRole() === true);
 
 $_SESSION['active_role_name'] = 'data manager';
 assertCondition("hasPermission('raise_query') with 'data manager'", hasPermission('raise_query') === true);
 assertCondition("hasPermission('verify') with 'data manager'", hasPermission('verify') === true);
+assertCondition("hasPermission('manager_review') with 'data manager'", hasPermission('manager_review') === true);
+assertCondition("hasPermission('manager_revoke') with 'data manager'", hasPermission('manager_revoke') === true);
 assertCondition("isOversightRole() with 'data manager'", isOversightRole() === true);
+
+$_SESSION['active_role_name'] = 'dm';
+assertCondition("hasPermission('raise_query') with 'dm'", hasPermission('raise_query') === true);
+assertCondition("hasPermission('manager_review') with 'dm'", hasPermission('manager_review') === true);
+assertCondition("isOversightRole() with 'dm'", isOversightRole() === true);
 
 $_SESSION['active_role_name'] = 'data coordinator';
 assertCondition("hasPermission('add_subject') with 'data coordinator'", hasPermission('add_subject') === true);
 assertCondition("isOversightRole() with 'data coordinator' is false", isOversightRole() === false);
 
 echo "\nALL WORKFLOW & POSTGRESQL BOOLEAN TESTS PASSED!\n";
+

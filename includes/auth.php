@@ -245,8 +245,8 @@ function hasPermission($permission_key) {
     $role = $_SESSION['active_role_name'] ?? '';
     $role_lower = strtolower(trim($role));
 
-    // 1. Admin Override (Full access to all EDC actions including adding subjects)
-    if ($role_lower === 'admin' || (isset($_SESSION['username']) && strtolower(trim($_SESSION['username'])) === 'admin')) {
+    // 1. Admin Override (Full access to all EDC actions when in Admin role or no specific role)
+    if ($role_lower === 'admin' || (isset($_SESSION['username']) && strtolower(trim($_SESSION['username'])) === 'admin' && ($role_lower === 'admin' || $role_lower === 'none' || $role_lower === ''))) {
         return true;
     }
 
@@ -262,8 +262,8 @@ function hasPermission($permission_key) {
     }
     
     // 3. Data Monitor / Data Manager: Can Query + Verify. CANNOT add subjects or edit clinical data.
-    if (strpos($role_lower, 'monitor') !== false || strpos($role_lower, 'manager') !== false || strpos($role_lower, 'cra') !== false || strpos($role_lower, 'clinical research associate') !== false) {
-        $allowed = ['view', 'query', 'raise_query', 'verify', 'monitor_review', 'manager_review'];
+    if (strpos($role_lower, 'monitor') !== false || strpos($role_lower, 'manager') !== false || strpos($role_lower, 'manage') !== false || $role_lower === 'dm' || strpos($role_lower, 'dm ') !== false || strpos($role_lower, 'cra') !== false || strpos($role_lower, 'clinical research associate') !== false) {
+        $allowed = ['view', 'query', 'raise_query', 'verify', 'monitor_review', 'manager_review', 'monitor_revoke', 'manager_revoke'];
         return in_array($permission_key, $allowed);
     }
 

@@ -55,8 +55,15 @@ function jsonResponse($success, $message, $data = []) {
  * Check if the current user has the Admin role (in active context)
  */
 function isCurrentUserAdmin() {
-    $role = strtolower($_SESSION['active_role_name'] ?? '');
-    return ($role === 'admin' || strpos($role, 'admin') !== false || strtolower($_SESSION['username'] ?? '') === 'admin');
+    $role = strtolower(trim($_SESSION['active_role_name'] ?? ''));
+    if ($role === 'admin' || strpos($role, 'admin') !== false) {
+        return true;
+    }
+    // If active role is explicitly set to a specific role, respect that active role
+    if (!empty($role) && $role !== 'none') {
+        return false;
+    }
+    return (strtolower(trim($_SESSION['username'] ?? '')) === 'admin');
 }
 
 /**
@@ -73,7 +80,7 @@ function isOversightRole() {
     if (strpos($role, 'monitor') !== false || strpos($role, 'cra') !== false || strpos($role, 'clinical research associate') !== false) {
         return true;
     }
-    if (strpos($role, 'manager') !== false) {
+    if (strpos($role, 'manager') !== false || strpos($role, 'manage') !== false || $role === 'dm' || strpos($role, 'dm ') !== false) {
         return true;
     }
     if (strpos($role, 'investigator') !== false || $role === 'pi') {
@@ -169,7 +176,7 @@ if (!function_exists('getPermissionsForRole')) {
         if ($r === 'data monitor' || strpos($r, 'monitor') !== false || strpos($r, 'cra') !== false || strpos($r, 'clinical research associate') !== false) {
             return '{"view": true, "query": true, "raise_query": true, "verify": true}';
         }
-        if ($r === 'data manager' || strpos($r, 'manager') !== false) {
+        if ($r === 'data manager' || strpos($r, 'manager') !== false || strpos($r, 'manage') !== false || $r === 'dm' || strpos($r, 'dm ') !== false) {
             return '{"view": true, "query": true, "raise_query": true, "verify": true}';
         }
         if ($r === 'principal investigator' || $r === 'pi' || strpos($r, 'investigator') !== false) {
@@ -292,7 +299,7 @@ function renderWorkflowButtons($is_coordinator, $is_monitor_role, $is_manager_ro
     }
     
     // Data Monitor actions
-    if ($is_monitor_role && $sdr_submitted && !$is_pi_role) {
+    if ($is_monitor_role && !$is_pi_role) {
         if (!$monitor_reviewed) {
             $html .= '<button type="button" class="btn btn-primary" style="background-color: #059669; border-color: #059669; display: inline-flex; align-items: center; gap: 0.25rem;" onclick="updateReviewStatus(\'monitor_review\')">
                         <span class="material-icons-round" style="font-size: 1.1rem;">verified</span>
@@ -307,7 +314,7 @@ function renderWorkflowButtons($is_coordinator, $is_monitor_role, $is_manager_ro
     }
     
     // Data Manager actions
-    if ($is_manager_role && $sdr_submitted && !$is_pi_role) {
+    if ($is_manager_role && !$is_pi_role) {
         if (!$manager_reviewed) {
             $html .= '<button type="button" class="btn btn-primary" style="background-color: #6d28d9; border-color: #6d28d9; display: inline-flex; align-items: center; gap: 0.25rem;" onclick="updateReviewStatus(\'manager_review\')">
                         <span class="material-icons-round" style="font-size: 1.1rem;">verified</span>
