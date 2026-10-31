@@ -121,13 +121,6 @@ if (!isCurrentUserAdmin() && isset($subject['created_by']) && (int)$subject['cre
     ");
 }
 
-// Allow creator of subject to enter data regardless of role
-$is_creator = isset($subject['created_by']) && (int)$subject['created_by'] === (int)$_SESSION['user_id'];
-if ($is_creator || $is_admin) {
-    $is_data_editor = true;
-    $is_coordinator = true;
-}
-
 // ... (Subject Fetching matches previous)
 
 // Ensure Study Template Visits (Day 2, Day 3) are synchronized

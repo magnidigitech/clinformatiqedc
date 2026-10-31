@@ -491,8 +491,7 @@ try {
     // 4. SAVE RECORD (CREATE OR EDIT - SAVE DRAFT / MARK COMPLETE)
     // =========================================================================
     elseif ($action === 'save_record') {
-        $is_creator = (isset($sub_creator) && $sub_creator !== false && (int)$sub_creator === (int)$_SESSION['user_id']);
-        if (!$is_creator && !$is_admin && (!$is_data_editor || (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'monitor') !== false) || (strpos($role_lower, 'investigator') !== false) || ($role_lower === 'pi') || (!$is_coordinator && !hasPermission('enter_data') && !hasPermission('edit')))) {
+        if (!$is_admin && (!$is_data_editor || (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'monitor') !== false) || (strpos($role_lower, 'investigator') !== false) || ($role_lower === 'pi') || (!$is_coordinator && !hasPermission('enter_data') && !hasPermission('edit')))) {
             throw new Exception("Unauthorized: Data Managers, Data Monitors, and Principal Investigators cannot create or edit clinical records directly.");
         }
 

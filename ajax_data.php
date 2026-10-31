@@ -40,11 +40,10 @@ try {
     }
 
     if ($action === 'save_data') {
-        $is_creator = isset($sub_creator) && (int)$sub_creator === (int)$_SESSION['user_id'];
-        if (!$is_creator && !$is_admin && (!$is_data_editor || (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'monitor') !== false) || (strpos($role_lower, 'investigator') !== false) || ($role_lower === 'pi'))) {
+        if (!$is_admin && (!$is_data_editor || (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'monitor') !== false) || (strpos($role_lower, 'investigator') !== false) || ($role_lower === 'pi'))) {
             throw new Exception("Unauthorized: Data Managers, Data Monitors, and Principal Investigators cannot edit clinical content.");
         }
-        if (!$is_creator && !$is_admin && !hasPermission('enter_data') && !hasPermission('edit') && !$is_coordinator) {
+        if (!$is_admin && !hasPermission('enter_data') && !hasPermission('edit') && !$is_coordinator) {
             throw new Exception("Unauthorized: Enter Data permission required");
         }
         // 1. Ensure Tables Exist (Lazy Migration)
