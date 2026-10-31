@@ -187,16 +187,12 @@ function setActiveContext($assignment_id) {
  * Check if current user has specific permission
  */
 function hasPermission($permission_key) {
-    // 1. Admin Override (Restricted to read-only for clinical data/queries)
+    // 1. Admin Override (Full access to all EDC actions including adding subjects)
     $role = $_SESSION['active_role_name'] ?? '';
     // Normalize mainly for comparison
     $role_lower = strtolower($role);
 
-    if ($role_lower === 'admin') {
-        $clinical_writes = ['add', 'add_subject', 'enter_data', 'edit', 'raise_query', 'verify'];
-        if (in_array($permission_key, $clinical_writes)) {
-            return false;
-        }
+    if ($role_lower === 'admin' || (isset($_SESSION['username']) && strtolower($_SESSION['username']) === 'admin')) {
         return true;
     }
 
