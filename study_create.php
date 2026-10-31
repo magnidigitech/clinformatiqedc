@@ -81,9 +81,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $roles_to_assign = [
                 ['name' => 'Admin', 'perms' => 'all'],
                 ['name' => 'Data Coordinator', 'perms' => '{"view": true, "add": true, "add_subject": true, "enter_data": true, "edit": true}'],
-                ['name' => 'Data Monitor', 'perms' => '{"view": true, "query": true, "raise_query": true, "verify": true}'],
-                ['name' => 'Data Manager', 'perms' => '{"view": true, "query": true, "raise_query": true, "verify": true}'],
-                ['name' => 'Principal Investigator', 'perms' => '{"view": true, "query": true, "sign_off": true}']
+                ['name' => 'Data Monitor', 'perms' => '{"view": true, "add": true, "add_subject": true, "query": true, "raise_query": true, "verify": true}'],
+                ['name' => 'Data Manager', 'perms' => '{"view": true, "add": true, "add_subject": true, "query": true, "raise_query": true, "verify": true}'],
+                ['name' => 'Principal Investigator', 'perms' => '{"view": true, "add": true, "add_subject": true, "query": true, "sign_off": true}']
             ];
 
             $stmt = $pdo->prepare("INSERT INTO study_users (user_id, study_id, role_name, permissions) VALUES (:uid, :sid, :role, :perms)");

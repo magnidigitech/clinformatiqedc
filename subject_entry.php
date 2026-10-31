@@ -149,6 +149,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $site_opt_stmt = $pdo->prepare($s_sql);
                                 $site_opt_stmt->execute($s_params);
                                 $site_opts = $site_opt_stmt->fetchAll(PDO::FETCH_COLUMN);
+                                if (empty($site_opts)) {
+                                    $site_opts = ['General Hospital'];
+                                }
                                 
                                 foreach ($site_opts as $sname): ?>
                                     <option value="<?php echo htmlspecialchars($sname); ?>"><?php echo htmlspecialchars($sname); ?></option>

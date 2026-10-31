@@ -65,9 +65,10 @@ function isTruthyRole($val) {
 function getPermissionsForRole($role_name) {
     if ($role_name === 'Admin') return 'all';
     if ($role_name === 'Data Coordinator' || $role_name === 'Data Entry') return '{"view": true, "add": true, "add_subject": true, "enter_data": true, "edit": true}';
-    if ($role_name === 'Data Monitor') return '{"view": true, "query": true, "raise_query": true, "verify": true}';
-    if ($role_name === 'Data Manager') return '{"view": true, "query": true, "raise_query": true, "verify": true}';
-    return '{"view": true}';
+    if ($role_name === 'Data Monitor') return '{"view": true, "add": true, "add_subject": true, "query": true, "raise_query": true, "verify": true}';
+    if ($role_name === 'Data Manager') return '{"view": true, "add": true, "add_subject": true, "query": true, "raise_query": true, "verify": true}';
+    if ($role_name === 'Principal Investigator' || $role_name === 'PI') return '{"view": true, "add": true, "add_subject": true, "query": true, "sign_off": true}';
+    return '{"view": true, "add": true, "add_subject": true}';
 }
 
 function countActiveAdminsInStudy($pdo, $study_id, $exclude_user_ids = []) {

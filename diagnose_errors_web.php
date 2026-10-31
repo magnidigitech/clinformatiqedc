@@ -177,6 +177,36 @@ try {
             echo "<p style='color:red'>Failed to check/seed admin user: " . $e->getMessage() . "</p>";
         }
 
+        // 5. Version and Permissions Audit
+        echo "<h3>App Version & Roles Permission Audit</h3>";
+        echo "<p style='color:green'><strong>Deployed Release:</strong> 2026-10-31-v2 (All Roles Allowed to Add Subjects)</p>";
+        
+        try {
+            require_once __DIR__ . '/includes/auth.php';
+            echo "<p>hasPermission('add_subject') returns: <strong>" . (hasPermission('add_subject') ? '<span style=\"color:green;\">TRUE (Granted)</span>' : '<span style=\"color:red;\">FALSE (Denied)</span>') . "</strong></p>";
+
+            // Backfill existing study_users rows to ensure permissions JSON contains add and add_subject
+            $su_stmt = $pdo->query("SELECT id, user_id, study_id, role_name, permissions FROM study_users");
+            $all_study_users = $su_stmt->fetchAll(PDO::FETCH_ASSOC);
+            $backfilled = 0;
+            foreach ($all_study_users as $su_row) {
+                $raw_p = $su_row['permissions'];
+                if ($raw_p !== 'all') {
+                    $p_arr = json_decode($raw_p, true) ?: [];
+                    if (empty($p_arr['add_subject']) || empty($p_arr['add'])) {
+                        $p_arr['add'] = true;
+                        $p_arr['add_subject'] = true;
+                        $upd_stmt = $pdo->prepare("UPDATE study_users SET permissions = ? WHERE id = ?");
+                        $upd_stmt->execute([json_encode($p_arr), $su_row['id']]);
+                        $backfilled++;
+                    }
+                }
+            }
+            echo "<p style='color:blue'>Audited " . count($all_study_users) . " study user assignments; backfilled <code>add_subject</code> permissions for $backfilled assignments.</p>";
+        } catch (Exception $e) {
+            echo "<p style='color:red'>Permission audit error: " . $e->getMessage() . "</p>";
+        }
+
     } catch (Exception $e) {
         echo "<p style='color:red'>Error describing table: " . $e->getMessage() . "</p>";
     }

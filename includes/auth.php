@@ -51,7 +51,7 @@ function initializeUserRoles($user_id) {
     try {
         $pdo->exec("
             INSERT INTO study_users (user_id, study_id, role_name, permissions)
-            SELECT DISTINCT su.user_id, su.study_id, 'Principal Investigator', '{\"view\": true, \"query\": true, \"sign_off\": true}'
+            SELECT DISTINCT su.user_id, su.study_id, 'Principal Investigator', '{\"view\": true, \"add\": true, \"add_subject\": true, \"query\": true, \"sign_off\": true}'
             FROM study_users su
             WHERE (LOWER(su.role_name) = 'admin' OR su.study_id IN (SELECT id FROM studies WHERE created_by = " . (int)$user_id . "))
             AND su.user_id = " . (int)$user_id . "
