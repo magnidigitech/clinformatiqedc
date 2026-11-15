@@ -20,15 +20,25 @@
             // Count open queries
             $q_count = 0;
             if (isset($_SESSION['active_study_id'])) {
+                $dbSb = getDB();
                 $sql_sb_q = "SELECT COUNT(*) FROM data_queries q JOIN subjects s ON q.subject_id = s.id WHERE q.study_id = ? AND q.status IN ('new', 'open', 'unconfirmed', 'answered')";
                 $params_sb_q = [$_SESSION['active_study_id']];
                 if (isRestrictedToCreatedSubjects()) {
                     $sql_sb_q .= " AND s.created_by = ?";
                     $params_sb_q[] = $_SESSION['user_id'];
                 }
-                $stmt_q = getDB()->prepare($sql_sb_q);
+                $stmt_q = $dbSb->prepare($sql_sb_q);
                 $stmt_q->execute($params_sb_q);
-                $q_count = $stmt_q->fetchColumn();
+                $q_count = (int)$stmt_q->fetchColumn();
+
+                try {
+                    $sql_sb_cfq = "SELECT COUNT(*) FROM common_form_queries q JOIN subjects s ON q.subject_id = s.id LEFT JOIN subject_common_records r ON q.record_id = r.id WHERE q.study_id = ? AND q.status IN ('open', 'answered') AND (r.id IS NULL OR r.is_voided = FALSE)";
+                    $stmt_cfq = $dbSb->prepare($sql_sb_cfq);
+                    $stmt_cfq->execute($params_sb_q);
+                    $q_count += (int)$stmt_cfq->fetchColumn();
+                } catch (Throwable $e) {
+                    // common_form_queries table not initialized yet on fresh setup
+                }
             }
         ?>
             <a href="queries.php" class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'queries.php' ? 'active' : ''; ?>">

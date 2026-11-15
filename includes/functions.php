@@ -840,10 +840,78 @@ function ensureCommonFormsTables($pdo) {
         $migrations[] = "ALTER TABLE subject_common_records ALTER COLUMN sdr_status TYPE VARCHAR(50)";
         $migrations[] = "ALTER TABLE subject_common_records ALTER COLUMN status TYPE VARCHAR(50)";
         $migrations[] = "ALTER TABLE common_form_queries ALTER COLUMN status TYPE VARCHAR(50)";
+        $migrations[] = "CREATE TABLE IF NOT EXISTS subject_common_form_status (
+            id SERIAL PRIMARY KEY,
+            study_id INT NOT NULL REFERENCES studies(id) ON DELETE CASCADE,
+            subject_id INT NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+            form_type VARCHAR(10) NOT NULL,
+            any_experienced VARCHAR(10) NULL,
+            status VARCHAR(50) NOT NULL DEFAULT 'draft',
+            sdr_submitted BOOLEAN DEFAULT FALSE,
+            sdr_status VARCHAR(50) DEFAULT 'pending',
+            monitor_reviewed BOOLEAN DEFAULT FALSE,
+            monitor_reviewed_by INT NULL REFERENCES users(id),
+            monitor_reviewed_at TIMESTAMP NULL,
+            manager_reviewed BOOLEAN DEFAULT FALSE,
+            manager_reviewed_by INT NULL REFERENCES users(id),
+            manager_reviewed_at TIMESTAMP NULL,
+            pi_signed_off BOOLEAN DEFAULT FALSE,
+            pi_signed_by INT NULL REFERENCES users(id),
+            pi_signed_at TIMESTAMP NULL,
+            revision INT DEFAULT 1,
+            created_by INT NOT NULL REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (study_id, subject_id, form_type)
+        )";
+        $migrations[] = "ALTER TABLE common_form_queries ALTER COLUMN record_id DROP NOT NULL";
+        $migrations[] = "ALTER TABLE common_form_queries ADD COLUMN IF NOT EXISTS form_type VARCHAR(10)";
+        $migrations[] = "ALTER TABLE common_form_queries ADD COLUMN IF NOT EXISTS rule_code VARCHAR(80)";
+        $migrations[] = "ALTER TABLE common_form_queries ADD COLUMN IF NOT EXISTS is_system_query BOOLEAN DEFAULT FALSE";
+        $migrations[] = "ALTER TABLE common_form_audit_log ALTER COLUMN record_id DROP NOT NULL";
+        $migrations[] = "ALTER TABLE common_form_audit_log ADD COLUMN IF NOT EXISTS form_type VARCHAR(10)";
+        $migrations[] = "ALTER TABLE common_form_sdr_history ALTER COLUMN record_id DROP NOT NULL";
+        $migrations[] = "ALTER TABLE common_form_sdr_history ADD COLUMN IF NOT EXISTS subject_id INT NULL REFERENCES subjects(id) ON DELETE CASCADE";
+        $migrations[] = "ALTER TABLE common_form_sdr_history ADD COLUMN IF NOT EXISTS form_type VARCHAR(10)";
+        $migrations[] = "CREATE UNIQUE INDEX IF NOT EXISTS idx_cfq_unique_open_record_rule ON common_form_queries (study_id, subject_id, record_id, rule_code) WHERE is_system_query = TRUE AND status != 'closed' AND record_id IS NOT NULL";
+        $migrations[] = "CREATE UNIQUE INDEX IF NOT EXISTS idx_cfq_unique_open_subject_rule ON common_form_queries (study_id, subject_id, form_type, rule_code) WHERE is_system_query = TRUE AND status != 'closed' AND record_id IS NULL";
     } else {
         $migrations[] = "ALTER TABLE subject_common_records MODIFY sdr_status VARCHAR(50)";
         $migrations[] = "ALTER TABLE subject_common_records MODIFY status VARCHAR(50)";
         $migrations[] = "ALTER TABLE common_form_queries MODIFY status VARCHAR(50)";
+        $migrations[] = "CREATE TABLE IF NOT EXISTS subject_common_form_status (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            study_id INT NOT NULL,
+            subject_id INT NOT NULL,
+            form_type VARCHAR(10) NOT NULL,
+            any_experienced VARCHAR(10) NULL,
+            status VARCHAR(50) NOT NULL DEFAULT 'draft',
+            sdr_submitted BOOLEAN DEFAULT FALSE,
+            sdr_status VARCHAR(50) DEFAULT 'pending',
+            monitor_reviewed BOOLEAN DEFAULT FALSE,
+            monitor_reviewed_by INT NULL,
+            monitor_reviewed_at TIMESTAMP NULL,
+            manager_reviewed BOOLEAN DEFAULT FALSE,
+            manager_reviewed_by INT NULL,
+            manager_reviewed_at TIMESTAMP NULL,
+            pi_signed_off BOOLEAN DEFAULT FALSE,
+            pi_signed_by INT NULL,
+            pi_signed_at TIMESTAMP NULL,
+            revision INT DEFAULT 1,
+            created_by INT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_scfs_subject_form (study_id, subject_id, form_type)
+        )";
+        $migrations[] = "ALTER TABLE common_form_queries MODIFY record_id INT NULL";
+        $migrations[] = "ALTER TABLE common_form_queries ADD COLUMN IF NOT EXISTS form_type VARCHAR(10)";
+        $migrations[] = "ALTER TABLE common_form_queries ADD COLUMN IF NOT EXISTS rule_code VARCHAR(80)";
+        $migrations[] = "ALTER TABLE common_form_queries ADD COLUMN IF NOT EXISTS is_system_query BOOLEAN DEFAULT FALSE";
+        $migrations[] = "ALTER TABLE common_form_audit_log MODIFY record_id INT NULL";
+        $migrations[] = "ALTER TABLE common_form_audit_log ADD COLUMN IF NOT EXISTS form_type VARCHAR(10)";
+        $migrations[] = "ALTER TABLE common_form_sdr_history MODIFY record_id INT NULL";
+        $migrations[] = "ALTER TABLE common_form_sdr_history ADD COLUMN IF NOT EXISTS subject_id INT NULL";
+        $migrations[] = "ALTER TABLE common_form_sdr_history ADD COLUMN IF NOT EXISTS form_type VARCHAR(10)";
     }
 
     foreach ($migrations as $stmt) {

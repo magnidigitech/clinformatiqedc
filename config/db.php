@@ -4,23 +4,71 @@ date_default_timezone_set('Asia/Kolkata');
 
 // Database Configuration for PostgreSQL
 
-// Parse DATABASE_URL if available, otherwise fallback to individual environment variables or defaults
-$dbUrl = getenv('DATABASE_URL') ?: 'postgres://postgres:Q1sn4NpjT7KKCeeE46Q1E8zg06zqQ4nm6EF7jyt2chex4XY8PBma6oajRNDlBnfs@u7uonf6y780uxeujaw91ep8k:5432/postgres';
+// Optional local-only override (.env.local is gitignored and dockerignored)
+$localEnvFile = __DIR__ . '/../.env.local';
+$localEnv = [];
+if (is_file($localEnvFile) && is_readable($localEnvFile)) {
+    foreach (file($localEnvFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+        $trimmed = trim($line);
+        if ($trimmed === '' || $trimmed[0] === '#' || strpos($trimmed, '=') === false) {
+            continue;
+        }
+        [$k, $v] = explode('=', $trimmed, 2);
+        $k = trim($k);
+        $v = trim($v, " \t\n\r\0\x0B\"'");
+        if ($k !== '') {
+            $localEnv[$k] = $v;
+        }
+    }
+}
 
-$host = getenv('DB_HOST') ?: 'u7uonf6y780uxeujaw91ep8k';
-$port = getenv('DB_PORT') ?: '5432';
-$dbname = getenv('DB_NAME') ?: 'postgres';
-$user = getenv('DB_USER') ?: 'postgres';
-$pass = getenv('DB_PASS') ?: 'Q1sn4NpjT7KKCeeE46Q1E8zg06zqQ4nm6EF7jyt2chex4XY8PBma6oajRNDlBnfs';
-$sslmode = '';
+$getConfigEnv = static function ($key) use ($localEnv) {
+    $val = getenv($key);
+    if ($val !== false && $val !== '') {
+        return $val;
+    }
+    if (isset($localEnv[$key]) && $localEnv[$key] !== '') {
+        return $localEnv[$key];
+    }
+    return '';
+};
+
+// Parse DATABASE_URL if set, otherwise honor explicit DB_* overrides before falling back to .env.local or production container defaults
+$envDatabaseUrl = getenv('DATABASE_URL');
+$envExplicitHost = getenv('DB_HOST');
+
+if ($envDatabaseUrl !== false && $envDatabaseUrl !== '') {
+    $dbUrl = $envDatabaseUrl;
+    $explicitHost = '';
+} elseif ($envExplicitHost !== false && $envExplicitHost !== '') {
+    $dbUrl = '';
+    $explicitHost = $envExplicitHost;
+} else {
+    $dbUrl = $getConfigEnv('DATABASE_URL');
+    $explicitHost = $getConfigEnv('DB_HOST');
+}
+
+$host = $explicitHost ?: 'u7uonf6y780uxeujaw91ep8k';
+$port = $getConfigEnv('DB_PORT') ?: '5432';
+$dbname = $getConfigEnv('DB_NAME') ?: 'postgres';
+$user = $getConfigEnv('DB_USER') ?: 'postgres';
+$pass = $getConfigEnv('DB_PASS');
+if ($pass === '' && !$explicitHost && $dbUrl === '') {
+    $pass = 'Q1sn4NpjT7KKCeeE46Q1E8zg06zqQ4nm6EF7jyt2chex4XY8PBma6oajRNDlBnfs';
+}
+$sslmode = $getConfigEnv('DB_SSLMODE');
+
+if ($dbUrl === '' && $explicitHost === '') {
+    $dbUrl = 'postgres://postgres:Q1sn4NpjT7KKCeeE46Q1E8zg06zqQ4nm6EF7jyt2chex4XY8PBma6oajRNDlBnfs@u7uonf6y780uxeujaw91ep8k:5432/postgres';
+}
 
 if (!empty($dbUrl)) {
     $parsedUrl = parse_url($dbUrl);
     if ($parsedUrl) {
         $host = $parsedUrl['host'] ?? $host;
-        $port = $parsedUrl['port'] ?? $port;
+        $port = isset($parsedUrl['port']) ? (string)$parsedUrl['port'] : $port;
         $user = $parsedUrl['user'] ?? $user;
-        $pass = $parsedUrl['pass'] ?? $pass;
+        $pass = array_key_exists('pass', $parsedUrl) ? $parsedUrl['pass'] : '';
         $dbname = isset($parsedUrl['path']) ? ltrim($parsedUrl['path'], '/') : $dbname;
         
         if (isset($parsedUrl['query'])) {

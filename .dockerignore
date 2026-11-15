@@ -2,5 +2,6 @@
 .gitignore
 .dockerignore
 .agents
+.env.local
 *.md
 .DS_Store

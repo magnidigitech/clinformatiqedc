@@ -2,6 +2,7 @@
 // ajax_common_forms.php - Backend API Handler for Subject Common Forms (MH, AE, CM)
 require_once 'includes/functions.php';
 require_once 'includes/auth.php';
+require_once 'includes/ae_helpers.php';
 
 ob_start();
 header('Content-Type: application/json');
@@ -125,8 +126,17 @@ try {
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         $records = [];
+        $ae_code_lists = null;
+        if ($form_type === 'AE') {
+            $ae_code_lists = getAeCodeLists($pdo, $study_id);
+            $today_ist_ae = (new DateTime('now', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d');
+        }
+
         foreach ($rows as $r) {
             $data = json_decode($r['data_json'] ?? '{}', true) ?: [];
+            if ($form_type === 'AE') {
+                $data = normalizeAeRecordData($data);
+            }
             
             // Client side search filter
             if ($search !== '') {
@@ -197,7 +207,14 @@ try {
                 }
             }
 
-            $records[] = [
+            $ae_checks = null;
+            $ae_reconciliations = [];
+            if ($form_type === 'AE') {
+                $ae_checks = evaluateAeRecordChecks($data, $ae_code_lists, $today_ist_ae, false);
+                $ae_reconciliations = getAeReconciliationItems($data);
+            }
+
+            $recItem = [
                 'id' => (int)$r['id'],
                 'seq_number' => (int)$r['seq_number'],
                 'record_number' => $r['record_number'],
@@ -225,6 +242,11 @@ try {
                 'linked_records' => $linked_records,
                 'related_cms' => $related_cms
             ];
+            if ($form_type === 'AE') {
+                $recItem['ae_checks'] = $ae_checks;
+                $recItem['reconciliations'] = $ae_reconciliations;
+            }
+            $records[] = $recItem;
         }
 
         // Summary counts
@@ -248,8 +270,7 @@ try {
         $stmt_sum->execute([$study_id, $subject_id, $form_type]);
         $summary = $stmt_sum->fetch(PDO::FETCH_ASSOC);
 
-        ob_clean();
-        echo json_encode([
+        $response = [
             'success' => true,
             'records' => $records,
             'subject_code' => $subject['subject_code'],
@@ -267,8 +288,172 @@ try {
                 'sdr_reviewed' => (int)($summary['sdr_sdved_count'] ?? 0),
                 'sdr_needs_rereview' => (int)($summary['sdr_needs_rereview_count'] ?? 0),
             ]
-        ]);
+        ];
+        if ($form_type === 'AE') {
+            $aeSubjectState = getSubjectAeState($pdo, $study_id, $subject_id);
+            $response['ae_meta'] = [
+                'code_lists' => $ae_code_lists,
+                'field_definitions' => getAeFieldDefinitions($ae_code_lists),
+                'seriousness_criteria' => getAeSeriousnessCriteriaDefinitions(),
+                'subject_state' => $aeSubjectState,
+            ];
+        }
+
+        ob_clean();
+        echo json_encode($response);
         exit();
+    }
+
+    // =========================================================================
+    // 1B. SAVE SUBJECT-LEVEL AE OCCURRENCE GATE ("Were any AE experienced?")
+    // =========================================================================
+    elseif ($action === 'save_ae_occurrence') {
+        if (!$is_admin && (!$is_data_editor || (strpos($role_lower, 'manager') !== false) || (strpos($role_lower, 'monitor') !== false) || (strpos($role_lower, 'investigator') !== false) || ($role_lower === 'pi') || (!$is_coordinator && !hasPermission('enter_data') && !hasPermission('edit')))) {
+            throw new Exception("Unauthorized: Data Managers, Data Monitors, and Principal Investigators cannot modify AE occurrence status.");
+        }
+
+        $subject_id = (int)($_POST['subject_id'] ?? 0);
+        $any_experienced = trim($_POST['any_experienced'] ?? '');
+        $mode = trim($_POST['mode'] ?? 'draft');
+        $change_reason = trim($_POST['change_reason'] ?? 'AE Occurrence Screening Update');
+
+        if (!in_array($any_experienced, ['', 'Yes', 'No'], true)) {
+            throw new Exception("Invalid answer for 'Were any adverse events experienced?'. Must be Yes or No.");
+        }
+        if (!in_array($mode, ['draft', 'complete'], true)) {
+            $mode = 'draft';
+        }
+        if ($subject_id <= 0) {
+            throw new Exception("Invalid subject ID");
+        }
+
+        $stmt_s = $pdo->prepare("SELECT id, subject_code FROM subjects WHERE id = ? AND study_id = ?");
+        $stmt_s->execute([$subject_id, $study_id]);
+        $subject = $stmt_s->fetch(PDO::FETCH_ASSOC);
+        if (!$subject) {
+            throw new Exception("Subject not found");
+        }
+
+        $stateBefore = getSubjectAeState($pdo, $study_id, $subject_id);
+        if ($stateBefore['pi_signed_off']) {
+            throw new Exception("AE Screening Gate has been Signed Off by Principal Investigator and cannot be edited.");
+        }
+        if ($any_experienced === 'No' && !empty($stateBefore['has_pi_locked_record'])) {
+            throw new Exception("Cannot change AE occurrence to No while one or more AE records are Signed Off by Principal Investigator.");
+        }
+
+        $stmtActiveRecs = $pdo->prepare("
+            SELECT id, record_number, status, data_json
+            FROM subject_common_records
+            WHERE study_id = ? AND subject_id = ? AND form_type = 'AE' AND is_voided = FALSE
+            ORDER BY seq_number ASC, id ASC
+        ");
+        $stmtActiveRecs->execute([$study_id, $subject_id]);
+        $activeRecs = $stmtActiveRecs->fetchAll(PDO::FETCH_ASSOC);
+        $activeCount = count($activeRecs);
+        $codeLists = getAeCodeLists($pdo, $study_id);
+
+        if ($mode === 'complete') {
+            $evalSubj = evaluateSubjectAeChecks($any_experienced, $activeCount, $activeRecs, $codeLists, true);
+            if (!$evalSubj['valid']) {
+                ob_clean();
+                echo json_encode([
+                    'success' => false,
+                    'message' => $evalSubj['errors'][0]['message'] ?? 'AE form completeness check failed.',
+                    'validation_errors' => $evalSubj['errors'],
+                    'field_errors' => ['ae_experienced' => $evalSubj['errors'][0]['message'] ?? ''],
+                ]);
+                exit();
+            }
+        }
+
+        $pdo->beginTransaction();
+        try {
+            $stmtLock = $pdo->prepare("SELECT id FROM subjects WHERE id = ? FOR UPDATE");
+            $stmtLock->execute([$subject_id]);
+
+            $stmtExisting = $pdo->prepare("SELECT * FROM subject_common_form_status WHERE study_id = ? AND subject_id = ? AND form_type = 'AE' FOR UPDATE");
+            $stmtExisting->execute([$study_id, $subject_id]);
+            $existing = $stmtExisting->fetch(PDO::FETCH_ASSOC);
+
+            $storedAny = $any_experienced !== '' ? $any_experienced : null;
+            if (!$existing) {
+                $stmtIns = $pdo->prepare("
+                    INSERT INTO subject_common_form_status (study_id, subject_id, form_type, any_experienced, status, sdr_status, revision, created_by)
+                    VALUES (?, ?, 'AE', ?, ?, 'pending', 1, ?)
+                ");
+                $stmtIns->execute([$study_id, $subject_id, $storedAny, $mode, $user_id]);
+
+                $stmtAud = $pdo->prepare("
+                    INSERT INTO common_form_audit_log (study_id, subject_id, record_id, form_type, field_name, old_value, new_value, reason_for_change, change_type, action_by)
+                    VALUES (?, ?, NULL, 'AE', 'ae_experienced', NULL, ?, ?, 'create', ?)
+                ");
+                $stmtAud->execute([$study_id, $subject_id, $storedAny ?? '', $change_reason, $user_id]);
+            } else {
+                $oldVal = $existing['any_experienced'] ?? '';
+                $newVal = $storedAny ?? '';
+                $hasChange = ($oldVal !== $newVal) || ($existing['status'] !== $mode);
+                $newRev = (int)($existing['revision'] ?? 1);
+                $newSdrStatus = $existing['sdr_status'] ?? 'pending';
+                $newSdrSub = toBool($existing['sdr_submitted'] ?? false);
+                $newMonRev = toBool($existing['monitor_reviewed'] ?? false);
+                $newMgrRev = toBool($existing['manager_reviewed'] ?? false);
+
+                if ($oldVal !== $newVal && ($newSdrSub || $newMonRev || $newMgrRev)) {
+                    $newRev++;
+                    $newSdrStatus = 'pending';
+                    $newSdrSub = false;
+                    $newMonRev = false;
+                    $newMgrRev = false;
+
+                    $pdo->prepare("INSERT INTO common_form_sdr_history (record_id, subject_id, form_type, action, reviewed_revision, action_by) VALUES (NULL, ?, 'AE', 'sdr_revoked', ?, ?)")
+                        ->execute([$subject_id, $newRev, $user_id]);
+
+                    $pdo->prepare("
+                        INSERT INTO common_form_audit_log (study_id, subject_id, record_id, form_type, field_name, old_value, new_value, reason_for_change, change_type, action_by)
+                        VALUES (?, ?, NULL, 'AE', 'sdr_status', ?, 'pending', 'SDR Revoked due to AE occurrence update', 'sdr_revoked', ?)
+                    ")->execute([$study_id, $subject_id, $existing['sdr_status'], $user_id]);
+                }
+
+                $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+                $sdrVal = $newSdrSub ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
+                $monVal = $newMonRev ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
+                $mgrVal = $newMgrRev ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
+
+                $stmtUpd = $pdo->prepare("
+                    UPDATE subject_common_form_status
+                    SET any_experienced = ?, status = ?, sdr_status = ?, sdr_submitted = $sdrVal, monitor_reviewed = $monVal, manager_reviewed = $mgrVal, revision = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                ");
+                $stmtUpd->execute([$storedAny, $mode, $newSdrStatus, $newRev, $existing['id']]);
+
+                if ($hasChange && $oldVal !== $newVal) {
+                    $stmtAud = $pdo->prepare("
+                        INSERT INTO common_form_audit_log (study_id, subject_id, record_id, form_type, field_name, old_value, new_value, reason_for_change, change_type, action_by)
+                        VALUES (?, ?, NULL, 'AE', 'ae_experienced', ?, ?, ?, 'update', ?)
+                    ");
+                    $stmtAud->execute([$study_id, $subject_id, $oldVal, $newVal, $change_reason, $user_id]);
+                }
+            }
+
+            syncSubjectAeQueries($pdo, $study_id, $subject_id, $user_id);
+            $pdo->commit();
+
+            $updatedState = getSubjectAeState($pdo, $study_id, $subject_id);
+            ob_clean();
+            echo json_encode([
+                'success' => true,
+                'subject_state' => $updatedState,
+                'conflict_warning' => $updatedState['conflict_occurrence_no_with_records'],
+                'message' => $updatedState['conflict_occurrence_no_with_records']
+                    ? "Saved, but conflict flagged: {$activeCount} active AE record(s) still exist. Set to Yes or void saved records with an audit reason."
+                    : ($mode === 'complete' ? "AE form marked complete." : "AE screening response saved."),
+            ]);
+            exit();
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
     }
 
     // =========================================================================
@@ -313,6 +498,84 @@ try {
     // =========================================================================
     elseif ($action === 'get_record') {
         $record_id = (int)($_POST['record_id'] ?? 0);
+        $req_form_type = strtoupper(trim($_POST['form_type'] ?? ''));
+        $req_subject_id = (int)($_POST['subject_id'] ?? 0);
+
+        if ($record_id <= 0 && $req_form_type === 'AE' && $req_subject_id > 0) {
+            $stmt_sub = $pdo->prepare("SELECT id, subject_code FROM subjects WHERE id = ? AND study_id = ?");
+            $stmt_sub->execute([$req_subject_id, $study_id]);
+            $subRow = $stmt_sub->fetch(PDO::FETCH_ASSOC);
+            if (!$subRow) throw new Exception("Subject not found");
+
+            $aeState = getSubjectAeState($pdo, $study_id, $req_subject_id);
+            $aeCodeLists = getAeCodeLists($pdo, $study_id);
+            $formattedQueries = [];
+            foreach ($aeState['subject_queries'] as $sq) {
+                $formattedQueries[] = [
+                    'id' => (int)$sq['id'],
+                    'field_name' => $sq['field_name'] ?? 'ae_experienced',
+                    'rule_code' => $sq['rule_code'] ?? null,
+                    'is_system_query' => toBool($sq['is_system_query'] ?? false),
+                    'query_text' => $sq['query_text'],
+                    'status' => $sq['status'],
+                    'created_by' => $sq['created_by_name'] ?? '',
+                    'raised_by_role' => $sq['raised_by_role'] ?? 'System Edit Check',
+                    'created_at' => date('d-M-Y H:i', strtotime($sq['created_at'])),
+                    'history' => array_map(function($h) {
+                        return [
+                            'action_type' => $h['action_type'],
+                            'remark' => $h['remark'],
+                            'old_value' => $h['old_value'] ?? null,
+                            'new_value' => $h['new_value'] ?? null,
+                            'status_from' => $h['status_from'] ?? null,
+                            'status_to' => $h['status_to'] ?? null,
+                            'user' => $h['user_name'] ?? '',
+                            'created_at' => date('d-M-Y H:i', strtotime($h['created_at']))
+                        ];
+                    }, $sq['history'] ?? [])
+                ];
+            }
+            $formattedAudit = array_map(function($aud) {
+                return [
+                    'field_name' => $aud['field_name'],
+                    'old_value' => $aud['old_value'] ?? '',
+                    'new_value' => $aud['new_value'] ?? '',
+                    'reason' => $aud['reason_for_change'] ?? '',
+                    'change_type' => $aud['change_type'] ?? '',
+                    'user' => $aud['user_name'] ?? '',
+                    'action_at' => date('d-M-Y H:i', strtotime($aud['action_at']))
+                ];
+            }, $aeState['subject_audit']);
+
+            ob_clean();
+            echo json_encode([
+                'success' => true,
+                'record' => [
+                    'id' => 0,
+                    'subject_id' => $req_subject_id,
+                    'subject_code' => $subRow['subject_code'],
+                    'form_type' => 'AE',
+                    'seq_number' => 0,
+                    'record_number' => 'AE Screening Gate',
+                    'status' => $aeState['status'],
+                    'sdr_status' => $aeState['sdr_status'],
+                    'sdr_submitted' => $aeState['sdr_submitted'],
+                    'monitor_reviewed' => $aeState['monitor_reviewed'],
+                    'manager_reviewed' => $aeState['manager_reviewed'],
+                    'pi_signed_off' => $aeState['pi_signed_off'],
+                    'revision' => $aeState['revision'],
+                    'is_voided' => false,
+                    'void_reason' => '',
+                    'data' => ['ae_experienced' => $aeState['any_experienced'] ?? ''],
+                    'queries' => $formattedQueries,
+                    'sdr_history' => [],
+                    'audit_trail' => $formattedAudit,
+                    'ae_meta' => ['code_lists' => $aeCodeLists, 'subject_state' => $aeState],
+                ]
+            ]);
+            exit();
+        }
+
         if ($record_id <= 0) throw new Exception("Invalid record ID");
 
         $stmt = $pdo->prepare("
@@ -337,6 +600,20 @@ try {
         if (!$rec) throw new Exception("Record not found");
 
         $data = json_decode($rec['data_json'] ?? '{}', true) ?: [];
+        $aeMetaForRecord = null;
+        if ($rec['form_type'] === 'AE') {
+            $data = normalizeAeRecordData($data);
+            $aeCodeListsRec = getAeCodeLists($pdo, $study_id);
+            $todayIstRec = (new DateTime('now', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d');
+            $aeMetaForRecord = [
+                'code_lists' => $aeCodeListsRec,
+                'field_definitions' => getAeFieldDefinitions($aeCodeListsRec),
+                'seriousness_criteria' => getAeSeriousnessCriteriaDefinitions(),
+                'ae_checks' => evaluateAeRecordChecks($data, $aeCodeListsRec, $todayIstRec, false),
+                'reconciliations' => getAeReconciliationItems($data),
+                'subject_state' => getSubjectAeState($pdo, $study_id, $rec['subject_id']),
+            ];
+        }
 
         // Linked records (for CM)
         $linked_records = [];
@@ -390,6 +667,8 @@ try {
             $queries[] = [
                 'id' => (int)$q['id'],
                 'field_name' => $q['field_name'] ?? '',
+                'rule_code' => $q['rule_code'] ?? null,
+                'is_system_query' => toBool($q['is_system_query'] ?? false),
                 'query_text' => $q['query_text'],
                 'status' => $q['status'],
                 'created_by' => $q['created_by_name'] ?? $q['created_by_user'] ?? '',
@@ -449,41 +728,46 @@ try {
             ];
         }, $stmt_aud->fetchAll(PDO::FETCH_ASSOC));
 
+        $recResponsePayload = [
+            'id' => (int)$rec['id'],
+            'subject_id' => (int)$rec['subject_id'],
+            'subject_code' => $rec['subject_code'],
+            'form_type' => $rec['form_type'],
+            'seq_number' => (int)$rec['seq_number'],
+            'record_number' => $rec['record_number'],
+            'status' => $rec['status'],
+            'sdr_status' => $rec['sdr_status'],
+            'sdr_submitted' => toBool($rec['sdr_submitted'] ?? false),
+            'monitor_reviewed' => toBool($rec['monitor_reviewed'] ?? false),
+            'manager_reviewed' => toBool($rec['manager_reviewed'] ?? false),
+            'pi_signed_off' => toBool($rec['pi_signed_off'] ?? false),
+            'sdr_by_name' => $rec['sdr_user_name'] ?? $rec['sdr_user_code'] ?? '',
+            'sdr_at' => $rec['sdr_at'] ? date('d-M-Y H:i', strtotime($rec['sdr_at'])) : null,
+            'monitor_by_name' => $rec['monitor_user_name'] ?? $rec['monitor_user_code'] ?? '',
+            'monitor_at' => $rec['monitor_at'] ? date('d-M-Y H:i', strtotime($rec['monitor_at'])) : null,
+            'manager_by_name' => $rec['manager_user_name'] ?? $rec['manager_user_code'] ?? '',
+            'manager_at' => $rec['manager_at'] ? date('d-M-Y H:i', strtotime($rec['manager_at'])) : null,
+            'pi_signed_by_name' => $rec['pi_user_name'] ?? $rec['pi_user_code'] ?? '',
+            'pi_signed_at' => $rec['pi_signed_at'] ? date('d-M-Y H:i', strtotime($rec['pi_signed_at'])) : null,
+            'revision' => (int)$rec['revision'],
+            'is_voided' => toBool($rec['is_voided']),
+            'void_reason' => $rec['void_reason'] ?? '',
+            'data' => $data,
+            'created_by' => $rec['creator_name'] ?? $rec['creator_user'] ?? '',
+            'created_at' => date('d-M-Y H:i', strtotime($rec['created_at'])),
+            'linked_records' => $linked_records,
+            'queries' => $queries,
+            'sdr_history' => $sdr_history,
+            'audit_trail' => $audit_trail
+        ];
+        if ($aeMetaForRecord !== null) {
+            $recResponsePayload['ae_meta'] = $aeMetaForRecord;
+        }
+
         ob_clean();
         echo json_encode([
             'success' => true,
-            'record' => [
-                'id' => (int)$rec['id'],
-                'subject_id' => (int)$rec['subject_id'],
-                'subject_code' => $rec['subject_code'],
-                'form_type' => $rec['form_type'],
-                'seq_number' => (int)$rec['seq_number'],
-                'record_number' => $rec['record_number'],
-                'status' => $rec['status'],
-                'sdr_status' => $rec['sdr_status'],
-                'sdr_submitted' => toBool($rec['sdr_submitted'] ?? false),
-                'monitor_reviewed' => toBool($rec['monitor_reviewed'] ?? false),
-                'manager_reviewed' => toBool($rec['manager_reviewed'] ?? false),
-                'pi_signed_off' => toBool($rec['pi_signed_off'] ?? false),
-                'sdr_by_name' => $rec['sdr_user_name'] ?? $rec['sdr_user_code'] ?? '',
-                'sdr_at' => $rec['sdr_at'] ? date('d-M-Y H:i', strtotime($rec['sdr_at'])) : null,
-                'monitor_by_name' => $rec['monitor_user_name'] ?? $rec['monitor_user_code'] ?? '',
-                'monitor_at' => $rec['monitor_at'] ? date('d-M-Y H:i', strtotime($rec['monitor_at'])) : null,
-                'manager_by_name' => $rec['manager_user_name'] ?? $rec['manager_user_code'] ?? '',
-                'manager_at' => $rec['manager_at'] ? date('d-M-Y H:i', strtotime($rec['manager_at'])) : null,
-                'pi_signed_by_name' => $rec['pi_user_name'] ?? $rec['pi_user_code'] ?? '',
-                'pi_signed_at' => $rec['pi_signed_at'] ? date('d-M-Y H:i', strtotime($rec['pi_signed_at'])) : null,
-                'revision' => (int)$rec['revision'],
-                'is_voided' => toBool($rec['is_voided']),
-                'void_reason' => $rec['void_reason'] ?? '',
-                'data' => $data,
-                'created_by' => $rec['creator_name'] ?? $rec['creator_user'] ?? '',
-                'created_at' => date('d-M-Y H:i', strtotime($rec['created_at'])),
-                'linked_records' => $linked_records,
-                'queries' => $queries,
-                'sdr_history' => $sdr_history,
-                'audit_trail' => $audit_trail
-            ]
+            'record' => $recResponsePayload
         ]);
         exit();
     }
@@ -529,14 +813,113 @@ try {
             $raw_linked = json_decode($raw_linked, true) ?: explode(',', $raw_linked);
         }
         $linked_ids = array_map('intval', (array)$raw_linked);
-        // Enforce no future date in IST across Common Forms
-        $today_ist = (new DateTime('now', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d');
-        foreach (['start_date', 'end_date', 'stop_date', 'imaging_date', 'date_of_visit', 'date_of_death', 'vitals_assessment_date', 'hema_collection_date', 'chem_collection_date', 'drug_admin_date'] as $date_key) {
-            if (!empty($data[$date_key])) {
-                $check_date = substr(trim((string)$data[$date_key]), 0, 10);
-                if ($check_date > $today_ist) {
-                    throw new Exception("Future Date has been selected, Please Select the Correct Date");
+
+        $raw_reconciliations = $_POST['reconciliations'] ?? [];
+        if (is_string($raw_reconciliations)) {
+            $raw_reconciliations = json_decode($raw_reconciliations, true) ?: [];
+        }
+        $reconcileClears = [];
+        foreach ((array)$raw_reconciliations as $recItem) {
+            if (!is_array($recItem)) continue;
+            $rField = trim((string)($recItem['field'] ?? ''));
+            $rAction = trim((string)($recItem['action'] ?? ''));
+            $rReason = trim((string)($recItem['reason'] ?? ''));
+            if ($rAction === 'clear' && $rField !== '') {
+                if ($rReason === '') {
+                    throw new Exception("An audit reason is required to reconcile and clear '{$rField}'.");
                 }
+                $reconcileClears[$rField] = $rReason;
+            }
+        }
+
+        // Enforce no future date in IST across non-AE Common Forms (AE handles partial-date safe checks below)
+        $today_ist = (new DateTime('now', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d');
+        if ($form_type !== 'AE') {
+            foreach (['start_date', 'end_date', 'stop_date', 'imaging_date', 'date_of_visit', 'date_of_death', 'vitals_assessment_date', 'hema_collection_date', 'chem_collection_date', 'drug_admin_date'] as $date_key) {
+                if (!empty($data[$date_key])) {
+                    $check_date = substr(trim((string)$data[$date_key]), 0, 10);
+                    if ($check_date > $today_ist) {
+                        throw new Exception("Future Date has been selected, Please Select the Correct Date");
+                    }
+                }
+            }
+        }
+
+        $aeCodeLists = null;
+        $aeSubjectState = null;
+        $aeEval = null;
+        $aeOldDataPre = null;
+        if ($form_type === 'AE') {
+            $aeCodeLists = getAeCodeLists($pdo, $study_id);
+            $aeSubjectState = getSubjectAeState($pdo, $study_id, $subject_id);
+            if ($aeSubjectState['pi_signed_off']) {
+                throw new Exception("AE form has been Signed Off by Principal Investigator and cannot be edited.");
+            }
+
+            if (($data['ae_experienced'] ?? '') === 'No') {
+                $data['ae_term'] = $data['ae_term'] ?: 'No adverse events experienced';
+                $data['ongoing'] = 'No';
+                $data['seriousness'] = 'No';
+                $data['causality'] = 'No';
+                $data['action_taken'] = '';
+                $data['other_action_specify'] = '';
+                $data['outcome'] = '';
+            } elseif (($data['causality'] ?? '') === 'No') {
+                $data['action_taken'] = '';
+                $data['other_action_specify'] = '';
+                $data['outcome'] = '';
+            }
+
+            $data = normalizeAeRecordData($data);
+
+            if ($record_id > 0) {
+                $stmtPreOld = $pdo->prepare("SELECT * FROM subject_common_records WHERE id = ? AND study_id = ?");
+                $stmtPreOld->execute([$record_id, $study_id]);
+                $preOldRec = $stmtPreOld->fetch(PDO::FETCH_ASSOC);
+                if (!$preOldRec) throw new Exception("Record not found.");
+                if (toBool($preOldRec['is_voided'] ?? false)) throw new Exception("Cannot edit a voided record.");
+                if (toBool($preOldRec['pi_signed_off'] ?? false)) {
+                    throw new Exception("This record has been Signed Off by Principal Investigator and cannot be edited.");
+                }
+                $aeOldDataPre = normalizeAeRecordData(json_decode($preOldRec['data_json'] ?? '{}', true) ?: []);
+
+                // Protect dependent values from silent deletion when controlling field changes without audited clear
+                if ($data['ongoing'] === 'Yes' && $data['end_date'] === '' && $aeOldDataPre['end_date'] !== '') {
+                    if (!isset($reconcileClears['end_date'])) {
+                        $data['end_date'] = $aeOldDataPre['end_date'];
+                    }
+                }
+                if ($data['seriousness'] === 'No') {
+                    foreach (getAeSeriousnessCriteriaDefinitions() as $critDef) {
+                        $ck = $critDef['key'];
+                        if ($data[$ck] === '' && $aeOldDataPre[$ck] !== '' && !isset($reconcileClears[$ck])) {
+                            $data[$ck] = $aeOldDataPre[$ck];
+                        }
+                    }
+                }
+                if ($data['action_taken'] !== '' && strcasecmp($data['action_taken'], 'Other') !== 0 && $data['other_action_specify'] === '' && $aeOldDataPre['other_action_specify'] !== '') {
+                    if (!isset($reconcileClears['other_action_specify'])) {
+                        $data['other_action_specify'] = $aeOldDataPre['other_action_specify'];
+                    }
+                }
+            }
+
+            // Apply explicit audited reconciliation clears
+            foreach ($reconcileClears as $clearField => $clearReason) {
+                $data[$clearField] = '';
+            }
+
+            $aeEval = evaluateAeRecordChecks($data, $aeCodeLists, $today_ist, ($mode === 'complete'));
+            if ($mode === 'complete' && !$aeEval['valid']) {
+                ob_clean();
+                echo json_encode([
+                    'success' => false,
+                    'message' => $aeEval['all_errors'][0]['message'] ?? 'AE validation failed.',
+                    'field_errors' => $aeEval['field_errors'],
+                    'validation_errors' => $aeEval['all_errors'],
+                    'reconciliations' => getAeReconciliationItems($data),
+                ]);
+                exit();
             }
         }
 
@@ -563,40 +946,7 @@ try {
                 }
             }
             elseif ($form_type === 'AE') {
-                $term = trim($data['ae_term'] ?? '');
-                $severity = trim($data['severity'] ?? '');
-                $seriousness = trim($data['seriousness'] ?? '');
-                $causality = trim($data['causality'] ?? '');
-                $action_taken = trim($data['action_taken'] ?? '');
-                $outcome = trim($data['outcome'] ?? '');
-                $concomitant_treatment = trim($data['concomitant_treatment'] ?? '');
-                $start_date = trim($data['start_date'] ?? '');
-                $end_date = trim($data['end_date'] ?? '');
-
-                if ($term === '') throw new Exception("AE Term / Verbatim is required to mark complete.");
-                if ($severity === '') throw new Exception("Severity / Intensity is required.");
-                if ($seriousness === '') throw new Exception("Seriousness status is required.");
-                
-                if ($seriousness === 'Yes') {
-                    $crit = (array)($data['seriousness_criteria'] ?? []);
-                    if (empty($crit)) throw new Exception("At least one Seriousness Criteria is required when Seriousness is Yes.");
-                }
-
-                if ($causality === '') throw new Exception("Causality / Relationship to Study Drug is required.");
-                if ($action_taken === '') throw new Exception("Action Taken with Study Treatment is required.");
-                if ($outcome === '') throw new Exception("Outcome is required.");
-                if ($concomitant_treatment === '') throw new Exception("Other Action Taken / Concomitant Treatment Given is required.");
-
-                if ($outcome === 'Recovered / Resolved') {
-                    if ($end_date === '') throw new Exception("End Date is required when Outcome is Recovered / Resolved.");
-                    if ($start_date !== '' && $end_date < $start_date) {
-                        throw new Exception("End Date cannot precede Start Date.");
-                    }
-                } elseif (in_array($outcome, ['Recovering / Resolving', 'Not Recovered / Not Resolved'], true)) {
-                    $data['end_date'] = '';
-                } elseif ($start_date !== '' && $end_date !== '' && $end_date < $start_date) {
-                    throw new Exception("End Date cannot precede Start Date.");
-                }
+                // Validated cleanly above via evaluateAeRecordChecks($data, $aeCodeLists, $today_ist, true)
             }
             elseif ($form_type === 'CM') {
                 $med_name = trim($data['medication_name'] ?? '');
@@ -712,6 +1062,8 @@ try {
 
                 $record_number = $subject['subject_code'] . '-' . $form_type . '-' . str_pad($seq_number, 3, '0', STR_PAD_LEFT);
 
+                $driver_ins = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+                $ret_sql = ($driver_ins === 'pgsql') ? ' RETURNING id' : '';
                 $stmt_ins = $pdo->prepare("
                     INSERT INTO subject_common_records (
                         study_id, subject_id, form_type, seq_number, record_number, 
@@ -719,7 +1071,7 @@ try {
                     ) VALUES (
                         :sid, :subid, :ft, :seq, :rec_num, 
                         :st, 'pending', 1, :json, :uid
-                    )
+                    )$ret_sql
                 ");
                 $stmt_ins->execute([
                     'sid' => $study_id,
@@ -732,14 +1084,25 @@ try {
                     'uid' => $user_id
                 ]);
 
-                $target_record_id = (int)$pdo->lastInsertId();
+                $target_record_id = ($driver_ins === 'pgsql') ? (int)$stmt_ins->fetchColumn() : (int)$pdo->lastInsertId();
 
                 // Log Audit
                 $stmt_aud = $pdo->prepare("
-                    INSERT INTO common_form_audit_log (study_id, subject_id, record_id, field_name, old_value, new_value, reason_for_change, change_type, action_by)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO common_form_audit_log (study_id, subject_id, record_id, form_type, field_name, old_value, new_value, reason_for_change, change_type, action_by)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
-                $stmt_aud->execute([$study_id, $subject_id, $target_record_id, 'RECORD_CREATED', null, $record_number, 'Initial Record Creation', 'create', $user_id]);
+                $stmt_aud->execute([$study_id, $subject_id, $target_record_id, $form_type, 'RECORD_CREATED', null, $record_number, 'Initial Record Creation', 'create', $user_id]);
+
+                if ($form_type === 'AE') {
+                    $expVal = (($data['ae_experienced'] ?? '') === 'No') ? 'No' : 'Yes';
+                    $pdo->prepare("
+                        INSERT INTO subject_common_form_status (study_id, subject_id, form_type, any_experienced, status, sdr_status, revision, created_by)
+                        VALUES (?, ?, 'AE', ?, ?, 'pending', 1, ?)
+                        ON CONFLICT (study_id, subject_id, form_type) DO UPDATE SET any_experienced = EXCLUDED.any_experienced
+                    ")->execute([$study_id, $subject_id, $expVal, $mode, $user_id]);
+
+                    $stmt_aud->execute([$study_id, $subject_id, null, 'AE', 'ae_experienced', null, $expVal, 'Set on AE record creation', 'create', $user_id]);
+                }
 
             } else {
                 $target_record_id = $record_id;
@@ -755,13 +1118,16 @@ try {
                 }
 
                 $old_data = json_decode($old_rec['data_json'] ?? '{}', true) ?: [];
+                if ($form_type === 'AE') {
+                    $old_data = normalizeAeRecordData($old_data);
+                }
                 $old_sdr_status = $old_rec['sdr_status'];
                 $old_revision = (int)$old_rec['revision'];
 
                 // Audit Changed Fields
                 $stmt_aud = $pdo->prepare("
-                    INSERT INTO common_form_audit_log (study_id, subject_id, record_id, field_name, old_value, new_value, reason_for_change, change_type, action_by)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO common_form_audit_log (study_id, subject_id, record_id, form_type, field_name, old_value, new_value, reason_for_change, change_type, action_by)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
 
                 $all_keys = array_unique(array_merge(array_keys($old_data), array_keys($data)));
@@ -773,7 +1139,11 @@ try {
 
                     if ($val_old !== $val_new) {
                         $has_clinical_change = true;
-                        $stmt_aud->execute([$study_id, $subject_id, $target_record_id, $k, $val_old, $val_new, $change_reason, 'update', $user_id]);
+                        if (isset($reconcileClears[$k])) {
+                            $stmt_aud->execute([$study_id, $subject_id, $target_record_id, $form_type, $k, $val_old, $val_new, "Audited Reconciliation Clear: " . $reconcileClears[$k], 'reconcile_clear', $user_id]);
+                        } else {
+                            $stmt_aud->execute([$study_id, $subject_id, $target_record_id, $form_type, $k, $val_old, $val_new, $change_reason, 'update', $user_id]);
+                        }
                     }
                 }
 
@@ -865,15 +1235,42 @@ try {
                 }
             }
 
+            if ($form_type === 'AE') {
+                $wasSerious = ($aeOldDataPre && ($aeOldDataPre['seriousness'] ?? '') === 'Yes');
+                if (($data['seriousness'] ?? '') === 'Yes' && ($is_new || !$wasSerious)) {
+                    $pdo->prepare("
+                        INSERT INTO common_form_audit_log (study_id, subject_id, record_id, form_type, field_name, old_value, new_value, reason_for_change, change_type, action_by)
+                        VALUES (?, ?, ?, 'AE', 'SAE_SAFETY_NOTICE', ?, 'Yes', ?, 'sae_flag', ?)
+                    ")->execute([
+                        $study_id,
+                        $subject_id,
+                        $target_record_id,
+                        $aeOldDataPre['seriousness'] ?? null,
+                        'Event flagged Serious — follow external SAE reporting/pharmacovigilance SOP (UI seriousness fields alone do not send external SAE notifications).',
+                        $user_id,
+                    ]);
+                }
+                $aeEval = syncAeRecordEditCheckQueries($pdo, $study_id, $subject_id, $target_record_id, $data, $user_id, $aeCodeLists, $today_ist);
+                syncSubjectAeQueries($pdo, $study_id, $subject_id, $user_id);
+            }
+
             $pdo->commit();
 
-            ob_clean();
-            echo json_encode([
+            $saveResp = [
                 'success' => true,
                 'record_id' => $target_record_id,
                 'status' => $new_status,
                 'message' => $is_new ? "Record created successfully." : "Record updated successfully."
-            ]);
+            ];
+            if ($form_type === 'AE') {
+                $saveResp['ae_checks'] = $aeEval;
+                $saveResp['reconciliations'] = getAeReconciliationItems($data);
+                $saveResp['sae_flagged'] = (($data['seriousness'] ?? '') === 'Yes');
+                $saveResp['subject_state'] = getSubjectAeState($pdo, $study_id, $subject_id);
+            }
+
+            ob_clean();
+            echo json_encode($saveResp);
             exit();
 
         } catch (Exception $e) {
@@ -889,8 +1286,6 @@ try {
         $record_id = (int)($_POST['record_id'] ?? 0);
         $workflow_action = trim($_POST['workflow_action'] ?? $_POST['sdr_action'] ?? '');
 
-        if ($record_id <= 0) throw new Exception("Invalid record ID");
-
         // Map legacy action names
         if ($workflow_action === 'under_review') $workflow_action = 'mark_sdr';
         elseif ($workflow_action === 'sdved' || $workflow_action === 'reviewed') {
@@ -901,6 +1296,162 @@ try {
         elseif ($workflow_action === 'pending') {
             $workflow_action = 'revoke_sdr';
         }
+
+        // Subject-level AE Gate Review Workflow (used when AE screening is No, or overall AE gate sign-off)
+        $req_form_type = strtoupper(trim($_POST['form_type'] ?? ''));
+        $req_subject_id = (int)($_POST['subject_id'] ?? 0);
+        if ($record_id <= 0 && $req_form_type === 'AE' && $req_subject_id > 0) {
+            $aeState = getSubjectAeState($pdo, $study_id, $req_subject_id);
+            if (empty($aeState['id'])) {
+                throw new Exception("Please save 'Were any adverse events experienced?' first.");
+            }
+            if ($aeState['conflict_occurrence_no_with_records']) {
+                throw new Exception("Cannot update AE review status while 'Were any adverse events experienced?' = No conflicts with active AE records.");
+            }
+
+            $sdr_submitted = $aeState['sdr_submitted'];
+            $monitor_reviewed = $aeState['monitor_reviewed'];
+            $manager_reviewed = $aeState['manager_reviewed'];
+            $pi_signed_off = $aeState['pi_signed_off'];
+            $curr_revision = $aeState['revision'];
+            $curr_user_id = $user_id > 0 ? $user_id : (int)($_SESSION['user_id'] ?? $_SESSION['id'] ?? 1);
+
+            if ($pi_signed_off && $workflow_action !== 'pi_revoke') {
+                throw new Exception("AE Screening Gate has been Signed Off by Principal Investigator. No changes are permitted.");
+            }
+
+            $pdo->beginTransaction();
+            try {
+                $audit_logs = [];
+                $sdr_hist_action = '';
+
+                if ($workflow_action === 'mark_sdr') {
+                    if (!$is_coordinator) throw new Exception("Unauthorized: Only Data Coordinators can mark AE form as SDR.");
+                    if ($sdr_submitted) throw new Exception("AE form gate is already marked as SDR.");
+                    if ($aeState['status'] !== 'complete') throw new Exception("Cannot mark as SDR: Mark the AE Screening Form complete first.");
+                    if ($aeState['has_draft_record']) throw new Exception("Cannot mark as SDR: All active AE records must be marked complete first.");
+                    $sdr_submitted = true;
+                    $sdr_hist_action = 'mark_sdr';
+                    $audit_logs[] = ['sdr_status', $aeState['sdr_status'], 'under_review', 'Subject AE Gate marked as SDR', 'sdr_submitted'];
+                } elseif ($workflow_action === 'revoke_sdr') {
+                    if (!$is_coordinator) throw new Exception("Unauthorized: Only Data Coordinators can revoke SDR.");
+                    if (!$sdr_submitted) throw new Exception("AE form gate is not marked as SDR.");
+                    if ($monitor_reviewed || $manager_reviewed || $pi_signed_off) throw new Exception("Cannot revoke SDR: Already reviewed or signed off.");
+                    $sdr_submitted = false;
+                    $sdr_hist_action = 'revoke_sdr';
+                    $audit_logs[] = ['sdr_status', $aeState['sdr_status'], 'pending', 'Subject AE Gate SDR Revoked', 'sdr_revoked'];
+                } elseif ($workflow_action === 'monitor_review') {
+                    if (!$is_monitor) throw new Exception("Unauthorized: Only Data Monitors can mark as SDVed.");
+                    if ($monitor_reviewed) throw new Exception("AE form gate is already marked as SDVed.");
+                    if ($aeState['open_subject_queries'] > 0) throw new Exception("Cannot mark as SDVed: Resolve open AE screening queries first.");
+                    $stmt_oq = $pdo->prepare("SELECT COUNT(*) FROM common_form_queries q JOIN subject_common_records r ON q.record_id = r.id WHERE r.study_id = ? AND r.subject_id = ? AND r.form_type = 'AE' AND r.is_voided = FALSE AND q.status != 'closed'");
+                    $stmt_oq->execute([$study_id, $req_subject_id]);
+                    if ((int)$stmt_oq->fetchColumn() > 0) throw new Exception("Cannot mark as SDVed: Resolve open AE record queries first.");
+                    $monitor_reviewed = true;
+                    $sdr_submitted = true;
+                    $sdr_hist_action = 'monitor_review';
+                    $audit_logs[] = ['monitor_reviewed', 'false', 'true', 'Subject AE Gate marked as SDVed by Data Monitor', 'monitor_reviewed'];
+                } elseif ($workflow_action === 'monitor_revoke') {
+                    if (!$is_monitor) throw new Exception("Unauthorized: Only Data Monitors can revoke SDVed.");
+                    if (!$monitor_reviewed) throw new Exception("SDV review has not been completed.");
+                    $remarks = trim($_POST['remarks'] ?? '') ?: 'SDV Revoked by Data Monitor';
+                    $sdr_submitted = false; $monitor_reviewed = false; $manager_reviewed = false;
+                    $sdr_hist_action = 'monitor_revoke';
+                    $audit_logs[] = ['monitor_reviewed', 'true', 'false', $remarks, 'monitor_revoked'];
+                } elseif ($workflow_action === 'manager_review') {
+                    if (!$is_manager) throw new Exception("Unauthorized: Only Data Managers can mark as DM Reviewed.");
+                    if ($manager_reviewed) throw new Exception("AE form gate is already marked as DM Reviewed.");
+                    if ($aeState['open_subject_queries'] > 0) throw new Exception("Cannot mark as DM Reviewed: Resolve open AE screening queries first.");
+                    $manager_reviewed = true;
+                    $sdr_submitted = true;
+                    $sdr_hist_action = 'manager_review';
+                    $audit_logs[] = ['manager_reviewed', 'false', 'true', 'Subject AE Gate marked as DM Reviewed by Data Manager', 'manager_reviewed'];
+                } elseif ($workflow_action === 'manager_revoke') {
+                    if (!$is_manager) throw new Exception("Unauthorized: Only Data Managers can revoke DM Reviewed.");
+                    if (!$manager_reviewed) throw new Exception("DM Review has not been completed.");
+                    $remarks = trim($_POST['remarks'] ?? '') ?: 'DM Review Revoked by Data Manager';
+                    $sdr_submitted = false; $monitor_reviewed = false; $manager_reviewed = false;
+                    $sdr_hist_action = 'manager_revoke';
+                    $audit_logs[] = ['manager_reviewed', 'true', 'false', $remarks, 'manager_revoked'];
+                } elseif ($workflow_action === 'pi_sign_off') {
+                    if (!$is_pi) throw new Exception("Unauthorized: Only Principal Investigators can perform PI Sign Off.");
+                    if (!$monitor_reviewed || !$manager_reviewed) throw new Exception("Cannot sign off: Must be both SDVed and DM Reviewed first.");
+                    if ($pi_signed_off) throw new Exception("AE form gate is already PI Signed Off.");
+                    if ($aeState['open_subject_queries'] > 0) throw new Exception("Cannot sign off: Resolve open AE screening queries first.");
+                    $pi_signed_off = true;
+                    $sdr_hist_action = 'pi_sign_off';
+                    $audit_logs[] = ['pi_signed_off', 'false', 'true', 'Subject AE Gate PI Sign Off completed', 'pi_signed_off'];
+                } elseif ($workflow_action === 'pi_revoke') {
+                    if (!$is_pi) throw new Exception("Unauthorized: Only Principal Investigators can revoke PI Sign Off.");
+                    if (!$pi_signed_off) throw new Exception("PI Sign Off has not been completed.");
+                    $remarks = trim($_POST['remarks'] ?? '') ?: 'PI Sign Off Revoked by Principal Investigator';
+                    $pi_signed_off = false; $sdr_submitted = true; $monitor_reviewed = true; $manager_reviewed = true;
+                    $sdr_hist_action = 'pi_revoke';
+                    $audit_logs[] = ['pi_signed_off', 'true', 'false', $remarks, 'pi_revoked'];
+                } else {
+                    throw new Exception("Invalid workflow action: " . htmlspecialchars($workflow_action));
+                }
+
+                $final_sdr_status = 'pending';
+                if ($pi_signed_off) $final_sdr_status = 'pi_signed_off';
+                elseif ($monitor_reviewed && $manager_reviewed) $final_sdr_status = 'sdved_and_dm_reviewed';
+                elseif ($monitor_reviewed) $final_sdr_status = 'sdved';
+                elseif ($manager_reviewed) $final_sdr_status = 'dm_reviewed';
+                elseif ($sdr_submitted) $final_sdr_status = 'under_review';
+
+                $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+                $sdr_val = $sdr_submitted ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
+                $mon_val = $monitor_reviewed ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
+                $mgr_val = $manager_reviewed ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
+                $pi_val = $pi_signed_off ? (($driver === 'pgsql') ? 'true' : '1') : (($driver === 'pgsql') ? 'false' : '0');
+
+                $pdo->prepare("
+                    UPDATE subject_common_form_status
+                    SET sdr_submitted = $sdr_val,
+                        monitor_reviewed = $mon_val,
+                        manager_reviewed = $mgr_val,
+                        pi_signed_off = $pi_val,
+                        pi_signed_by = CASE WHEN $pi_val THEN COALESCE(pi_signed_by, ?) ELSE NULL END,
+                        pi_signed_at = CASE WHEN $pi_val THEN COALESCE(pi_signed_at, CURRENT_TIMESTAMP) ELSE NULL END,
+                        monitor_reviewed_by = CASE WHEN $mon_val THEN COALESCE(monitor_reviewed_by, ?) ELSE NULL END,
+                        monitor_reviewed_at = CASE WHEN $mon_val THEN COALESCE(monitor_reviewed_at, CURRENT_TIMESTAMP) ELSE NULL END,
+                        manager_reviewed_by = CASE WHEN $mgr_val THEN COALESCE(manager_reviewed_by, ?) ELSE NULL END,
+                        manager_reviewed_at = CASE WHEN $mgr_val THEN COALESCE(manager_reviewed_at, CURRENT_TIMESTAMP) ELSE NULL END,
+                        sdr_status = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                ")->execute([$curr_user_id, $curr_user_id, $curr_user_id, $final_sdr_status, $aeState['id']]);
+
+                if ($sdr_hist_action) {
+                    $pdo->prepare("INSERT INTO common_form_sdr_history (record_id, subject_id, form_type, action, reviewed_revision, action_by) VALUES (NULL, ?, 'AE', ?, ?, ?)")
+                        ->execute([$req_subject_id, $sdr_hist_action, $curr_revision, $curr_user_id]);
+                }
+                $stmtAudGate = $pdo->prepare("INSERT INTO common_form_audit_log (study_id, subject_id, record_id, form_type, field_name, old_value, new_value, reason_for_change, change_type, action_by) VALUES (?, ?, NULL, 'AE', ?, ?, ?, ?, ?, ?)");
+                foreach ($audit_logs as $log) {
+                    $stmtAudGate->execute([$study_id, $req_subject_id, $log[0], $log[1], $log[2], $log[3], $log[4], $curr_user_id]);
+                }
+
+                $pdo->commit();
+                ob_clean();
+                echo json_encode([
+                    'success' => true,
+                    'workflow_action' => $workflow_action,
+                    'sdr_submitted' => $sdr_submitted,
+                    'monitor_reviewed' => $monitor_reviewed,
+                    'manager_reviewed' => $manager_reviewed,
+                    'pi_signed_off' => $pi_signed_off,
+                    'sdr_status' => $final_sdr_status,
+                    'form_type' => 'AE',
+                    'message' => 'AE Screening Gate review status updated successfully.'
+                ]);
+                exit();
+            } catch (Exception $e) {
+                $pdo->rollBack();
+                throw $e;
+            }
+        }
+
+        if ($record_id <= 0) throw new Exception("Invalid record ID");
 
         $stmt = $pdo->prepare("SELECT * FROM subject_common_records WHERE id = ?");
         $stmt->execute([$record_id]);
@@ -937,6 +1488,16 @@ try {
                 if ($rec['status'] !== 'complete') {
                     throw new Exception("Cannot mark as SDR: Record must be marked complete first.");
                 }
+                if ($rec['form_type'] === 'AE') {
+                    $aeStateRec = getSubjectAeState($pdo, $rec['study_id'], $rec['subject_id']);
+                    if ($aeStateRec['conflict_occurrence_no_with_records']) {
+                        throw new Exception("Cannot mark as SDR: Resolve 'Were any adverse events experienced?' = No conflict first.");
+                    }
+                    $aeEvalRec = evaluateAeRecordChecks(json_decode($rec['data_json'] ?? '{}', true) ?: [], getAeCodeLists($pdo, $rec['study_id']), null, true);
+                    if (!$aeEvalRec['valid']) {
+                        throw new Exception("Cannot mark as SDR: AE record has unresolved edit check errors (" . ($aeEvalRec['all_errors'][0]['message'] ?? 'Invalid') . ").");
+                    }
+                }
 
                 $sdr_submitted = true;
                 $sdr_hist_action = 'mark_sdr';
@@ -970,6 +1531,12 @@ try {
                 $stmt_open_q->execute([$record_id]);
                 if ((int)$stmt_open_q->fetchColumn() > 0) {
                     throw new Exception("Cannot mark as SDVed: All open queries on this form must be answered and closed before SDV verification.");
+                }
+                if ($rec['form_type'] === 'AE') {
+                    $aeStateMon = getSubjectAeState($pdo, $rec['study_id'], $rec['subject_id']);
+                    if ($aeStateMon['conflict_occurrence_no_with_records'] || $aeStateMon['open_subject_queries'] > 0) {
+                        throw new Exception("Cannot mark as SDVed: Resolve open subject-level AE occurrence conflicts/queries first.");
+                    }
                 }
 
                 $monitor_reviewed = true;
@@ -1231,6 +1798,12 @@ try {
         if (!$rec) throw new Exception("Record not found.");
         if (toBool($rec['is_voided'])) throw new Exception("Record is already voided.");
         if (toBool($rec['pi_signed_off'] ?? false)) throw new Exception("Cannot void a record that has been Signed Off by Principal Investigator.");
+        if ($rec['form_type'] === 'AE') {
+            $aeStateVoid = getSubjectAeState($pdo, $study_id, $rec['subject_id']);
+            if ($aeStateVoid['pi_signed_off']) {
+                throw new Exception("Cannot void an AE record when the subject's AE form is Signed Off by Principal Investigator.");
+            }
+        }
 
         $pdo->beginTransaction();
         try {
@@ -1242,15 +1815,31 @@ try {
             $stmt_upd->execute(['reason' => $reason, 'uid' => $user_id, 'id' => $record_id]);
 
             $stmt_aud = $pdo->prepare("
-                INSERT INTO common_form_audit_log (study_id, subject_id, record_id, field_name, old_value, new_value, reason_for_change, change_type, action_by)
-                VALUES (?, ?, ?, 'RECORD_VOIDED', 'Active', 'Voided', ?, 'void', ?)
+                INSERT INTO common_form_audit_log (study_id, subject_id, record_id, form_type, field_name, old_value, new_value, reason_for_change, change_type, action_by)
+                VALUES (?, ?, ?, ?, 'RECORD_VOIDED', 'Active', 'Voided', ?, 'void', ?)
             ");
-            $stmt_aud->execute([$study_id, $rec['subject_id'], $record_id, $reason, $user_id]);
+            $stmt_aud->execute([$study_id, $rec['subject_id'], $record_id, $rec['form_type'], $reason, $user_id]);
+
+            if ($rec['form_type'] === 'AE') {
+                // Close any open/answered system edit-check queries on the voided record
+                $stmtSysQ = $pdo->prepare("SELECT id, status, field_name, rule_code FROM common_form_queries WHERE record_id = ? AND is_system_query = TRUE AND status != 'closed'");
+                $stmtSysQ->execute([$record_id]);
+                foreach ($stmtSysQ->fetchAll(PDO::FETCH_ASSOC) as $sq) {
+                    $pdo->prepare("UPDATE common_form_queries SET status = 'closed', updated_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$sq['id']]);
+                    $pdo->prepare("INSERT INTO common_form_query_history (query_id, action_type, remark, status_from, status_to, created_by) VALUES (?, 'closed', ?, ?, 'closed', ?)")
+                        ->execute([$sq['id'], "Auto-closed upon record void: " . $reason, $sq['status'], $user_id]);
+                }
+                syncSubjectAeQueries($pdo, $study_id, $rec['subject_id'], $user_id);
+            }
 
             $pdo->commit();
 
+            $voidResp = ['success' => true, 'message' => "Record {$rec['record_number']} voided successfully."];
+            if ($rec['form_type'] === 'AE') {
+                $voidResp['subject_state'] = getSubjectAeState($pdo, $study_id, $rec['subject_id']);
+            }
             ob_clean();
-            echo json_encode(['success' => true, 'message' => "Record {$rec['record_number']} voided successfully."]);
+            echo json_encode($voidResp);
             exit();
 
         } catch (Exception $e) {
@@ -1268,40 +1857,70 @@ try {
         }
 
         $record_id = (int)($_POST['record_id'] ?? 0);
+        $req_form_type = strtoupper(trim($_POST['form_type'] ?? ''));
+        $req_subject_id = (int)($_POST['subject_id'] ?? 0);
         $field_name = trim($_POST['field_name'] ?? '');
         $query_text = trim($_POST['query_text'] ?? '');
 
-        if ($record_id <= 0) throw new Exception("Invalid record ID");
         if ($query_text === '') throw new Exception("Query text cannot be empty.");
 
-        $stmt = $pdo->prepare("SELECT * FROM subject_common_records WHERE id = ? AND study_id = ?");
-        $stmt->execute([$record_id, $study_id]);
-        $rec = $stmt->fetch(PDO::FETCH_ASSOC);
-        if (!$rec) throw new Exception("Record not found.");
+        $is_subject_ae_query = ($record_id <= 0 && $req_form_type === 'AE' && $req_subject_id > 0);
+        if (!$is_subject_ae_query && $record_id <= 0) throw new Exception("Invalid record ID");
 
-        if (toBool($rec['pi_signed_off'] ?? false)) {
-            throw new Exception("Cannot Raise Query as the form has been Signed Off by Principal Investigator");
-        }
-        if (!$is_admin && $is_monitor && !$is_manager && toBool($rec['monitor_reviewed'])) {
-            throw new Exception("Cannot Raise Query as the form is marked as SDVed");
-        }
-        if (!$is_admin && $is_manager && !$is_monitor && toBool($rec['manager_reviewed'])) {
-            throw new Exception("Cannot Raise Query as the form is marked as DM Reviewed");
-        }
+        $target_subject_id = 0;
+        $target_form_type = '';
 
-        // Server side check if there is an unresolved query on this field / record
-        if ($field_name !== '') {
-            $stmt_open = $pdo->prepare("SELECT COUNT(*) FROM common_form_queries WHERE record_id = ? AND field_name = ? AND status != 'closed'");
-            $stmt_open->execute([$record_id, $field_name]);
-            if ((int)$stmt_open->fetchColumn() > 0) {
-                throw new Exception("Cannot Raise Query as a query is open on this field");
+        if ($is_subject_ae_query) {
+            $aeSt = getSubjectAeState($pdo, $study_id, $req_subject_id);
+            if ($aeSt['pi_signed_off']) {
+                throw new Exception("Cannot Raise Query as the AE form has been Signed Off by Principal Investigator");
             }
+            if (!$is_admin && $is_monitor && !$is_manager && $aeSt['monitor_reviewed']) {
+                throw new Exception("Cannot Raise Query as the AE Screening Gate is marked as SDVed");
+            }
+            if (!$is_admin && $is_manager && !$is_monitor && $aeSt['manager_reviewed']) {
+                throw new Exception("Cannot Raise Query as the AE Screening Gate is marked as DM Reviewed");
+            }
+            if ($field_name === '') $field_name = 'ae_experienced';
+            $stmt_open = $pdo->prepare("SELECT COUNT(*) FROM common_form_queries WHERE study_id = ? AND subject_id = ? AND record_id IS NULL AND form_type = 'AE' AND field_name = ? AND status != 'closed'");
+            $stmt_open->execute([$study_id, $req_subject_id, $field_name]);
+            if ((int)$stmt_open->fetchColumn() > 0) {
+                throw new Exception("Cannot Raise Query as a query is already open on this field");
+            }
+            $target_subject_id = $req_subject_id;
+            $target_form_type = 'AE';
         } else {
-            $stmt_open = $pdo->prepare("SELECT COUNT(*) FROM common_form_queries WHERE record_id = ? AND (field_name IS NULL OR field_name = '') AND status != 'closed'");
-            $stmt_open->execute([$record_id]);
-            if ((int)$stmt_open->fetchColumn() > 0) {
-                throw new Exception("Cannot Raise Query as a query is open on this record");
+            $stmt = $pdo->prepare("SELECT * FROM subject_common_records WHERE id = ? AND study_id = ?");
+            $stmt->execute([$record_id, $study_id]);
+            $rec = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$rec) throw new Exception("Record not found.");
+
+            if (toBool($rec['pi_signed_off'] ?? false)) {
+                throw new Exception("Cannot Raise Query as the form has been Signed Off by Principal Investigator");
             }
+            if (!$is_admin && $is_monitor && !$is_manager && toBool($rec['monitor_reviewed'])) {
+                throw new Exception("Cannot Raise Query as the form is marked as SDVed");
+            }
+            if (!$is_admin && $is_manager && !$is_monitor && toBool($rec['manager_reviewed'])) {
+                throw new Exception("Cannot Raise Query as the form is marked as DM Reviewed");
+            }
+
+            // Server side check if there is an unresolved query on this field / record
+            if ($field_name !== '') {
+                $stmt_open = $pdo->prepare("SELECT COUNT(*) FROM common_form_queries WHERE record_id = ? AND field_name = ? AND status != 'closed'");
+                $stmt_open->execute([$record_id, $field_name]);
+                if ((int)$stmt_open->fetchColumn() > 0) {
+                    throw new Exception("Cannot Raise Query as a query is open on this field");
+                }
+            } else {
+                $stmt_open = $pdo->prepare("SELECT COUNT(*) FROM common_form_queries WHERE record_id = ? AND (field_name IS NULL OR field_name = '') AND status != 'closed'");
+                $stmt_open->execute([$record_id]);
+                if ((int)$stmt_open->fetchColumn() > 0) {
+                    throw new Exception("Cannot Raise Query as a query is open on this record");
+                }
+            }
+            $target_subject_id = (int)$rec['subject_id'];
+            $target_form_type = $rec['form_type'];
         }
 
         $role_lower = strtolower($_SESSION['active_role_name'] ?? '');
@@ -1318,12 +1937,23 @@ try {
 
         $pdo->beginTransaction();
         try {
+            $driver_q = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+            $ret_q = ($driver_q === 'pgsql') ? ' RETURNING id' : '';
             $stmt_q = $pdo->prepare("
-                INSERT INTO common_form_queries (study_id, subject_id, record_id, field_name, query_text, status, created_by, raised_by_role)
-                VALUES (?, ?, ?, ?, ?, 'open', ?, ?)
+                INSERT INTO common_form_queries (study_id, subject_id, record_id, form_type, field_name, query_text, status, created_by, raised_by_role)
+                VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?)$ret_q
             ");
-            $stmt_q->execute([$study_id, $rec['subject_id'], $record_id, $field_name ?: null, $query_text, $user_id, $raised_by_role]);
-            $query_id = (int)$pdo->lastInsertId();
+            $stmt_q->execute([
+                $study_id,
+                $target_subject_id,
+                $is_subject_ae_query ? null : $record_id,
+                $target_form_type,
+                $field_name ?: null,
+                $query_text,
+                $user_id,
+                $raised_by_role
+            ]);
+            $query_id = ($driver_q === 'pgsql') ? (int)$stmt_q->fetchColumn() : (int)$pdo->lastInsertId();
 
             $stmt_qh = $pdo->prepare("
                 INSERT INTO common_form_query_history (query_id, action_type, remark, status_from, status_to, created_by)
@@ -1333,13 +1963,14 @@ try {
 
             // Regulatory Audit Trail
             $stmt_aud = $pdo->prepare("
-                INSERT INTO common_form_audit_log (study_id, subject_id, record_id, field_name, old_value, new_value, reason_for_change, change_type, action_by)
-                VALUES (?, ?, ?, ?, NULL, NULL, ?, 'query_raised', ?)
+                INSERT INTO common_form_audit_log (study_id, subject_id, record_id, form_type, field_name, old_value, new_value, reason_for_change, change_type, action_by)
+                VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, 'query_raised', ?)
             ");
             $stmt_aud->execute([
                 $study_id,
-                $rec['subject_id'],
-                $record_id,
+                $target_subject_id,
+                $is_subject_ae_query ? null : $record_id,
+                $target_form_type,
                 $field_name ?: 'RECORD_QUERY',
                 "Query Raised (" . $query_id . "): " . $query_text,
                 $user_id
@@ -1372,13 +2003,24 @@ try {
         if ($query_id <= 0) throw new Exception("Invalid query ID");
         if ($remark === '') throw new Exception("Response remark cannot be empty.");
 
-        $stmt = $pdo->prepare("SELECT q.*, r.data_json, r.pi_signed_off FROM common_form_queries q JOIN subject_common_records r ON q.record_id = r.id WHERE q.id = ? AND q.study_id = ?");
+        $stmt = $pdo->prepare("
+            SELECT q.*, r.data_json, r.pi_signed_off, r.form_type AS rec_form_type
+            FROM common_form_queries q
+            LEFT JOIN subject_common_records r ON q.record_id = r.id
+            WHERE q.id = ? AND q.study_id = ?
+        ");
         $stmt->execute([$query_id, $study_id]);
         $q = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$q) throw new Exception("Query not found.");
 
-        if (toBool($q['pi_signed_off'] ?? false)) {
+        $eff_form_type = $q['form_type'] ?: ($q['rec_form_type'] ?? '');
+        if ($q['record_id'] !== null && toBool($q['pi_signed_off'] ?? false)) {
             throw new Exception("Action prohibited: Record has been Signed Off by Principal Investigator and is completely locked.");
+        } elseif ($q['record_id'] === null && $eff_form_type === 'AE') {
+            $aeStateAns = getSubjectAeState($pdo, $study_id, $q['subject_id']);
+            if ($aeStateAns['pi_signed_off']) {
+                throw new Exception("Action prohibited: AE form has been Signed Off by Principal Investigator and is completely locked.");
+            }
         }
 
         $hist_old_val = null;
@@ -1388,14 +2030,25 @@ try {
         if ($proposed_field_value !== null && !empty($q['field_name'])) {
             if ($proposed_field_value !== '' && in_array($q['field_name'], ['start_date', 'end_date', 'stop_date', 'imaging_date', 'date_of_visit', 'date_of_death', 'vitals_assessment_date', 'hema_collection_date', 'chem_collection_date', 'drug_admin_date'], true)) {
                 $today_ist = (new DateTime('now', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d');
-                $check_date = substr(trim($proposed_field_value), 0, 10);
-                if ($check_date > $today_ist) {
-                    throw new Exception("Future Date has been selected, Please Select the Correct Date");
+                if ($eff_form_type === 'AE') {
+                    if (isClinicalDateInFuture($proposed_field_value, $today_ist)) {
+                        throw new Exception("Future Date has been selected, Please Select the Correct Date");
+                    }
+                } else {
+                    $check_date = substr(trim($proposed_field_value), 0, 10);
+                    if ($check_date > $today_ist) {
+                        throw new Exception("Future Date has been selected, Please Select the Correct Date");
+                    }
                 }
             }
 
-            $rec_data = json_decode($q['data_json'] ?? '{}', true) ?: [];
-            $curr_val = is_array($rec_data[$q['field_name']] ?? null) ? implode(', ', $rec_data[$q['field_name']]) : (string)($rec_data[$q['field_name']] ?? '');
+            if ($q['record_id'] === null && $eff_form_type === 'AE' && $q['field_name'] === 'ae_experienced') {
+                $aeStateAns = $aeStateAns ?? getSubjectAeState($pdo, $study_id, $q['subject_id']);
+                $curr_val = (string)($aeStateAns['saved_any_experienced'] ?? '');
+            } else {
+                $rec_data = json_decode($q['data_json'] ?? '{}', true) ?: [];
+                $curr_val = is_array($rec_data[$q['field_name']] ?? null) ? implode(', ', $rec_data[$q['field_name']]) : (string)($rec_data[$q['field_name']] ?? '');
+            }
 
             if ($proposed_field_value !== '' && $curr_val !== $proposed_field_value) {
                 $hist_old_val = $curr_val;
@@ -1464,18 +2117,24 @@ try {
         }
 
         $stmt = $pdo->prepare("
-            SELECT q.*, r.pi_signed_off,
+            SELECT q.*, r.pi_signed_off, r.form_type AS rec_form_type,
                    COALESCE(q.raised_by_role, (SELECT role_name FROM study_users WHERE user_id = q.created_by AND study_id = q.study_id LIMIT 1), 'Data Monitor') AS effective_raised_by_role
             FROM common_form_queries q 
-            JOIN subject_common_records r ON q.record_id = r.id
+            LEFT JOIN subject_common_records r ON q.record_id = r.id
             WHERE q.id = ? AND q.study_id = ?
         ");
         $stmt->execute([$query_id, $study_id]);
         $q = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$q) throw new Exception("Query not found.");
 
-        if (toBool($q['pi_signed_off'] ?? false)) {
+        $eff_form_type_close = $q['form_type'] ?: ($q['rec_form_type'] ?? '');
+        if ($q['record_id'] !== null && toBool($q['pi_signed_off'] ?? false)) {
             throw new Exception("Action prohibited: Record has been Signed Off by Principal Investigator and is completely locked.");
+        } elseif ($q['record_id'] === null && $eff_form_type_close === 'AE') {
+            $aeStateClose = getSubjectAeState($pdo, $study_id, $q['subject_id']);
+            if ($aeStateClose['pi_signed_off']) {
+                throw new Exception("Action prohibited: AE form has been Signed Off by Principal Investigator and is completely locked.");
+            }
         }
 
         $user_role_lower = strtolower($_SESSION['active_role_name'] ?? '');
@@ -1510,10 +2169,166 @@ try {
         }
 
         $old_status = $q['status'];
-        $record_id = (int)$q['record_id'];
+        $record_id = $q['record_id'] !== null ? (int)$q['record_id'] : null;
 
         $pdo->beginTransaction();
         try {
+            $stmt_aud = $pdo->prepare("
+                INSERT INTO common_form_audit_log (study_id, subject_id, record_id, form_type, field_name, old_value, new_value, reason_for_change, change_type, action_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+
+            // IF QUERY IS CLOSED: Apply any answered proposed field value update BEFORE verifying system rules
+            $ae_needs_record_sync = false;
+            $ae_needs_subject_sync = false;
+            if ($new_status === 'closed' && !empty($q['field_name'])) {
+                $stmt_change = $pdo->prepare("
+                    SELECT old_value, new_value 
+                    FROM common_form_query_history 
+                    WHERE query_id = ? AND status_to = 'answered'
+                    ORDER BY id DESC LIMIT 1
+                ");
+                $stmt_change->execute([$query_id]);
+                $val_change = $stmt_change->fetch(PDO::FETCH_ASSOC);
+
+                if (!$val_change || $val_change['new_value'] === null) {
+                    $stmt_change = $pdo->prepare("
+                        SELECT old_value, new_value 
+                        FROM common_form_query_history 
+                        WHERE query_id = ? AND new_value IS NOT NULL AND (old_value IS NULL OR old_value != new_value)
+                        ORDER BY id DESC LIMIT 1
+                    ");
+                    $stmt_change->execute([$query_id]);
+                    $val_change = $stmt_change->fetch(PDO::FETCH_ASSOC);
+                }
+
+                $target_new_val = $val_change['new_value'] ?? null;
+
+                if ($target_new_val !== null && $target_new_val !== '') {
+                    if ($record_id !== null && $record_id > 0) {
+                        $stmt_rec = $pdo->prepare("SELECT * FROM subject_common_records WHERE id = ? FOR UPDATE");
+                        $stmt_rec->execute([$record_id]);
+                        $current_rec = $stmt_rec->fetch(PDO::FETCH_ASSOC);
+
+                        if ($current_rec) {
+                            $current_data = json_decode($current_rec['data_json'] ?? '{}', true) ?: [];
+                            if ($current_rec['form_type'] === 'AE') {
+                                $current_data = normalizeAeRecordData($current_data);
+                            }
+                            $curr_val_db = is_array($current_data[$q['field_name']] ?? null)
+                                ? implode(', ', $current_data[$q['field_name']])
+                                : (string)($current_data[$q['field_name']] ?? '');
+
+                            if ($curr_val_db !== $target_new_val) {
+                                if ($q['field_name'] === 'seriousness_criteria') {
+                                    $current_data[$q['field_name']] = array_values(array_filter(array_map('trim', explode(',', (string)$target_new_val))));
+                                } else {
+                                    $current_data[$q['field_name']] = $target_new_val;
+                                }
+                                $new_revision = (int)$current_rec['revision'] + 1;
+
+                                $stmt_update_rec = $pdo->prepare("
+                                    UPDATE subject_common_records 
+                                    SET data_json = :json, 
+                                        revision = :rev, 
+                                        sdr_submitted = FALSE, 
+                                        monitor_reviewed = FALSE, 
+                                        manager_reviewed = FALSE, 
+                                        sdr_status = 'pending', 
+                                        updated_at = CURRENT_TIMESTAMP
+                                    WHERE id = :id
+                                ");
+                                $stmt_update_rec->execute([
+                                    'json' => json_encode($current_data),
+                                    'rev' => $new_revision,
+                                    'id' => $record_id
+                                ]);
+
+                                $stmt_aud->execute([
+                                    $study_id,
+                                    $q['subject_id'],
+                                    $record_id,
+                                    $current_rec['form_type'],
+                                    $q['field_name'],
+                                    $curr_val_db,
+                                    $target_new_val,
+                                    "Updated via query (" . $query_id . ") closure: " . ($remark ?: 'Closed with value update'),
+                                    'update',
+                                    $user_id
+                                ]);
+
+                                $stmt_aud->execute([
+                                    $study_id,
+                                    $q['subject_id'],
+                                    $record_id,
+                                    $current_rec['form_type'],
+                                    'sdr_status',
+                                    $current_rec['sdr_status'],
+                                    'pending',
+                                    "SDR Revoked: Query #" . $query_id . " closed with updated field value",
+                                    'sdr_revoked',
+                                    $user_id
+                                ]);
+
+                                $pdo->prepare("
+                                    INSERT INTO common_form_sdr_history (record_id, action, reviewed_revision, action_by)
+                                    VALUES (?, 'sdr_revoked', ?, ?)
+                                ")->execute([$record_id, $new_revision, $user_id]);
+
+                                if ($current_rec['form_type'] === 'AE') {
+                                    $ae_needs_record_sync = true;
+                                    $ae_needs_subject_sync = true;
+                                }
+                            }
+                        }
+                    } elseif ($eff_form_type_close === 'AE' && $q['field_name'] === 'ae_experienced' && in_array($target_new_val, ['Yes', 'No'], true)) {
+                        $stmtGate = $pdo->prepare("SELECT * FROM subject_common_form_status WHERE study_id = ? AND subject_id = ? AND form_type = 'AE' FOR UPDATE");
+                        $stmtGate->execute([$study_id, $q['subject_id']]);
+                        $gateRow = $stmtGate->fetch(PDO::FETCH_ASSOC);
+                        $oldGateVal = $gateRow ? ($gateRow['any_experienced'] ?? '') : '';
+                        if ($oldGateVal !== $target_new_val) {
+                            if ($gateRow) {
+                                $newGateRev = (int)($gateRow['revision'] ?? 1) + 1;
+                                $pdo->prepare("
+                                    UPDATE subject_common_form_status
+                                    SET any_experienced = ?, sdr_submitted = FALSE, monitor_reviewed = FALSE, manager_reviewed = FALSE, sdr_status = 'pending', revision = ?, updated_at = CURRENT_TIMESTAMP
+                                    WHERE id = ?
+                                ")->execute([$target_new_val, $newGateRev, $gateRow['id']]);
+                            }
+                            $stmt_aud->execute([
+                                $study_id, $q['subject_id'], null, 'AE', 'ae_experienced', $oldGateVal, $target_new_val,
+                                "Updated via query (" . $query_id . ") closure: " . ($remark ?: 'Closed with value update'),
+                                'update', $user_id
+                            ]);
+                            $ae_needs_subject_sync = true;
+                        }
+                    }
+                }
+            }
+
+            // Re-verify System Edit Check Query rule before allowing closure
+            if ($new_status === 'closed' && toBool($q['is_system_query'] ?? false) && !empty($q['rule_code'])) {
+                if ($record_id !== null && $record_id > 0 && $eff_form_type_close === 'AE') {
+                    $stmtChkRec = $pdo->prepare("SELECT data_json, is_voided FROM subject_common_records WHERE id = ?");
+                    $stmtChkRec->execute([$record_id]);
+                    $chkRec = $stmtChkRec->fetch(PDO::FETCH_ASSOC);
+                    if ($chkRec && !toBool($chkRec['is_voided'])) {
+                        $chkData = normalizeAeRecordData(json_decode($chkRec['data_json'] ?? '{}', true) ?: []);
+                        $chkEval = evaluateAeRecordChecks($chkData, getAeCodeLists($pdo, $study_id), null, false);
+                        foreach ($chkEval['discrepancy_checks'] as $dc) {
+                            if ($dc['rule_code'] === $q['rule_code']) {
+                                throw new Exception("Cannot close system edit-check query ({$q['rule_code']}): {$dc['message']}");
+                            }
+                        }
+                    }
+                } elseif ($q['rule_code'] === 'AE_OCCURRENCE_CONFLICT') {
+                    $chkAeState = getSubjectAeState($pdo, $study_id, $q['subject_id']);
+                    if ($chkAeState['conflict_occurrence_no_with_records']) {
+                        throw new Exception("Cannot close system edit-check query (AE_OCCURRENCE_CONFLICT): 'Were any adverse events experienced?' = No still conflicts with saved AE record(s).");
+                    }
+                }
+            }
+
             $stmt_upd = $pdo->prepare("UPDATE common_form_queries SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?");
             $stmt_upd->execute([$new_status, $query_id]);
 
@@ -1530,25 +2345,16 @@ try {
                 $user_id
             ]);
 
-            // Audit log for status change
-            $reason = '';
-            $change_type = '';
-            if ($new_status === 'closed') {
-                $reason = "Query (" . $query_id . ") Closed: " . ($remark ?: 'Closed by reviewer');
-                $change_type = 'query_closed';
-            } else {
-                $reason = "Requery (" . $query_id . "): " . ($remark ?: 'Reopened by reviewer');
-                $change_type = 'query_reopened';
-            }
+            $reason = ($new_status === 'closed')
+                ? "Query (" . $query_id . ") Closed: " . ($remark ?: 'Closed by reviewer')
+                : "Requery (" . $query_id . "): " . ($remark ?: 'Reopened by reviewer');
+            $change_type = ($new_status === 'closed') ? 'query_closed' : 'query_reopened';
 
-            $stmt_aud = $pdo->prepare("
-                INSERT INTO common_form_audit_log (study_id, subject_id, record_id, field_name, old_value, new_value, reason_for_change, change_type, action_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ");
             $stmt_aud->execute([
                 $study_id,
                 $q['subject_id'],
                 $record_id,
+                $eff_form_type_close ?: null,
                 $q['field_name'] ?: 'RECORD_QUERY',
                 null,
                 null,
@@ -1557,107 +2363,14 @@ try {
                 $user_id
             ]);
 
-            // IF QUERY IS CLOSED: Check if there was any field value change for this query
-            if ($new_status === 'closed' && !empty($q['field_name'])) {
-                // Check if the query had an answered step with a proposed new_value
-                $stmt_change = $pdo->prepare("
-                    SELECT old_value, new_value 
-                    FROM common_form_query_history 
-                    WHERE query_id = ? AND status_to = 'answered'
-                    ORDER BY id DESC LIMIT 1
-                ");
-                $stmt_change->execute([$query_id]);
-                $val_change = $stmt_change->fetch(PDO::FETCH_ASSOC);
-
-                // Fallback: check any query history entry with new_value
-                if (!$val_change || $val_change['new_value'] === null) {
-                    $stmt_change = $pdo->prepare("
-                        SELECT old_value, new_value 
-                        FROM common_form_query_history 
-                        WHERE query_id = ? AND new_value IS NOT NULL AND (old_value IS NULL OR old_value != new_value)
-                        ORDER BY id DESC LIMIT 1
-                    ");
-                    $stmt_change->execute([$query_id]);
-                    $val_change = $stmt_change->fetch(PDO::FETCH_ASSOC);
-                }
-
-                $target_new_val = $val_change['new_value'] ?? null;
-
-                if ($target_new_val !== null && $target_new_val !== '') {
-                    // Fetch current record
-                    $stmt_rec = $pdo->prepare("SELECT * FROM subject_common_records WHERE id = ? FOR UPDATE");
-                    $stmt_rec->execute([$record_id]);
-                    $current_rec = $stmt_rec->fetch(PDO::FETCH_ASSOC);
-
-                    if ($current_rec) {
-                        $current_data = json_decode($current_rec['data_json'] ?? '{}', true) ?: [];
-                        $curr_val_db = is_array($current_data[$q['field_name']] ?? null) 
-                            ? implode(', ', $current_data[$q['field_name']]) 
-                            : (string)($current_data[$q['field_name']] ?? '');
-
-                        // Field value has changed only if the proposed value differs from current record data
-                        if ($curr_val_db !== $target_new_val) {
-                            // 1. Update data_json with the new value
-                            if ($q['field_name'] === 'seriousness_criteria') {
-                                $current_data[$q['field_name']] = array_values(array_filter(array_map('trim', explode(',', (string)$target_new_val))));
-                            } else {
-                                $current_data[$q['field_name']] = $target_new_val;
-                            }
-                            $new_revision = (int)$current_rec['revision'] + 1;
-
-                            // 2. Revoke SDR state and update record
-                            $stmt_update_rec = $pdo->prepare("
-                                UPDATE subject_common_records 
-                                SET data_json = :json, 
-                                    revision = :rev, 
-                                    sdr_submitted = FALSE, 
-                                    monitor_reviewed = FALSE, 
-                                    manager_reviewed = FALSE, 
-                                    sdr_status = 'pending', 
-                                    updated_at = CURRENT_TIMESTAMP
-                                WHERE id = :id
-                            ");
-                            $stmt_update_rec->execute([
-                                'json' => json_encode($current_data),
-                                'rev' => $new_revision,
-                                'id' => $record_id
-                            ]);
-
-                            // 3. Log clinical update in common_form_audit_log
-                            $stmt_aud->execute([
-                                $study_id,
-                                $q['subject_id'],
-                                $record_id,
-                                $q['field_name'],
-                                $curr_val_db,
-                                $target_new_val,
-                                "Updated via query (" . $query_id . ") closure: " . ($remark ?: 'Closed with value update'),
-                                'update',
-                                $user_id
-                            ]);
-
-                            // 4. Log SDR Revocation in common_form_audit_log
-                            $stmt_aud->execute([
-                                $study_id,
-                                $q['subject_id'],
-                                $record_id,
-                                'sdr_status',
-                                $current_rec['sdr_status'],
-                                'pending',
-                                "SDR Revoked: Query #" . $query_id . " closed with updated field value",
-                                'sdr_revoked',
-                                $user_id
-                            ]);
-
-                            // 5. Log SDR history
-                            $stmt_sdr_hist = $pdo->prepare("
-                                INSERT INTO common_form_sdr_history (record_id, action, reviewed_revision, action_by)
-                                VALUES (?, 'sdr_revoked', ?, ?)
-                            ");
-                            $stmt_sdr_hist->execute([$record_id, $new_revision, $user_id]);
-                        }
-                    }
-                }
+            if ($ae_needs_record_sync && $record_id > 0) {
+                $stmtLatest = $pdo->prepare("SELECT data_json FROM subject_common_records WHERE id = ?");
+                $stmtLatest->execute([$record_id]);
+                $latestData = json_decode($stmtLatest->fetchColumn() ?: '{}', true) ?: [];
+                syncAeRecordEditCheckQueries($pdo, $study_id, $q['subject_id'], $record_id, $latestData, $user_id);
+            }
+            if ($ae_needs_subject_sync) {
+                syncSubjectAeQueries($pdo, $study_id, $q['subject_id'], $user_id);
             }
 
             $pdo->commit();

@@ -120,3 +120,48 @@ ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS pi_signed_off BOOLEA
 ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS pi_signed_by INT NULL;
 ALTER TABLE subject_common_records ADD COLUMN IF NOT EXISTS pi_signed_at TIMESTAMP NULL;
 
+-- Subject-level Common Form Gate Status (e.g., AE occurrence screening & form-level locking)
+CREATE TABLE IF NOT EXISTS subject_common_form_status (
+    id SERIAL PRIMARY KEY,
+    study_id INT NOT NULL REFERENCES studies(id) ON DELETE CASCADE,
+    subject_id INT NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+    form_type VARCHAR(10) NOT NULL,
+    any_experienced VARCHAR(10) NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'draft',
+    sdr_submitted BOOLEAN DEFAULT FALSE,
+    sdr_status VARCHAR(50) DEFAULT 'pending',
+    monitor_reviewed BOOLEAN DEFAULT FALSE,
+    monitor_reviewed_by INT NULL REFERENCES users(id),
+    monitor_reviewed_at TIMESTAMP NULL,
+    manager_reviewed BOOLEAN DEFAULT FALSE,
+    manager_reviewed_by INT NULL REFERENCES users(id),
+    manager_reviewed_at TIMESTAMP NULL,
+    pi_signed_off BOOLEAN DEFAULT FALSE,
+    pi_signed_by INT NULL REFERENCES users(id),
+    pi_signed_at TIMESTAMP NULL,
+    revision INT DEFAULT 1,
+    created_by INT NOT NULL REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (study_id, subject_id, form_type)
+);
+
+-- Allow subject-level AE edit-check/occurrence queries, audit logs, and SDR history
+ALTER TABLE common_form_queries ALTER COLUMN record_id DROP NOT NULL;
+ALTER TABLE common_form_queries ADD COLUMN IF NOT EXISTS form_type VARCHAR(10);
+ALTER TABLE common_form_queries ADD COLUMN IF NOT EXISTS rule_code VARCHAR(80);
+ALTER TABLE common_form_queries ADD COLUMN IF NOT EXISTS is_system_query BOOLEAN DEFAULT FALSE;
+ALTER TABLE common_form_audit_log ALTER COLUMN record_id DROP NOT NULL;
+ALTER TABLE common_form_audit_log ADD COLUMN IF NOT EXISTS form_type VARCHAR(10);
+ALTER TABLE common_form_sdr_history ALTER COLUMN record_id DROP NOT NULL;
+ALTER TABLE common_form_sdr_history ADD COLUMN IF NOT EXISTS subject_id INT NULL REFERENCES subjects(id) ON DELETE CASCADE;
+ALTER TABLE common_form_sdr_history ADD COLUMN IF NOT EXISTS form_type VARCHAR(10);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cfq_unique_open_record_rule
+    ON common_form_queries (study_id, subject_id, record_id, rule_code)
+    WHERE is_system_query = TRUE AND status != 'closed' AND record_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cfq_unique_open_subject_rule
+    ON common_form_queries (study_id, subject_id, form_type, rule_code)
+    WHERE is_system_query = TRUE AND status != 'closed' AND record_id IS NULL;
+

@@ -246,7 +246,8 @@ function deleteSubjectCascade($pdo, $subject_id) {
     $pdo->prepare("DELETE FROM common_form_audit_log WHERE record_id IN (SELECT id FROM subject_common_records WHERE subject_id = ?)")->execute([$subject_id]);
     $pdo->prepare("DELETE FROM cm_record_links WHERE cm_record_id IN (SELECT id FROM subject_common_records WHERE subject_id = ?) OR target_record_id IN (SELECT id FROM subject_common_records WHERE subject_id = ?)")->execute([$subject_id, $subject_id]);
     
-    // 9. Common Form Records
+    // 9. Common Form Records & Subject Common Form Status
+    try { $pdo->prepare("DELETE FROM subject_common_form_status WHERE subject_id = ?")->execute([$subject_id]); } catch (Throwable $e) {}
     $pdo->prepare("DELETE FROM subject_common_records WHERE subject_id = ?")->execute([$subject_id]);
     
     // 10. Repeating Instances
@@ -287,6 +288,7 @@ function deleteStudyCascade($pdo, $study_id) {
     $pdo->prepare("DELETE FROM cm_record_links WHERE cm_record_id IN (SELECT id FROM subject_common_records WHERE study_id = ?) OR target_record_id IN (SELECT id FROM subject_common_records WHERE study_id = ?)")->execute([$study_id, $study_id]);
     $pdo->prepare("DELETE FROM common_form_sdr_history WHERE record_id IN (SELECT id FROM subject_common_records WHERE study_id = ?)")->execute([$study_id]);
     $pdo->prepare("DELETE FROM common_form_audit_log WHERE study_id = ?")->execute([$study_id]);
+    try { $pdo->prepare("DELETE FROM subject_common_form_status WHERE study_id = ?")->execute([$study_id]); } catch (Throwable $e) {}
     $pdo->prepare("DELETE FROM subject_common_records WHERE study_id = ?")->execute([$study_id]);
     $pdo->prepare("DELETE FROM subject_repeating_instances WHERE study_id = ?")->execute([$study_id]);
     $pdo->prepare("DELETE FROM subjects WHERE study_id = ?")->execute([$study_id]);

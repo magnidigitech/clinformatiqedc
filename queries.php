@@ -13,6 +13,9 @@ $study_id = $_SESSION['active_study_id'] ?? null;
 if (!$study_id) redirect('dashboard.php');
 
 $pdo = getDB();
+try {
+    ensureCommonFormsTables($pdo);
+} catch (Throwable $e) {}
 
 // --- 1. Filter Parameters ---
 $status_filter = $_GET['status'] ?? ''; // e.g. 'all', 'new', 'open', 'answered', 'closed'
@@ -47,11 +50,35 @@ $stmt_counts = $pdo->prepare("
 $stmt_counts->execute($params_counts);
 $counts = $stmt_counts->fetch(PDO::FETCH_ASSOC);
 
-$total_count = $counts['total'] ?? 0;
-$new_count = $counts['new_count'] ?? 0;
-$open_count = $counts['open_count'] ?? 0;
-$answered_count = $counts['answered_count'] ?? 0;
-$closed_count = $counts['closed_count'] ?? 0;
+$total_count = (int)($counts['total'] ?? 0);
+$new_count = (int)($counts['new_count'] ?? 0);
+$open_count = (int)($counts['open_count'] ?? 0);
+$answered_count = (int)($counts['answered_count'] ?? 0);
+$closed_count = (int)($counts['closed_count'] ?? 0);
+
+try {
+    $stmt_cf_counts = $pdo->prepare("
+        SELECT
+            COUNT(*) as total,
+            SUM(CASE WHEN q.status = 'open' THEN 1 ELSE 0 END) as open_count,
+            SUM(CASE WHEN q.status = 'answered' THEN 1 ELSE 0 END) as answered_count,
+            SUM(CASE WHEN q.status = 'closed' THEN 1 ELSE 0 END) as closed_count
+        FROM common_form_queries q
+        JOIN subjects s ON q.subject_id = s.id
+        LEFT JOIN subject_common_records r ON q.record_id = r.id
+        WHERE q.study_id = ?
+        $creator_clause
+        AND (r.id IS NULL OR r.is_voided = FALSE)
+    ");
+    $stmt_cf_counts->execute($params_counts);
+    $cf_counts = $stmt_cf_counts->fetch(PDO::FETCH_ASSOC);
+    if ($cf_counts) {
+        $total_count += (int)($cf_counts['total'] ?? 0);
+        $open_count += (int)($cf_counts['open_count'] ?? 0);
+        $answered_count += (int)($cf_counts['answered_count'] ?? 0);
+        $closed_count += (int)($cf_counts['closed_count'] ?? 0);
+    }
+} catch (Throwable $e) {}
 
 $status_clause = "";
 $params = [$study_id];
@@ -105,6 +132,72 @@ $sql = "
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $queries = $stmt->fetchAll();
+
+// Merge Common Form Queries (AE, MH, CM, TA, USV + system edit checks)
+try {
+    $cf_status_clause = "";
+    $cf_params = [$study_id];
+    if (isRestrictedToCreatedSubjects()) {
+        $cf_status_clause .= " AND s.created_by = ?";
+        $cf_params[] = $user_id;
+    }
+    if ($status_filter && $status_filter !== 'all') {
+        $cf_status_clause .= " AND q.status = ?";
+        $cf_params[] = $status_filter;
+    }
+    if ($site_filter) {
+        $cf_status_clause .= " AND s.site_name = ?";
+        $cf_params[] = $site_filter;
+    }
+    if ($subject_filter) {
+        $cf_status_clause .= " AND (s.subject_code LIKE ? OR q.query_text LIKE ? OR COALESCE(q.rule_code, '') LIKE ?)";
+        $cf_params[] = "%$subject_filter%";
+        $cf_params[] = "%$subject_filter%";
+        $cf_params[] = "%$subject_filter%";
+    }
+
+    $sql_cf = "
+        SELECT
+            q.id,
+            q.study_id,
+            q.subject_id,
+            q.record_id,
+            COALESCE(q.form_type, r.form_type, 'AE') AS cf_form_type,
+            r.record_number,
+            q.field_name,
+            q.rule_code,
+            q.is_system_query,
+            q.query_text,
+            q.status,
+            q.created_at,
+            s.subject_code,
+            s.site_name,
+            COALESCE(u.name, u.username, 'System') AS created_by_name,
+            COALESCE(q.raised_by_role, (SELECT role_name FROM study_users WHERE user_id = q.created_by AND study_id = q.study_id LIMIT 1), 'Data Monitor') AS raised_by_role
+        FROM common_form_queries q
+        JOIN subjects s ON q.subject_id = s.id
+        LEFT JOIN subject_common_records r ON q.record_id = r.id
+        LEFT JOIN users u ON q.created_by = u.id
+        WHERE q.study_id = ?
+        AND (r.id IS NULL OR r.is_voided = FALSE)
+        $cf_status_clause
+        ORDER BY q.created_at DESC
+    ";
+    $stmt_cf = $pdo->prepare($sql_cf);
+    $stmt_cf->execute($cf_params);
+    foreach ($stmt_cf->fetchAll(PDO::FETCH_ASSOC) as $cfq) {
+        $cfType = strtoupper($cfq['cf_form_type'] ?: 'AE');
+        $cfSubLabel = $cfq['record_number'] ?: 'Subject Screening Gate';
+        $cfq['is_common_query'] = true;
+        $cfq['form_name'] = "Common Form ({$cfType}) — {$cfSubLabel}";
+        $cfq['field_label'] = ($cfq['field_name'] ?: 'Record') . (!empty($cfq['rule_code']) ? " [{$cfq['rule_code']}]" : '');
+        $queries[] = $cfq;
+    }
+
+    usort($queries, function($a, $b) {
+        return strtotime($b['created_at'] ?? '1970-01-01') <=> strtotime($a['created_at'] ?? '1970-01-01');
+    });
+} catch (Throwable $e) {}
 
 // --- 3. Dynamic Title ---
 $page_title = "Queries";
@@ -249,16 +342,21 @@ else $page_title = ucfirst($status_filter) . " Queries";
                                     <div style="color: var(--text-light);"><?php echo formatDate($q['created_at']); ?></div>
                                 </td>
                                 <td style="padding: 1rem;">
-                                    <?php 
-                                    $link_params = "subject_id=" . $q['subject_id'] . "&form_id=" . $q['form_id'];
-                                    if ($q['repeating_module_id']) {
-                                        $link_params .= "&module_id=" . $q['repeating_module_id'] . "&instance_id=" . $q['repeating_instance_id'];
-                                    } else {
-                                        $link_params .= "&visit_id=" . $q['visit_id'];
-                                    }
-                                    $link_params .= "&focus_query=" . $q['id'] . "#field-" . $q['field_id'];
-                                    ?>
-                                    <a href="subject_data_entry.php?<?php echo $link_params; ?>" class="btn btn-sm btn-outline">View</a>
+                                    <?php if (!empty($q['is_common_query'])): ?>
+                                        <?php $cf_slug = strtolower($q['cf_form_type'] ?? 'ae'); ?>
+                                        <a href="subject_data_entry.php?subject_id=<?php echo (int)$q['subject_id']; ?>&common_form=<?php echo urlencode($cf_slug); ?>" class="btn btn-sm btn-outline">View</a>
+                                    <?php else: ?>
+                                        <?php 
+                                        $link_params = "subject_id=" . $q['subject_id'] . "&form_id=" . $q['form_id'];
+                                        if ($q['repeating_module_id']) {
+                                            $link_params .= "&module_id=" . $q['repeating_module_id'] . "&instance_id=" . $q['repeating_instance_id'];
+                                        } else {
+                                            $link_params .= "&visit_id=" . $q['visit_id'];
+                                        }
+                                        $link_params .= "&focus_query=" . $q['id'] . "#field-" . $q['field_id'];
+                                        ?>
+                                        <a href="subject_data_entry.php?<?php echo $link_params; ?>" class="btn btn-sm btn-outline">View</a>
+                                    <?php endif; ?>
                                 </td>
                             </tr>
                             <?php endforeach; ?>

@@ -1,6 +1,7 @@
 <?php
 require_once 'includes/functions.php';
 require_once 'includes/auth.php';
+require_once 'includes/ae_helpers.php';
 
 requireLogin();
 
@@ -694,6 +695,241 @@ if ($current_form_id && $subject_id) {
         
         .progress-bar { height: 4px; background: #e2e8f0; border-radius: 2px; margin-top: 0.5rem; overflow: hidden; }
         .progress-fill { height: 100%; background: var(--primary-color); width: 0%; transition: width 0.3s; }
+
+        /* Accessible AE Validation, Radio Fieldsets & Responsive Common Tables */
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip-path: inset(50%);
+            white-space: nowrap;
+            border: 0;
+        }
+        .ae-fieldset {
+            border: 0;
+            padding: 0;
+            margin: 0;
+            min-inline-size: 0;
+            background: transparent;
+        }
+        .ae-fieldset.ae-fieldset-invalid .ae-radio-group {
+            padding: 4px;
+            border-radius: 8px;
+            background: #fef2f2;
+            outline: 1px solid #d93025;
+        }
+        .ae-fieldset legend {
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: #1e293b;
+            padding: 0;
+            margin-bottom: 0.35rem;
+        }
+        .ae-radio-group {
+            display: inline-flex;
+            flex-wrap: wrap;
+            gap: 0.45rem;
+            margin-top: 0.15rem;
+        }
+        .ae-radio-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.38rem 0.85rem;
+            min-height: 36px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            background: #ffffff;
+            color: #334155;
+            font-size: 0.84rem;
+            font-weight: 500;
+            cursor: pointer;
+            box-shadow: 0 1px 1px rgba(15, 23, 42, 0.03);
+            transition: border-color 0.15s, background-color 0.15s, box-shadow 0.15s;
+        }
+        .ae-radio-pill:hover {
+            background: #f8fafc;
+            border-color: #94a3b8;
+        }
+        .ae-radio-pill:has(input:checked) {
+            background: #eff6ff;
+            border-color: #2563eb;
+            color: #1d4ed8;
+            font-weight: 600;
+            box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.16);
+        }
+        .ae-radio-pill input[type="radio"] {
+            margin: 0;
+            accent-color: #2563eb;
+            width: 15px;
+            height: 15px;
+        }
+        .ae-section-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .ae-section-header {
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+            padding: 0.6rem 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+        }
+        .ae-section-title {
+            font-size: 0.78rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #334155;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .ae-section-step {
+            width: 20px;
+            height: 20px;
+            border-radius: 99px;
+            background: #e2e8f0;
+            color: #334155;
+            font-size: 0.72rem;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .ae-section-body {
+            padding: 1rem 1.15rem;
+            display: grid;
+            gap: 1rem;
+        }
+        .ae-criteria-list {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .ae-criterion-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 0.55rem 0.9rem;
+            border-bottom: 1px solid #f1f5f9;
+            background: #ffffff;
+        }
+        .ae-criterion-row:last-child {
+            border-bottom: none;
+        }
+        .ae-criterion-row:hover {
+            background: #f8fafc;
+        }
+        .ae-criterion-row .ae-radio-group {
+            margin-top: 0;
+            flex-shrink: 0;
+        }
+        .ae-criterion-row .ae-radio-pill {
+            min-height: 32px;
+            padding: 0.25rem 0.7rem;
+            font-size: 0.8rem;
+        }
+        .ae-criterion-row.is-invalid {
+            background: #fef2f2;
+        }
+        :is(.form-input, .crf-input):is(:user-invalid, .ae-field-invalid) {
+            border-color: #d93025 !important;
+            background-color: #fef2f2 !important;
+        }
+        .ae-error-msg {
+            display: none;
+            color: #b91c1c;
+            font-size: 0.78rem;
+            font-weight: 500;
+            margin-top: 0.35rem;
+            line-height: 1.35;
+        }
+        .ae-error-msg.is-visible {
+            display: block;
+        }
+        .ae-reconcile-card {
+            background: #fffbeb;
+            border: 1px solid #f59e0b;
+            border-left: 4px solid #d97706;
+            border-radius: 8px;
+            padding: 0.85rem 1rem;
+            font-size: 0.825rem;
+            color: #78350f;
+            margin-top: 0.5rem;
+        }
+        .ae-sae-banner {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-left: 4px solid #dc2626;
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            color: #991b1b;
+            font-size: 0.82rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 0.5rem;
+        }
+        .cf-table-wrapper {
+            container-type: inline-size;
+            overflow: auto;
+            max-inline-size: 100%;
+        }
+        .cf-table-wrapper:focus-visible {
+            outline: 2px solid var(--accent-color);
+            outline-offset: -2px;
+        }
+        @container (width < 680px) {
+            .cf-table-wrapper table,
+            .cf-table-wrapper tbody,
+            .cf-table-wrapper tr,
+            .cf-table-wrapper td {
+                display: block;
+                width: 100%;
+            }
+            .cf-table-wrapper thead {
+                display: none;
+            }
+            .cf-table-wrapper tr {
+                border-bottom: 2px solid #cbd5e1 !important;
+                padding: 0.6rem 0.75rem;
+                margin-bottom: 0.5rem;
+            }
+            .cf-table-wrapper td {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 0.75rem;
+                padding: 0.4rem 0.25rem !important;
+                text-align: right !important;
+                white-space: normal !important;
+            }
+            .cf-table-wrapper td[data-label]::before {
+                content: attr(data-label) ": ";
+                font-weight: 700;
+                color: #475569;
+                text-align: left;
+                flex-shrink: 0;
+            }
+        }
+        @media (pointer: coarse) {
+            .ae-radio-pill,
+            #modalCommonFormEditor button,
+            #modalCommonFormEditor :is(input, select, textarea) {
+                min-height: 48px;
+                font-size: max(1rem, 1em);
+            }
+        }
         
     </style>
 </head>
@@ -971,7 +1207,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                             <h1 style="font-size: 1.5rem; margin: 0; display: flex; align-items: center; gap: 0.5rem; color: #0f172a;">
                                 <?php 
                                     if ($current_common_form === 'mh') echo '<span class="material-icons-round" style="color: #2563eb;">history_edu</span> Medical History (MH)';
-                                    elseif ($current_common_form === 'ae') echo '<span class="material-icons-round" style="color: #d97706;">warning_amber</span> Adverse Events (AE)';
+                                    elseif ($current_common_form === 'ae') echo '<span class="material-icons-round" style="color: #0284c7;">medical_information</span> Adverse Events (AE)';
                                     elseif ($current_common_form === 'cm') echo '<span class="material-icons-round" style="color: #059669;">medication</span> Concomitant Medications (CM)';
                                     elseif ($current_common_form === 'ta') echo '<span class="material-icons-round" style="color: #8b5cf6;">radar</span> Tumor Assessment (TA)';
                                     elseif ($current_common_form === 'usv') echo '<span class="material-icons-round" style="color: #0284c7;">more_time</span> Unscheduled Visits (USV)';
@@ -981,7 +1217,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                         </div>
                         
                         <?php if ($is_data_editor): ?>
-                            <button class="btn btn-primary" onclick="openCommonFormModal(0, '<?php echo strtoupper($current_common_form); ?>')" style="display: flex; align-items: center; gap: 0.4rem; padding: 0.6rem 1.25rem; font-weight: 600;">
+                            <button id="btnAddCommonForm" class="btn btn-primary" onclick="openCommonFormModal(0, '<?php echo strtoupper($current_common_form); ?>')" style="display: flex; align-items: center; gap: 0.4rem; padding: 0.6rem 1.25rem; font-weight: 600;">
                                 <span class="material-icons-round" style="font-size: 1.1rem;">add</span>
                                 Add Form
                             </button>
@@ -989,7 +1225,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                     </div>
 
                     <!-- Filter & Search Toolbar -->
-                    <div style="padding: 1rem 1.5rem; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: space-between;">
+                    <div id="commonFormsFilterToolbar" style="padding: 1rem 1.5rem; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: space-between;">
                         <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
                             <div style="position: relative; width: 260px;">
                                 <span class="material-icons-round" style="position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 1.1rem;">search</span>
@@ -1017,7 +1253,7 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
                         </div>
                     </div>
 
-                    <div class="crf-body" style="padding: 0; overflow-x: auto; -webkit-overflow-scrolling: touch;">
+                    <div id="commonRecordsSectionBody" class="crf-body cf-table-wrapper" tabindex="0" role="region" aria-label="Common form records table" style="padding: 0;">
                         <table id="commonRecordsTable">
                             <thead style="background: #ffffff; border-bottom: 2px solid #e2e8f0; color: #475569;">
                                 <tr id="commonTableHead">
@@ -3751,7 +3987,8 @@ $all_mandatory_completed = $current_form_id ? areAllMandatoryFieldsCompletedPHP(
             <input type="hidden" id="cfRecordId" value="0">
             <input type="hidden" id="cfFormType" value="MH">
             
-            <div id="cfValidationAlert" style="display: none; padding: 0.85rem 1rem; background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; border-radius: 8px; font-size: 0.875rem; margin-bottom: 1.25rem;"></div>
+            <div id="cfValidationAlert" role="alert" style="display: none; padding: 0.85rem 1rem; background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; border-radius: 8px; font-size: 0.875rem; margin-bottom: 1.25rem;"></div>
+            <div id="aeAriaLiveAnnouncer" class="visually-hidden" aria-live="polite"></div>
 
             <form id="commonFormElement" onsubmit="event.preventDefault();">
                 <div id="cfDynamicFields">
@@ -4104,7 +4341,14 @@ function loadCommonRecords(targetFormType = null) {
 
 
 
+        if (typeToLoad === 'AE' && res.ae_meta) {
+            window.currentAeMeta = res.ae_meta;
+            syncAeQueryFieldMap(res.ae_meta);
+            renderAEGateState(res.ae_meta, res.records || []);
+        }
+
         if (typeToLoad === COMMON_FORM_TYPE) {
+            window.currentCommonRecords = res.records || [];
             renderCommonTable(res.records, typeToLoad);
         }
     })
@@ -4134,13 +4378,13 @@ function renderCommonTable(records, formType) {
         `;
     } else if (formType === 'AE') {
         thead.innerHTML = `
-            <th style="padding: 0.85rem 1rem; text-align: left; white-space: nowrap;">AE Number</th>
-            <th style="padding: 0.85rem 1rem; text-align: left;">AE Term / Verbatim</th>
-            <th style="padding: 0.85rem 1rem; text-align: left; white-space: nowrap;">Start Date</th>
-            <th style="padding: 0.85rem 1rem; text-align: left; white-space: nowrap;">End Date</th>
+            <th style="padding: 0.85rem 1rem; text-align: left; white-space: nowrap;">AE #</th>
+            <th style="padding: 0.85rem 1rem; text-align: left; min-width: 170px;">Adverse Event Term</th>
+            <th style="padding: 0.85rem 1rem; text-align: left; white-space: nowrap;">Dates</th>
             <th style="padding: 0.85rem 1rem; text-align: center; white-space: nowrap;">Severity</th>
-            <th style="padding: 0.85rem 1rem; text-align: center; white-space: nowrap;">Seriousness</th>
-            <th style="padding: 0.85rem 1rem; text-align: left; white-space: nowrap;">Outcome</th>
+            <th style="padding: 0.85rem 1rem; text-align: center; white-space: nowrap;">Serious</th>
+            <th style="padding: 0.85rem 1rem; text-align: center; white-space: nowrap;">Related</th>
+            <th style="padding: 0.85rem 1rem; text-align: left; min-width: 165px;">Action &amp; Outcome</th>
             <th style="padding: 0.85rem 1rem; text-align: center; white-space: nowrap;">Status</th>
             <th style="padding: 0.85rem 1rem; text-align: center; white-space: nowrap;">SDR</th>
             <th style="padding: 0.85rem 1rem; text-align: center; white-space: nowrap;">Queries</th>
@@ -4190,12 +4434,18 @@ function renderCommonTable(records, formType) {
     }
 
     if (records.length === 0) {
+        const aeMetaSt = (formType === 'AE' && window.currentAeMeta) ? (window.currentAeMeta.subject_state || {}) : null;
+        const isPiSignedOff = (aeMetaSt && aeMetaSt.pi_signed_off);
+        const hideAdd = !USER_CAN_EDIT_CONTENT || isPiSignedOff;
+        const emptySubMsg = (formType === 'AE')
+            ? 'No Adverse Events recorded yet for this subject.'
+            : `No ${formType} records found for this subject.`;
         tbody.innerHTML = `
             <tr>
-                <td colspan="11" style="text-align: center; padding: 3.5rem; color: #94a3b8;">
-                    <span class="material-icons-round" style="font-size: 3rem; color: #cbd5e1; display: block; margin-bottom: 0.75rem;">playlist_remove</span>
-                    <p style="font-size: 1rem; font-weight: 500; color: #475569; margin: 0 0 0.5rem 0;">No ${formType} records found for this subject.</p>
-                    ${USER_CAN_EDIT_CONTENT ? `<button class="btn btn-sm btn-primary" onclick="openCommonFormModal(0, '${formType}')" style="margin-top: 0.5rem;">+ Add ${formType} Form</button>` : ''}
+                <td colspan="11" style="text-align: center; padding: 3rem 1.5rem; color: #94a3b8;">
+                    <span class="material-icons-round" style="font-size: 2.75rem; color: #cbd5e1; display: block; margin-bottom: 0.65rem;">playlist_add</span>
+                    <p style="font-size: 0.95rem; font-weight: 500; color: #475569; margin: 0 0 0.65rem 0;">${emptySubMsg}</p>
+                    ${!hideAdd ? `<button class="btn btn-sm btn-primary" onclick="openCommonFormModal(0, '${formType}')" style="margin-top: 0.25rem;">+ Add ${formType} Form</button>` : ''}
                 </td>
             </tr>
         `;
@@ -4295,29 +4545,48 @@ function renderCommonTable(records, formType) {
             if (d.severity === 'Severe') { sevBg = '#fef2f2'; sevColor = '#dc2626'; }
             else if (d.severity === 'Moderate') { sevBg = '#fff7ed'; sevColor = '#c2410c'; }
 
+            const critYesCount = AE_SERIOUSNESS_CRITERIA_DEFS.filter(c => d[c.key] === 'Yes').length;
+            const seriousDisplay = d.seriousness === 'Yes'
+                ? `Yes (${critYesCount})`
+                : (d.seriousness === 'No' ? 'No' : '-');
+            const endSubline = d.ongoing === 'Yes'
+                ? '<span style="color: #0369a1; font-weight: 600;">Ongoing</span>'
+                : (d.end_date ? `<span style="color: #64748b;">&rarr; ${escapeHtml(d.end_date)}</span>` : '<span style="color: #b45309;">End date blank</span>');
+            const hasConflict = !isVoided && r.ae_checks && r.ae_checks.discrepancy_checks && r.ae_checks.discrepancy_checks.length > 0;
+            const actionDisp = d.action_taken === 'Other' && d.other_action_specify
+                ? `Other: ${d.other_action_specify}`
+                : (d.action_taken || '-');
+
             html += `
                 <tr style="${rowStyle}">
-                    <td style="padding: 0.85rem 1rem; font-weight: 700; color: #1e293b; vertical-align: middle; white-space: nowrap;">
+                    <td data-label="AE #" style="padding: 0.85rem 1rem; font-weight: 700; color: #1e293b; vertical-align: middle; white-space: nowrap;">
                         ${escapeHtml(r.record_number)}
                         ${isVoided ? '<span style="background: #dc2626; color: white; font-size: 0.65rem; padding: 1px 5px; border-radius: 4px; margin-left: 4px;">VOIDED</span>' : ''}
+                        ${hasConflict ? '<span style="background: #fef3c7; color: #92400e; border: 1px solid #f59e0b; font-size: 0.65rem; padding: 1px 5px; border-radius: 4px; margin-left: 4px;" title="Edit check discrepancy requires attention">CHECK</span>' : ''}
                     </td>
-                    <td style="padding: 0.85rem 1rem; color: #0f172a; font-weight: 600; vertical-align: middle;">
+                    <td data-label="Adverse Event Term" style="padding: 0.85rem 1rem; color: #0f172a; font-weight: 600; vertical-align: middle;">
                         ${escapeHtml(d.ae_term || 'Untitled')}
                         ${relCmHtml}
                     </td>
-                    <td style="padding: 0.85rem 1rem; color: #475569; vertical-align: middle; white-space: nowrap;">${escapeHtml(d.start_date || '-')}</td>
-                    <td style="padding: 0.85rem 1rem; color: #475569; vertical-align: middle; white-space: nowrap;">${escapeHtml(d.end_date || '-')}</td>
-                    <td style="padding: 0.85rem 1rem; text-align: center; vertical-align: middle; white-space: nowrap;">
+                    <td data-label="Dates" style="padding: 0.85rem 1rem; color: #0f172a; vertical-align: middle; white-space: nowrap;">
+                        <div style="font-weight: 500;">${escapeHtml(d.start_date || '-')}</div>
+                        <div style="font-size: 0.74rem; margin-top: 2px;">${endSubline}</div>
+                    </td>
+                    <td data-label="Severity" style="padding: 0.85rem 1rem; text-align: center; vertical-align: middle; white-space: nowrap;">
                         <span style="background: ${sevBg}; color: ${sevColor}; padding: 2px 8px; border-radius: 99px; font-weight: 600; font-size: 0.75rem; white-space: nowrap;">${escapeHtml(d.severity || '-')}</span>
                     </td>
-                    <td style="padding: 0.85rem 1rem; text-align: center; vertical-align: middle; white-space: nowrap;">
-                        <span style="font-weight: 700; color: ${d.seriousness === 'Yes' ? '#dc2626' : '#64748b'}; white-space: nowrap;">${escapeHtml(d.seriousness || 'No')}</span>
+                    <td data-label="Serious" style="padding: 0.85rem 1rem; text-align: center; vertical-align: middle; white-space: nowrap;">
+                        <span style="font-weight: 700; color: ${d.seriousness === 'Yes' ? '#dc2626' : '#64748b'}; white-space: nowrap;">${escapeHtml(seriousDisplay)}</span>
                     </td>
-                    <td style="padding: 0.85rem 1rem; color: #475569; vertical-align: middle;">${escapeHtml(d.outcome || '-')}</td>
-                    <td style="padding: 0.85rem 1rem; text-align: center; vertical-align: middle; white-space: nowrap;">${statusBadge}</td>
-                    <td style="padding: 0.85rem 1rem; text-align: center; vertical-align: middle; white-space: nowrap;">${sdrBadge}</td>
-                    <td style="padding: 0.85rem 1rem; text-align: center; vertical-align: middle; white-space: nowrap;">${queryBadge}</td>
-                    <td style="padding: 0.85rem 1rem; text-align: right; vertical-align: middle; white-space: nowrap;">
+                    <td data-label="Related" style="padding: 0.85rem 1rem; text-align: center; vertical-align: middle; white-space: nowrap;">${escapeHtml(d.causality || '-')}</td>
+                    <td data-label="Action & Outcome" style="padding: 0.85rem 1rem; vertical-align: middle;">
+                        <div style="color: #0f172a; font-weight: 500; font-size: 0.82rem;">${escapeHtml(actionDisp)}</div>
+                        <div style="color: #64748b; font-size: 0.75rem; margin-top: 2px;">${escapeHtml(d.outcome || '-')}</div>
+                    </td>
+                    <td data-label="Status" style="padding: 0.85rem 1rem; text-align: center; vertical-align: middle; white-space: nowrap;">${statusBadge}</td>
+                    <td data-label="SDR" style="padding: 0.85rem 1rem; text-align: center; vertical-align: middle; white-space: nowrap;">${sdrBadge}</td>
+                    <td data-label="Queries" style="padding: 0.85rem 1rem; text-align: center; vertical-align: middle; white-space: nowrap;">${queryBadge}</td>
+                    <td data-label="Actions" style="padding: 0.85rem 1rem; text-align: right; vertical-align: middle; white-space: nowrap;">
                         <div style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; white-space: nowrap;">
                             ${renderRecordActionButtons(r, 'AE')}
                         </div>
@@ -4538,6 +4807,18 @@ function openCommonFormModal(recordId, formType, defaultData = null) {
         formType = String(formType).toUpperCase();
     }
 
+    if (recordId === 0 && formType === 'AE') {
+        const aeSt = (window.currentAeMeta && window.currentAeMeta.subject_state) ? window.currentAeMeta.subject_state : null;
+        if (aeSt && aeSt.pi_signed_off) {
+            showToast('AE form has been Signed Off by Principal Investigator and is locked.', 'warning');
+            return;
+        }
+        if (aeSt && aeSt.saved_any_experienced === 'No') {
+            showToast("Save 'Were any adverse events experienced?' = Yes first before adding AE records.", 'warning');
+            return;
+        }
+    }
+
     document.getElementById('cfRecordId').value = recordId;
     document.getElementById('cfFormType').value = formType;
     document.getElementById('cfValidationAlert').style.display = 'none';
@@ -4665,7 +4946,7 @@ function setupEditorForm(rec, formType) {
 
     let iconHtml = '';
     if (formType === 'MH') iconHtml = '<span class="material-icons-round" style="color: #2563eb; font-size: 1.35rem;">history_edu</span>';
-    else if (formType === 'AE') iconHtml = '<span class="material-icons-round" style="color: #d97706; font-size: 1.35rem;">warning_amber</span>';
+    else if (formType === 'AE') iconHtml = '<span class="material-icons-round" style="color: #0284c7; font-size: 1.35rem;">medical_information</span>';
     else if (formType === 'CM') iconHtml = '<span class="material-icons-round" style="color: #059669; font-size: 1.35rem;">medication</span>';
     else if (formType === 'TA') iconHtml = '<span class="material-icons-round" style="color: #8b5cf6; font-size: 1.35rem;">radar</span>';
     else if (formType === 'USV') iconHtml = '<span class="material-icons-round" style="color: #0284c7; font-size: 1.35rem;">more_time</span>';
@@ -4824,118 +5105,275 @@ function setupEditorForm(rec, formType) {
         onMHOngoingChange();
 
     } else if (formType === 'AE') {
-        const critList = Array.isArray(d.seriousness_criteria) ? d.seriousness_criteria : (typeof d.seriousness_criteria === 'string' ? d.seriousness_criteria.split(',') : []);
-        const isSerious = d.seriousness === 'Yes';
+        const aeMetaRec = rec.ae_meta || window.currentAeMeta || null;
+        if (rec.ae_meta && !window.currentAeMeta) {
+            window.currentAeMeta = rec.ae_meta;
+        }
+        const codeLists = getAeActiveCodeLists(aeMetaRec);
+        const critDefs = AE_SERIOUSNESS_CRITERIA_DEFS;
+        const normD = normalizeAeRecordClient(d);
+
+        window.aeOriginalLoadedData = Object.assign({}, normD);
+        window.aePendingReconciliations = {};
+
+        const aeExpVal = normD.ae_experienced || (normD.ae_term === 'No adverse events experienced' ? 'No' : 'Yes');
+        const isOngoingNo = normD.ongoing === 'No';
+        const isSeriousYes = normD.seriousness === 'Yes';
+        const isCausalityYes = normD.causality === 'Yes';
+        const isActionOther = normD.action_taken === 'Other';
+
+        const renderAeRadioField = (fieldKey, labelText, options, currentVal, required, onchangeFn = '') => {
+            const safeFn = onchangeFn ? `onchange="${onchangeFn}"` : `onchange="onAeInputChanged('${fieldKey}')"`;
+            const pills = (options || []).map((opt, idx) => {
+                const val = (typeof opt === 'object' && opt !== null) ? opt.value : opt;
+                const lbl = (typeof opt === 'object' && opt !== null) ? opt.label : opt;
+                const checked = (currentVal === val) ? 'checked' : '';
+                const inpId = `inp_ae_${fieldKey}_${idx}`;
+                return `
+                    <label class="ae-radio-pill" for="${inpId}">
+                        <input type="radio" id="${inpId}" name="ae_${fieldKey}" value="${escapeHtml(val)}" ${checked} ${safeFn} aria-invalid="false">
+                        <span>${escapeHtml(lbl)}</span>
+                    </label>
+                `;
+            }).join('');
+
+            return `
+                <div>
+                    ${renderCommonFieldHeader(rec, fieldKey, labelText, required)}
+                    <fieldset id="ae_fs_${fieldKey}" class="ae-fieldset">
+                        <legend class="visually-hidden">${escapeHtml(labelText)}</legend>
+                        <div class="ae-radio-group" role="radiogroup" aria-label="${escapeHtml(labelText)}">
+                            ${pills}
+                        </div>
+                        <div id="ae_err_${fieldKey}" class="ae-error-msg"></div>
+                    </fieldset>
+                </div>
+            `;
+        };
+
+        const renderAeCriterionRow = (crit) => {
+            const currentVal = normD[crit.key] || '';
+            const pills = [{label: 'Yes', value: 'Yes'}, {label: 'No', value: 'No'}].map((opt, idx) => {
+                const checked = (currentVal === opt.value) ? 'checked' : '';
+                const inpId = `inp_ae_${crit.key}_${idx}`;
+                return `
+                    <label class="ae-radio-pill" for="${inpId}">
+                        <input type="radio" id="${inpId}" name="ae_${crit.key}" value="${opt.value}" ${checked} onchange="onAeInputChanged('${crit.key}')" aria-invalid="false">
+                        <span>${opt.label}</span>
+                    </label>
+                `;
+            }).join('');
+
+            return `
+                <div class="ae-criterion-row">
+                    <div style="flex: 1 1 auto; min-width: 0;">
+                        ${renderCommonFieldHeader(rec, crit.key, crit.label, false)}
+                        <div id="ae_err_${crit.key}" class="ae-error-msg" style="margin-top: 0.2rem;"></div>
+                    </div>
+                    <fieldset id="ae_fs_${crit.key}" class="ae-fieldset" style="flex-shrink: 0;">
+                        <legend class="visually-hidden">${escapeHtml(crit.label)}</legend>
+                        <div class="ae-radio-group" role="radiogroup" aria-label="${escapeHtml(crit.label)}">
+                            ${pills}
+                        </div>
+                    </fieldset>
+                </div>
+            `;
+        };
+
+        const renderAeSelectOptions = (options, currentVal) => {
+            let out = '<option value="">-- Choose --</option>';
+            (options || []).forEach(opt => {
+                const val = (typeof opt === 'object' && opt !== null) ? opt.value : opt;
+                const lbl = (typeof opt === 'object' && opt !== null) ? opt.label : opt;
+                const sel = (currentVal === val) ? 'selected' : '';
+                out += `<option value="${escapeHtml(val)}" ${sel}>${escapeHtml(lbl)}</option>`;
+            });
+            return out;
+        };
+
+        const severityCtrlHtml = (codeLists.severity.options || []).length <= 5
+            ? renderAeRadioField('severity', 'Severity', codeLists.severity.options, normD.severity, true)
+            : `
+                <div>
+                    ${renderCommonFieldHeader(rec, 'severity', 'Severity', true)}
+                    <select id="inp_ae_severity" class="form-input" onchange="onAeInputChanged('severity')" aria-invalid="false" style="width: 100%;">
+                        ${renderAeSelectOptions(codeLists.severity.options, normD.severity)}
+                    </select>
+                    <div id="ae_err_severity" class="ae-error-msg"></div>
+                </div>
+            `;
+
+        const defaultGroupsModal = Object.entries(codeLists)
+            .filter(([, meta]) => meta && meta.requires_protocol_review)
+            .map(([, meta]) => meta.recommended_group_name);
+        const modalCodeNote = defaultGroupsModal.length > 0
+            ? `<div style="font-size: 0.75rem; color: #64748b; padding: 0.15rem 0.25rem; display: flex; align-items: center; gap: 0.35rem;"><span class="material-icons-round" style="font-size: 0.95rem; color: #94a3b8;">tune</span><span>Using configurable default option lists for <strong>${escapeHtml(defaultGroupsModal.join(', '))}</strong> (override anytime via Study Option Groups).</span></div>`
+            : '';
+
+        const criteriaHtml = critDefs.map(renderAeCriterionRow).join('');
 
         fieldsBox.innerHTML = `
-            <div style="display: grid; grid-template-columns: 1fr; gap: 1.25rem;">
-                <div>
-                    ${renderCommonFieldHeader(rec, 'ae_term', '1. AE Term / Verbatim', true)}
-                    <input type="text" id="inp_ae_term" class="form-input" value="${escapeHtml(d.ae_term || '')}" style="width: 100%;">
-                </div>
+            <div style="display: grid; grid-template-columns: 1fr; gap: 1rem;">
+                <!-- Question: Were any adverse events experienced? -->
+                <div class="ae-section-card">
+                    <div class="ae-section-body" style="padding: 1.15rem 1.25rem;">
+                        <fieldset id="ae_fs_ae_experienced" class="ae-fieldset">
+                            <legend class="visually-hidden">Were any adverse events experienced?</legend>
+                            <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem;">
+                                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 1rem;">
+                                    <span style="font-size: 0.95rem; font-weight: 600; color: #0f172a;">Were any adverse events experienced? <span style="color: #dc2626;">*</span></span>
+                                    <div class="ae-radio-group" role="radiogroup" aria-label="Were any adverse events experienced?" style="margin-top: 0;">
+                                        <label class="ae-radio-pill" for="inp_ae_experienced_yes">
+                                            <input type="radio" id="inp_ae_experienced_yes" name="ae_experienced" value="Yes" ${aeExpVal === 'Yes' ? 'checked' : ''} onchange="onAEExperiencedChange()" aria-invalid="false">
+                                            <span>Yes</span>
+                                        </label>
+                                        <label class="ae-radio-pill" for="inp_ae_experienced_no">
+                                            <input type="radio" id="inp_ae_experienced_no" name="ae_experienced" value="No" ${aeExpVal === 'No' ? 'checked' : ''} onchange="onAEExperiencedChange()" aria-invalid="false">
+                                            <span>No</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="ae_err_ae_experienced" class="ae-error-msg" style="margin-top: 0.35rem;"></div>
+                        </fieldset>
 
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 1rem;">
-                    <div>
-                        ${renderCommonFieldHeader(rec, 'start_date', '2. Start Date', false)}
-                        <input type="date" id="inp_ae_start_date" class="form-input" max="${getTodayIST()}" value="${escapeHtml(d.start_date || '')}" style="width: 100%;">
-                    </div>
-
-                    <div>
-                        ${renderCommonFieldHeader(rec, 'end_date', '3. End Date', false)}
-                        <input type="date" id="inp_ae_end_date" class="form-input" max="${getTodayIST()}" value="${escapeHtml(d.end_date || '')}" style="width: 100%;">
-                    </div>
-
-                    <div>
-                        ${renderCommonFieldHeader(rec, 'severity', '4. Severity / Intensity', true)}
-                        <select id="inp_ae_severity" class="form-input" style="width: 100%;">
-                            <option value="">-- Select --</option>
-                            <option value="Mild" ${d.severity === 'Mild' ? 'selected' : ''}>Mild</option>
-                            <option value="Moderate" ${d.severity === 'Moderate' ? 'selected' : ''}>Moderate</option>
-                            <option value="Severe" ${d.severity === 'Severe' ? 'selected' : ''}>Severe</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        ${renderCommonFieldHeader(rec, 'seriousness', '5. Seriousness', true)}
-                        <select id="inp_ae_seriousness" onchange="onAESeriousnessChange()" class="form-input" style="width: 100%;">
-                            <option value="">-- Select --</option>
-                            <option value="Yes" ${isSerious ? 'selected' : ''}>Yes</option>
-                            <option value="No" ${!isSerious && d.seriousness === 'No' ? 'selected' : ''}>No</option>
-                        </select>
-                    </div>
-                </div>
-
-                <!-- 6. Seriousness Criteria Multi-select -->
-                <div id="aeSeriousnessCriteriaBox" style="display: ${isSerious ? 'block' : 'none'}; background: #fff7ed; border: 1px solid #fed7aa; padding: 1rem; border-radius: 8px;">
-                    ${renderCommonFieldHeader(rec, 'seriousness_criteria', '6. Seriousness Criteria (Select all that apply)', true)}
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
-                        ${renderAeCritCb('Death', 'Death', critList)}
-                        ${renderAeCritCb('Life-threatening', 'Life-threatening', critList)}
-                        ${renderAeCritCb('Hospitalization / prolongation of hospitalization', 'Hospitalization / prolongation', critList)}
-                        ${renderAeCritCb('Disability / incapacity', 'Disability / incapacity', critList)}
-                        ${renderAeCritCb('Congenital anomaly', 'Congenital anomaly', critList)}
-                        ${renderAeCritCb('Other medically important event', 'Other medically important event', critList)}
-                    </div>
-                </div>
-
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                    <div>
-                        ${renderCommonFieldHeader(rec, 'causality', '7. Causality / Relationship to Study Drug', true)}
-                        <select id="inp_ae_causality" class="form-input" style="width: 100%;">
-                            <option value="">-- Select --</option>
-                            <option value="Unrelated" ${d.causality === 'Unrelated' ? 'selected' : ''}>Unrelated</option>
-                            <option value="Unlikely" ${d.causality === 'Unlikely' ? 'selected' : ''}>Unlikely</option>
-                            <option value="Possible" ${d.causality === 'Possible' ? 'selected' : ''}>Possible</option>
-                            <option value="Probable" ${d.causality === 'Probable' ? 'selected' : ''}>Probable</option>
-                            <option value="Definite" ${d.causality === 'Definite' ? 'selected' : ''}>Definite</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        ${renderCommonFieldHeader(rec, 'action_taken', '8. Action Taken with Study Treatment', true)}
-                        <select id="inp_ae_action_taken" class="form-input" style="width: 100%;">
-                            <option value="">-- Select --</option>
-                            <option value="None" ${d.action_taken === 'None' ? 'selected' : ''}>None</option>
-                            <option value="Dose Reduced" ${d.action_taken === 'Dose Reduced' ? 'selected' : ''}>Dose Reduced</option>
-                            <option value="Dose Interrupted" ${d.action_taken === 'Dose Interrupted' ? 'selected' : ''}>Dose Interrupted</option>
-                            <option value="Drug Withdrawn" ${d.action_taken === 'Drug Withdrawn' ? 'selected' : ''}>Drug Withdrawn</option>
-                            <option value="Not Applicable" ${d.action_taken === 'Not Applicable' ? 'selected' : ''}>Not Applicable</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                    <div>
-                        ${renderCommonFieldHeader(rec, 'outcome', '9. Outcome', true)}
-                        <select id="inp_ae_outcome" onchange="onAEOutcomeChange()" class="form-input" style="width: 100%;">
-                            <option value="">-- Select --</option>
-                            <option value="Recovered / Resolved" ${d.outcome === 'Recovered / Resolved' ? 'selected' : ''}>Recovered / Resolved</option>
-                            <option value="Recovering / Resolving" ${d.outcome === 'Recovering / Resolving' ? 'selected' : ''}>Recovering / Resolving</option>
-                            <option value="Not Recovered / Not Resolved" ${d.outcome === 'Not Recovered / Not Resolved' ? 'selected' : ''}>Not Recovered / Not Resolved</option>
-                            <option value="Recovered with Sequelae" ${d.outcome === 'Recovered with Sequelae' ? 'selected' : ''}>Recovered with Sequelae</option>
-                            <option value="Fatal" ${d.outcome === 'Fatal' ? 'selected' : ''}>Fatal</option>
-                            <option value="Unknown" ${d.outcome === 'Unknown' ? 'selected' : ''}>Unknown</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        ${renderCommonFieldHeader(rec, 'concomitant_treatment', '10. Concomitant Treatment Given', true)}
-                        <select id="inp_ae_concomitant_treatment" onchange="onAEConcomitantTreatmentChange()" class="form-input" style="width: 100%;">
-                            <option value="">-- Select --</option>
-                            <option value="Yes" ${d.concomitant_treatment === 'Yes' ? 'selected' : ''}>Yes</option>
-                            <option value="No" ${d.concomitant_treatment === 'No' ? 'selected' : ''}>No</option>
-                        </select>
-
-                        <div id="aeCmShortcutBox" style="display: ${USER_CAN_EDIT_CONTENT && d.concomitant_treatment === 'Yes' && rec.id > 0 ? 'block' : 'none'}; margin-top: 0.75rem;">
-                            <button type="button" onclick="shortcutAddCMFromAE(${rec.id})" class="btn btn-sm" style="background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-weight: 600;">
-                                <span class="material-icons-round" style="font-size: 1rem; margin-right: 4px;">add</span> Add Concomitant Medication for ${escapeHtml(rec.record_number)}
-                            </button>
+                        <div id="aeNoEventsNotice" style="display: ${aeExpVal === 'No' ? 'block' : 'none'}; margin-top: 0.85rem; padding: 0.85rem 1rem; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; color: #166534; font-size: 0.88rem;">
+                            <div style="display: flex; align-items: center; gap: 0.6rem;">
+                                <span class="material-icons-round" style="color: #16a34a; font-size: 1.35rem; flex-shrink: 0;">check_circle</span>
+                                <div>
+                                    <strong>No adverse events experienced.</strong>
+                                    <div style="font-size: 0.82rem; color: #15803d; margin-top: 2px;">Saving will record that no adverse events occurred for this subject. Event-entry fields are not required.</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
+
+                <div id="aeSectionsContainer" style="display: ${aeExpVal === 'No' ? 'none' : 'grid'}; grid-template-columns: 1fr; gap: 1rem;">
+                    <!-- Section 1: Event Details -->
+                    <div class="ae-section-card">
+                        <div class="ae-section-header">
+                            <h3 class="ae-section-title"><span class="ae-section-step">1</span> Event Details</h3>
+                        </div>
+                        <div class="ae-section-body">
+                            <div>
+                                ${renderCommonFieldHeader(rec, 'ae_term', 'Adverse event term', true)}
+                                <input type="text" id="inp_ae_term" class="form-input" value="${escapeHtml(normD.ae_term || '')}" onblur="onAeFieldBlur('ae_term')" oninput="onAeInputChanged('ae_term')" aria-invalid="false" style="width: 100%;" placeholder="Enter verbatim adverse event term (e.g., Headache, Nausea)">
+                                <div id="ae_err_ae_term" class="ae-error-msg"></div>
+                            </div>
+
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(195px, 1fr)); gap: 1rem; align-items: start;">
+                                <div>
+                                    ${renderCommonFieldHeader(rec, 'start_date', 'Start date', true)}
+                                    <input type="date" id="inp_ae_start_date" class="form-input" max="${getTodayIST()}" value="${escapeHtml(normD.start_date || '')}" onblur="onAeFieldBlur('start_date')" oninput="onAeInputChanged('start_date')" aria-invalid="false" style="width: 100%;">
+                                    <div id="ae_err_start_date" class="ae-error-msg"></div>
+                                </div>
+
+                                ${renderAeRadioField('ongoing', 'Is the event ongoing?', [{label: 'Yes', value: 'Yes'}, {label: 'No', value: 'No'}], normD.ongoing || '', true, 'onAEOngoingChange()')}
+
+                                <div id="aeEndDateGroup" style="display: ${isOngoingNo ? 'block' : 'none'};">
+                                    ${renderCommonFieldHeader(rec, 'end_date', 'End date', true)}
+                                    <input type="date" id="inp_ae_end_date" class="form-input" max="${getTodayIST()}" value="${escapeHtml(normD.end_date || '')}" onblur="onAeFieldBlur('end_date')" oninput="onAeInputChanged('end_date')" aria-invalid="false" style="width: 100%;">
+                                    <div id="ae_err_end_date" class="ae-error-msg"></div>
+                                </div>
+                            </div>
+
+                            <div id="aeReconcileOngoingBox" class="ae-reconcile-card" style="display: none;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Section 2: Clinical Assessment & Seriousness -->
+                    <div class="ae-section-card">
+                        <div class="ae-section-header">
+                            <h3 class="ae-section-title"><span class="ae-section-step">2</span> Clinical Assessment &amp; Seriousness</h3>
+                        </div>
+                        <div class="ae-section-body">
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem; align-items: start;">
+                                ${severityCtrlHtml}
+                                ${renderAeRadioField('seriousness', 'Was the event serious?', [{label: 'Yes', value: 'Yes'}, {label: 'No', value: 'No'}], normD.seriousness || '', true, 'onAESeriousnessChange()')}
+                            </div>
+
+                            <!-- Seriousness Criteria (6 individual Yes/No rows, shown only when Serious = Yes) -->
+                            <div id="aeSeriousnessCriteriaBox" style="display: ${isSeriousYes ? 'block' : 'none'}; background: #fffbeb; border: 1px solid #fde68a; border-left: 3px solid #d97706; padding: 0.85rem 1rem; border-radius: 8px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem;">
+                                    <strong style="font-size: 0.84rem; color: #92400e;">Seriousness Criteria</strong>
+                                </div>
+                                <div class="ae-criteria-list">
+                                    ${criteriaHtml}
+                                </div>
+                            </div>
+
+                            <div id="aeReconcileSeriousnessBox" class="ae-reconcile-card" style="display: none;"></div>
+
+                            <div id="aeModalSaeNotice" class="ae-sae-banner" style="display: ${isSeriousYes ? 'flex' : 'none'}; margin-top: 0;">
+                                <span class="material-icons-round" style="font-size: 1.05rem; flex-shrink: 0;">info</span>
+                                <div><strong>SAE Notice:</strong> Flagging Serious or Fatal records clinical CRF data only and does <strong>not</strong> send an external SAE notification — follow the protocol-defined external SAE reporting SOP.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section 3: Study Treatment Action & Outcome -->
+                    <div class="ae-section-card">
+                        <div class="ae-section-header">
+                            <h3 class="ae-section-title"><span class="ae-section-step">3</span> Treatment Action &amp; Outcome</h3>
+                        </div>
+                        <div class="ae-section-body">
+                            <div>
+                                ${renderAeRadioField('causality', 'Related to study treatment?', [{label: 'Yes', value: 'Yes'}, {label: 'No', value: 'No'}], normD.causality || '', true, 'onAECausalityChange()')}
+                            </div>
+
+                            <div id="aeCausalityDependentSection" style="display: ${isCausalityYes ? 'block' : 'none'}; margin-top: 1rem;">
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem; align-items: start;">
+                                    <div>
+                                        ${renderCommonFieldHeader(rec, 'action_taken', 'Action taken with study treatment', true)}
+                                        <select id="inp_ae_action_taken" onchange="onAEActionTakenChange()" onblur="onAeFieldBlur('action_taken')" class="form-input" aria-invalid="false" style="width: 100%;">
+                                            ${renderAeSelectOptions(codeLists.action_taken.options, normD.action_taken || '')}
+                                        </select>
+                                        <div id="ae_err_action_taken" class="ae-error-msg"></div>
+                                    </div>
+                                </div>
+
+                                <div id="aeOtherActionGroup" style="display: ${isActionOther ? 'block' : 'none'}; margin-top: 1rem;">
+                                    ${renderCommonFieldHeader(rec, 'other_action_specify', 'Other treatment action—specify', true)}
+                                    <input type="text" id="inp_ae_other_action_specify" class="form-input" value="${escapeHtml(normD.other_action_specify || '')}" onblur="onAeFieldBlur('other_action_specify')" oninput="onAeInputChanged('other_action_specify')" aria-invalid="false" style="width: 100%;" placeholder="Specify other action taken with study treatment">
+                                    <div id="ae_err_other_action_specify" class="ae-error-msg"></div>
+                                </div>
+
+                                <div id="aeReconcileOtherActionBox" class="ae-reconcile-card" style="display: none; margin-top: 0.5rem;"></div>
+
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem; align-items: end; margin-top: 1rem;">
+                                    <div>
+                                        ${renderCommonFieldHeader(rec, 'outcome', 'Outcome', true)}
+                                        <select id="inp_ae_outcome" onchange="onAEOutcomeChange()" onblur="onAeFieldBlur('outcome')" class="form-input" aria-invalid="false" style="width: 100%;">
+                                            ${renderAeSelectOptions(codeLists.outcome.options, normD.outcome || '')}
+                                        </select>
+                                        <div id="ae_err_outcome" class="ae-error-msg"></div>
+                                    </div>
+
+                                    ${USER_CAN_EDIT_CONTENT && rec.id > 0 ? `
+                                        <div style="display: flex; align-items: center;">
+                                            <button type="button" onclick="shortcutAddCMFromAE(${rec.id})" class="btn btn-sm" style="background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-weight: 600; height: 38px; display: inline-flex; align-items: center; gap: 4px;">
+                                                <span class="material-icons-round" style="font-size: 1rem;">add</span> Link Concomitant Medication (${escapeHtml(rec.record_number)})
+                                            </button>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                ${modalCodeNote}
+
+                ${rec.id > 0 ? `
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.75rem 1rem;">
+                        <label for="inp_ae_change_reason" style="font-size: 0.8rem; font-weight: 600; color: #475569; display: block; margin-bottom: 0.3rem;">Reason for Change (Audit Trail)</label>
+                        <input type="text" id="inp_ae_change_reason" class="form-input" placeholder="Clinical Data Update (specify reason for audit clarity)" style="width: 100%; font-size: 0.85rem;">
+                    </div>
+                ` : ''}
             </div>
         `;
-        onAEOutcomeChange();
+        refreshAeReconciliationPanels();
 
     } else if (formType === 'CM') {
         const indType = d.indication_type || '';
@@ -6284,33 +6722,775 @@ function onMHMedGivenChange() {
     if (box) box.style.display = (mg === 'Yes' && currentEditingRecordData && currentEditingRecordData.id > 0) ? 'block' : 'none';
 }
 
-// AE Dynamic Handlers
-function onAESeriousnessChange() {
-    const ser = document.getElementById('inp_ae_seriousness') ? document.getElementById('inp_ae_seriousness').value : '';
-    const box = document.getElementById('aeSeriousnessCriteriaBox');
-    if (box) box.style.display = (ser === 'Yes') ? 'block' : 'none';
+// AE Dynamic Handlers, Audited Reconciliation & Edit Checks
+const AE_SERIOUSNESS_CRITERIA_DEFS = [
+    { key: 'seriousness_death', label: 'Resulted in death', legacyMatches: ['death', 'resulted in death'] },
+    { key: 'seriousness_life_threatening', label: 'Life-threatening', legacyMatches: ['life-threatening', 'life threatening'] },
+    { key: 'seriousness_hospitalization', label: 'Required or prolonged inpatient hospitalization', legacyMatches: ['hospitalization / prolongation of hospitalization', 'required or prolonged inpatient hospitalization', 'hospitalization'] },
+    { key: 'seriousness_disability', label: 'Persistent or significant disability/incapacity', legacyMatches: ['disability / incapacity', 'persistent or significant disability/incapacity', 'disability'] },
+    { key: 'seriousness_congenital_anomaly', label: 'Congenital anomaly/birth defect', legacyMatches: ['congenital anomaly', 'congenital anomaly/birth defect', 'birth defect'] },
+    { key: 'seriousness_other_medically_important', label: 'Other medically important event', legacyMatches: ['other medically important event', 'other medically important'] }
+];
+
+const DEFAULT_AE_CODE_LISTS = {
+    severity: {
+        source: 'proposed_default',
+        requires_protocol_review: true,
+        recommended_group_name: 'AE Severity',
+        options: [
+            { label: 'Mild', value: 'Mild' },
+            { label: 'Moderate', value: 'Moderate' },
+            { label: 'Severe', value: 'Severe' }
+        ]
+    },
+    action_taken: {
+        source: 'proposed_default',
+        requires_protocol_review: true,
+        recommended_group_name: 'AE Treatment Action',
+        options: [
+            { label: 'Dose not changed', value: 'Dose not changed' },
+            { label: 'Dose reduced', value: 'Dose reduced' },
+            { label: 'Drug interrupted', value: 'Drug interrupted' },
+            { label: 'Drug withdrawn', value: 'Drug withdrawn' },
+            { label: 'Not applicable', value: 'Not applicable' },
+            { label: 'Unknown', value: 'Unknown' },
+            { label: 'Other', value: 'Other' }
+        ]
+    },
+    outcome: {
+        source: 'proposed_default',
+        requires_protocol_review: true,
+        recommended_group_name: 'AE Outcome',
+        options: [
+            { label: 'Recovered/resolved', value: 'Recovered/resolved' },
+            { label: 'Recovering/resolving', value: 'Recovering/resolving' },
+            { label: 'Not recovered/not resolved', value: 'Not recovered/not resolved' },
+            { label: 'Recovered/resolved with sequelae', value: 'Recovered/resolved with sequelae' },
+            { label: 'Fatal', value: 'Fatal' },
+            { label: 'Unknown', value: 'Unknown' }
+        ]
+    }
+};
+
+function getAeActiveCodeLists(aeMeta) {
+    if (aeMeta && aeMeta.code_lists) {
+        return aeMeta.code_lists;
+    }
+    return DEFAULT_AE_CODE_LISTS;
 }
 
-function onAEOutcomeChange() {
-    const out = document.getElementById('inp_ae_outcome') ? document.getElementById('inp_ae_outcome').value : '';
-    const endDateInp = document.getElementById('inp_ae_end_date');
+function normalizeAeRecordClient(raw) {
+    const d = raw || {};
+    const out = {
+        ae_term: String(d.ae_term || '').trim(),
+        start_date: String(d.start_date || '').trim(),
+        ongoing: String(d.ongoing || '').trim(),
+        end_date: String(d.end_date || '').trim(),
+        severity: String(d.severity || '').trim(),
+        seriousness: String(d.seriousness || '').trim(),
+        causality: String(d.causality || '').trim(),
+        action_taken: String(d.action_taken || '').trim(),
+        other_action_specify: String(d.other_action_specify || '').trim(),
+        outcome: String(d.outcome || '').trim()
+    };
+    let hasIndiv = false;
+    AE_SERIOUSNESS_CRITERIA_DEFS.forEach(c => {
+        const v = String(d[c.key] || '').trim();
+        if (v !== '') hasIndiv = true;
+        out[c.key] = v;
+    });
+    if (!hasIndiv && d.seriousness_criteria) {
+        const legList = Array.isArray(d.seriousness_criteria)
+            ? d.seriousness_criteria
+            : String(d.seriousness_criteria).split(',');
+        const legNorm = legList.map(x => String(x).trim().toLowerCase());
+        AE_SERIOUSNESS_CRITERIA_DEFS.forEach(c => {
+            if (c.legacyMatches.some(m => legNorm.includes(m))) {
+                out[c.key] = 'Yes';
+            }
+        });
+    }
+    return out;
+}
 
-    if (!endDateInp) return;
-
-    if (out === 'Recovered / Resolved') {
-        endDateInp.disabled = false;
-    } else if (out === 'Recovering / Resolving' || out === 'Not Recovered / Not Resolved') {
-        endDateInp.value = '';
-        endDateInp.disabled = true;
-    } else {
-        endDateInp.disabled = false;
+function announceAeStatus(msg) {
+    const liveEl = document.getElementById('aeAriaLiveAnnouncer');
+    if (liveEl) {
+        liveEl.textContent = '';
+        setTimeout(() => { liveEl.textContent = msg; }, 30);
     }
 }
 
-function onAEConcomitantTreatmentChange() {
-    const ct = document.getElementById('inp_ae_concomitant_treatment') ? document.getElementById('inp_ae_concomitant_treatment').value : '';
-    const box = document.getElementById('aeCmShortcutBox');
-    if (box) box.style.display = (ct === 'Yes' && currentEditingRecordData && currentEditingRecordData.id > 0) ? 'block' : 'none';
+function setAeFieldError(fieldKey, msg) {
+    const errEl = document.getElementById('ae_err_' + fieldKey);
+    if (errEl) {
+        errEl.textContent = msg;
+        errEl.classList.add('is-visible');
+    }
+    const fs = document.getElementById('ae_fs_' + fieldKey);
+    if (fs) {
+        fs.classList.add('ae-fieldset-invalid');
+        const critRow = fs.closest('.ae-criterion-row');
+        if (critRow) critRow.classList.add('is-invalid');
+        fs.querySelectorAll('input[type="radio"]').forEach(r => {
+            r.setAttribute('aria-invalid', 'true');
+            if (errEl) r.setAttribute('aria-describedby', errEl.id);
+        });
+    }
+    const single = document.getElementById('inp_ae_' + fieldKey);
+    if (single) {
+        single.classList.add('ae-field-invalid');
+        single.setAttribute('aria-invalid', 'true');
+        if (errEl) single.setAttribute('aria-describedby', errEl.id);
+    }
+    if (fieldKey === 'ae_experienced') {
+        const gfs = document.getElementById('aeGateFieldset');
+        if (gfs) gfs.classList.add('ae-fieldset-invalid');
+        document.querySelectorAll('input[name="ae_gate_experienced"]').forEach(r => {
+            r.setAttribute('aria-invalid', 'true');
+            if (errEl) r.setAttribute('aria-describedby', errEl.id);
+        });
+    }
+}
+
+function clearAeFieldError(fieldKey) {
+    const errEl = document.getElementById('ae_err_' + fieldKey);
+    if (errEl) {
+        errEl.textContent = '';
+        errEl.classList.remove('is-visible');
+    }
+    const fs = document.getElementById('ae_fs_' + fieldKey);
+    if (fs) {
+        fs.classList.remove('ae-fieldset-invalid');
+        const critRow = fs.closest('.ae-criterion-row');
+        if (critRow) critRow.classList.remove('is-invalid');
+        fs.querySelectorAll('input[type="radio"]').forEach(r => {
+            r.setAttribute('aria-invalid', 'false');
+            r.removeAttribute('aria-describedby');
+        });
+    }
+    const single = document.getElementById('inp_ae_' + fieldKey);
+    if (single) {
+        single.classList.remove('ae-field-invalid');
+        single.setAttribute('aria-invalid', 'false');
+        single.removeAttribute('aria-describedby');
+    }
+    if (fieldKey === 'ae_experienced') {
+        const gfs = document.getElementById('aeGateFieldset');
+        if (gfs) gfs.classList.remove('ae-fieldset-invalid');
+        document.querySelectorAll('input[name="ae_gate_experienced"]').forEach(r => {
+            r.setAttribute('aria-invalid', 'false');
+            r.removeAttribute('aria-describedby');
+        });
+    }
+}
+
+function clearAllAeErrors() {
+    ['ae_term', 'start_date', 'ongoing', 'end_date', 'severity', 'seriousness', 'causality', 'action_taken', 'other_action_specify', 'outcome']
+        .concat(AE_SERIOUSNESS_CRITERIA_DEFS.map(c => c.key))
+        .forEach(clearAeFieldError);
+}
+
+function getAeRadioVal(name) {
+    const checked = document.querySelector(`input[name="${name}"]:checked`);
+    return checked ? checked.value : '';
+}
+
+function readAeFormDataFromUI() {
+    const orig = window.aeOriginalLoadedData || {};
+    const pending = window.aePendingReconciliations || {};
+
+    const aeExpVal = getAeRadioVal('ae_experienced') || 'Yes';
+    const ongoingVal = getAeRadioVal('ae_ongoing');
+    const seriousnessVal = getAeRadioVal('ae_seriousness');
+    const causalityVal = getAeRadioVal('ae_causality');
+    const actionEl = document.getElementById('inp_ae_action_taken');
+    const actionVal = (causalityVal === 'Yes' && actionEl) ? actionEl.value : '';
+
+    let endDateVal = document.getElementById('inp_ae_end_date') ? document.getElementById('inp_ae_end_date').value : '';
+    if (pending.end_date) endDateVal = '';
+    else if (ongoingVal === 'Yes' && !endDateVal && orig.end_date) endDateVal = orig.end_date;
+
+    let otherSpecifyVal = document.getElementById('inp_ae_other_action_specify') ? document.getElementById('inp_ae_other_action_specify').value.trim() : '';
+    if (pending.other_action_specify) otherSpecifyVal = '';
+    else if (actionVal !== 'Other' && !otherSpecifyVal && orig.other_action_specify) otherSpecifyVal = orig.other_action_specify;
+    if (causalityVal !== 'Yes') otherSpecifyVal = '';
+
+    const sevEl = document.getElementById('inp_ae_severity');
+    const sevVal = sevEl ? sevEl.value : getAeRadioVal('ae_severity');
+
+    const outEl = document.getElementById('inp_ae_outcome');
+    const outVal = (causalityVal === 'Yes' && outEl) ? outEl.value : '';
+
+    const data = {
+        ae_experienced: aeExpVal,
+        ae_term: document.getElementById('inp_ae_term') ? document.getElementById('inp_ae_term').value.trim() : '',
+        start_date: document.getElementById('inp_ae_start_date') ? document.getElementById('inp_ae_start_date').value : '',
+        ongoing: ongoingVal,
+        end_date: endDateVal,
+        severity: sevVal,
+        seriousness: seriousnessVal,
+        causality: causalityVal,
+        action_taken: actionVal,
+        other_action_specify: otherSpecifyVal,
+        outcome: outVal
+    };
+
+    if (aeExpVal === 'No') {
+        data.ae_term = data.ae_term || 'No adverse events experienced';
+        data.ongoing = 'No';
+        data.start_date = '';
+        data.end_date = '';
+        data.severity = '';
+        data.seriousness = 'No';
+        data.causality = 'No';
+        data.action_taken = '';
+        data.other_action_specify = '';
+        data.outcome = '';
+    }
+
+    AE_SERIOUSNESS_CRITERIA_DEFS.forEach(c => {
+        if (pending[c.key] || aeExpVal === 'No') {
+            data[c.key] = aeExpVal === 'No' ? 'No' : '';
+        } else {
+            const rv = getAeRadioVal('ae_' + c.key);
+            if (seriousnessVal === 'No' && !rv && orig[c.key]) {
+                data[c.key] = orig[c.key];
+            } else {
+                data[c.key] = rv;
+            }
+        }
+    });
+
+    return data;
+}
+
+function parseAePartialDateJS(val) {
+    const s = String(val || '').trim();
+    if (!s) return null;
+    const m = /^(\d{4})(?:-(\d{2}|UN|UNK))?(?:-(\d{2}|UN|UNK))?$/i.exec(s);
+    if (!m) return null;
+    const year = parseInt(m[1], 10);
+    const month = (m[2] && /^\d{2}$/.test(m[2])) ? parseInt(m[2], 10) : null;
+    const day = (m[3] && /^\d{2}$/.test(m[3])) ? parseInt(m[3], 10) : null;
+    return { year, month, day };
+}
+
+function compareAeDatesJS(start, end) {
+    const ps = parseAePartialDateJS(start);
+    const pe = parseAePartialDateJS(end);
+    if (!ps || !pe) return null;
+    if (pe.year < ps.year) return -1;
+    if (pe.year > ps.year) return 1;
+    if (pe.month === null || ps.month === null) return null;
+    if (pe.month < ps.month) return -1;
+    if (pe.month > ps.month) return 1;
+    if (pe.day === null || ps.day === null) return null;
+    if (pe.day < ps.day) return -1;
+    if (pe.day > ps.day) return 1;
+    return 0;
+}
+
+function classifyAeOutcomeJS(outcome) {
+    const norm = String(outcome || '').trim().replace(/\s*\/\s*/g, '/').toLowerCase();
+    if (!norm) return 'missing';
+    if (norm === 'recovered/resolved' || norm === 'recovered/resolved with sequelae' || norm === 'recovered with sequelae') return 'resolved';
+    if (norm === 'recovering/resolving' || norm === 'not recovered/not resolved') return 'unresolved';
+    if (norm === 'fatal') return 'fatal';
+    return 'other';
+}
+
+function validateAeFormClient(data, requireCompleteness = true) {
+    const errs = [];
+    const todayIst = getTodayIST();
+    const pushErr = (field, message) => errs.push({ field, message });
+
+    if (data.ae_experienced === 'No') {
+        return [];
+    }
+
+    if (requireCompleteness) {
+        if (!data.ae_term) pushErr('ae_term', 'Adverse event term is required to mark complete.');
+        if (!data.start_date) pushErr('start_date', 'Start date is required to mark complete.');
+        if (!data.ongoing) pushErr('ongoing', "Please answer Yes or No for 'Is the event ongoing?'.");
+        if (data.ongoing === 'No' && !data.end_date) pushErr('end_date', "End date is required when 'Is the event ongoing?' is No.");
+        if (!data.severity) pushErr('severity', 'Severity is required to mark complete.');
+        if (!data.seriousness) pushErr('seriousness', "Please answer Yes or No for 'Was the event serious?'.");
+        if (!data.causality) pushErr('causality', "Please answer Yes or No for 'Related to study treatment?'.");
+        if (data.causality === 'Yes') {
+            if (!data.action_taken) pushErr('action_taken', 'Action taken with study treatment is required to mark complete.');
+            if (data.action_taken === 'Other' && !data.other_action_specify) {
+                pushErr('other_action_specify', 'Other treatment action—specify is required when Action taken is Other.');
+            }
+            if (!data.outcome) pushErr('outcome', 'Outcome is required to mark complete.');
+        }
+    }
+
+    if (data.start_date && data.start_date > todayIst) {
+        pushErr('start_date', 'Start date cannot be in the future.');
+    }
+    if (data.end_date && data.end_date > todayIst) {
+        pushErr('end_date', 'End date cannot be in the future.');
+    }
+    if (data.start_date && data.end_date && compareAeDatesJS(data.start_date, data.end_date) === -1) {
+        pushErr('end_date', 'End date cannot precede Start date.');
+    }
+    if (data.ongoing === 'Yes' && data.end_date) {
+        pushErr('end_date', `Conflict: End date (${data.end_date}) is retained while 'Is the event ongoing?' is Yes. Confirm audited clear or set Ongoing to No.`);
+    }
+
+    const yesCrits = AE_SERIOUSNESS_CRITERIA_DEFS.filter(c => data[c.key] === 'Yes');
+    if (data.seriousness === 'Yes' && yesCrits.length === 0 && requireCompleteness) {
+        pushErr('seriousness', "When 'Was the event serious?' is Yes, at least one seriousness criterion must be Yes.");
+    }
+    if (data.seriousness === 'No' && yesCrits.length > 0) {
+        pushErr('seriousness', `Conflict: 'Was the event serious?' is No, while ${yesCrits.map(c => c.label).join('; ')} remains Yes. Reconcile before completing.`);
+    }
+    if (data.causality === 'Yes' && data.action_taken && data.action_taken.toLowerCase() !== 'other' && data.other_action_specify) {
+        pushErr('other_action_specify', `Conflict: 'Other treatment action—specify' retains '${data.other_action_specify}' while Action taken is '${data.action_taken}'. Confirm audited clear before completing.`);
+    }
+
+    if (data.causality === 'Yes') {
+        const oClass = classifyAeOutcomeJS(data.outcome);
+        if (oClass === 'resolved') {
+            if (data.ongoing === 'Yes') {
+                pushErr('outcome', `Conflict: Outcome '${data.outcome}' conflicts with 'Is the event ongoing?' = Yes.`);
+            } else if (!data.end_date && (data.ongoing === 'No' || requireCompleteness)) {
+                pushErr('end_date', `End date is required when Outcome is '${data.outcome}'.`);
+            }
+        } else if (oClass === 'unresolved' && data.end_date) {
+            pushErr('end_date', `Conflict: Outcome '${data.outcome}' conflicts with recorded End date (${data.end_date}).`);
+        } else if (oClass === 'fatal') {
+            if (data.seriousness !== 'Yes') {
+                pushErr('seriousness', "Outcome 'Fatal' requires 'Was the event serious?' = Yes and 'Resulted in death' = Yes.");
+            } else if (data.seriousness_death !== 'Yes') {
+                pushErr('seriousness_death', "Outcome 'Fatal' requires 'Resulted in death' = Yes.");
+            }
+        }
+    }
+
+    return errs;
+}
+
+function onAeInputChanged(fieldKey) {
+    clearAeFieldError(fieldKey);
+    if (fieldKey === 'outcome' || fieldKey === 'start_date' || fieldKey === 'end_date') {
+        clearAeFieldError('end_date');
+        clearAeFieldError('outcome');
+    }
+    if (fieldKey.startsWith('seriousness_')) {
+        clearAeFieldError('seriousness');
+        clearAeFieldError('seriousness_death');
+    }
+}
+
+function onAeFieldBlur(fieldKey) {
+    const el = document.getElementById('inp_ae_' + fieldKey);
+    if (!el) return;
+    el.dataset.touched = '1';
+    const d = readAeFormDataFromUI();
+    const errs = validateAeFormClient(d, false);
+    const hit = errs.find(e => e.field === fieldKey);
+    if (hit) {
+        setAeFieldError(fieldKey, hit.message);
+    } else {
+        clearAeFieldError(fieldKey);
+    }
+}
+
+function refreshAeReconciliationPanels() {
+    const ongoingVal = getAeRadioVal('ae_ongoing');
+    const serVal = getAeRadioVal('ae_seriousness');
+    const actEl = document.getElementById('inp_ae_action_taken');
+    const actVal = actEl ? actEl.value : '';
+    const endInp = document.getElementById('inp_ae_end_date');
+    const othInp = document.getElementById('inp_ae_other_action_specify');
+
+    const pending = window.aePendingReconciliations || {};
+    const orig = window.aeOriginalLoadedData || {};
+
+    // Ongoing -> Yes with retained end_date
+    const recOngoingBox = document.getElementById('aeReconcileOngoingBox');
+    const retainedEnd = (!pending.end_date) ? ((endInp ? endInp.value : '') || orig.end_date || '') : '';
+    if (recOngoingBox) {
+        if (ongoingVal === 'Yes' && retainedEnd) {
+            recOngoingBox.style.display = 'block';
+            recOngoingBox.innerHTML = `
+                <div><strong>Audited Reconciliation Required (End Date):</strong> End date <code>${escapeHtml(retainedEnd)}</code> was previously entered and is hidden while Ongoing is Yes. Do not silently lose clinical data.</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; align-items: center;">
+                    <input type="text" id="inp_reconcile_reason_end_date" class="form-input" placeholder="Audit reason to clear End date..." style="flex: 1 1 220px; font-size: 0.8rem;">
+                    <button type="button" class="btn btn-sm" onclick="confirmAeReconciliation('end_date')" style="background: #b45309; color: #fff; font-weight: 600;">Confirm Audited Clear of End Date</button>
+                </div>
+            `;
+        } else {
+            recOngoingBox.style.display = 'none';
+            recOngoingBox.innerHTML = '';
+        }
+    }
+
+    // Seriousness -> No with retained criteria
+    const recSerBox = document.getElementById('aeReconcileSeriousnessBox');
+    if (recSerBox) {
+        const retainedCrits = [];
+        AE_SERIOUSNESS_CRITERIA_DEFS.forEach(c => {
+            if (!pending[c.key]) {
+                const v = getAeRadioVal('ae_' + c.key) || orig[c.key] || '';
+                if (v) retainedCrits.push(`${c.label}: ${v}`);
+            }
+        });
+        if (serVal === 'No' && retainedCrits.length > 0) {
+            recSerBox.style.display = 'block';
+            recSerBox.innerHTML = `
+                <div><strong>Audited Reconciliation Required (Seriousness Criteria):</strong> Previously answered criteria remain stored (${escapeHtml(retainedCrits.join('; '))}). Provide an audit reason to clear them or switch Serious back to Yes.</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; align-items: center;">
+                    <input type="text" id="inp_reconcile_reason_seriousness" class="form-input" placeholder="Audit reason to clear retained criteria..." style="flex: 1 1 220px; font-size: 0.8rem;">
+                    <button type="button" class="btn btn-sm" onclick="confirmAeReconciliation('seriousness_all')" style="background: #b45309; color: #fff; font-weight: 600;">Confirm Audited Clear of Criteria</button>
+                </div>
+            `;
+        } else {
+            recSerBox.style.display = 'none';
+            recSerBox.innerHTML = '';
+        }
+    }
+
+    // Action taken != Other with retained specification
+    const recOtherBox = document.getElementById('aeReconcileOtherActionBox');
+    const retainedOther = (!pending.other_action_specify) ? ((othInp ? othInp.value.trim() : '') || orig.other_action_specify || '') : '';
+    if (recOtherBox) {
+        if (actVal && actVal.toLowerCase() !== 'other' && retainedOther) {
+            recOtherBox.style.display = 'block';
+            recOtherBox.innerHTML = `
+                <div><strong>Audited Reconciliation Required (Other Action):</strong> Specification <code>${escapeHtml(retainedOther)}</code> was saved while Action taken is now <strong>${escapeHtml(actVal)}</strong>.</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; align-items: center;">
+                    <input type="text" id="inp_reconcile_reason_other" class="form-input" placeholder="Audit reason to clear specification..." style="flex: 1 1 220px; font-size: 0.8rem;">
+                    <button type="button" class="btn btn-sm" onclick="confirmAeReconciliation('other_action_specify')" style="background: #b45309; color: #fff; font-weight: 600;">Confirm Audited Clear</button>
+                </div>
+            `;
+        } else {
+            recOtherBox.style.display = 'none';
+            recOtherBox.innerHTML = '';
+        }
+    }
+}
+
+function confirmAeReconciliation(target) {
+    window.aePendingReconciliations = window.aePendingReconciliations || {};
+    if (target === 'end_date') {
+        const reasonEl = document.getElementById('inp_reconcile_reason_end_date');
+        const reason = reasonEl ? reasonEl.value.trim() : '';
+        if (!reason) {
+            showToast('Enter an audit reason before clearing End date.', 'warning');
+            if (reasonEl) reasonEl.focus();
+            return;
+        }
+        window.aePendingReconciliations.end_date = { field: 'end_date', action: 'clear', reason };
+        const endInp = document.getElementById('inp_ae_end_date');
+        if (endInp) endInp.value = '';
+        clearAeFieldError('end_date');
+        showToast('End date staged for audited clear on save.', 'info');
+    } else if (target === 'seriousness_all') {
+        const reasonEl = document.getElementById('inp_reconcile_reason_seriousness');
+        const reason = reasonEl ? reasonEl.value.trim() : '';
+        if (!reason) {
+            showToast('Enter an audit reason before clearing seriousness criteria.', 'warning');
+            if (reasonEl) reasonEl.focus();
+            return;
+        }
+        AE_SERIOUSNESS_CRITERIA_DEFS.forEach(c => {
+            window.aePendingReconciliations[c.key] = { field: c.key, action: 'clear', reason };
+            document.querySelectorAll(`input[name="ae_${c.key}"]`).forEach(r => r.checked = false);
+            clearAeFieldError(c.key);
+        });
+        clearAeFieldError('seriousness');
+        showToast('Retained seriousness criteria staged for audited clear on save.', 'info');
+    } else if (target === 'other_action_specify') {
+        const reasonEl = document.getElementById('inp_reconcile_reason_other');
+        const reason = reasonEl ? reasonEl.value.trim() : '';
+        if (!reason) {
+            showToast('Enter an audit reason before clearing Other treatment action.', 'warning');
+            if (reasonEl) reasonEl.focus();
+            return;
+        }
+        window.aePendingReconciliations.other_action_specify = { field: 'other_action_specify', action: 'clear', reason };
+        const inp = document.getElementById('inp_ae_other_action_specify');
+        if (inp) inp.value = '';
+        clearAeFieldError('other_action_specify');
+        showToast('Other specification staged for audited clear on save.', 'info');
+    }
+    refreshAeReconciliationPanels();
+}
+
+function onAEOngoingChange() {
+    clearAeFieldError('ongoing');
+    clearAeFieldError('end_date');
+    const val = getAeRadioVal('ae_ongoing');
+    const endGroup = document.getElementById('aeEndDateGroup');
+    if (endGroup) {
+        endGroup.style.display = (val === 'No') ? 'block' : 'none';
+    }
+    if (val === 'No' && window.aePendingReconciliations && window.aePendingReconciliations.end_date) {
+        delete window.aePendingReconciliations.end_date;
+    }
+    refreshAeReconciliationPanels();
+}
+
+function onAESeriousnessChange() {
+    clearAeFieldError('seriousness');
+    const ser = getAeRadioVal('ae_seriousness');
+    const box = document.getElementById('aeSeriousnessCriteriaBox');
+    const saeModalNotice = document.getElementById('aeModalSaeNotice');
+    if (box) box.style.display = (ser === 'Yes') ? 'block' : 'none';
+    if (saeModalNotice) saeModalNotice.style.display = (ser === 'Yes') ? 'flex' : 'none';
+    if (ser === 'Yes' && window.aePendingReconciliations) {
+        AE_SERIOUSNESS_CRITERIA_DEFS.forEach(c => delete window.aePendingReconciliations[c.key]);
+    }
+    refreshAeReconciliationPanels();
+}
+
+function onAEActionTakenChange() {
+    clearAeFieldError('action_taken');
+    clearAeFieldError('other_action_specify');
+    const actEl = document.getElementById('inp_ae_action_taken');
+    const val = actEl ? actEl.value : '';
+    const othGroup = document.getElementById('aeOtherActionGroup');
+    if (othGroup) {
+        othGroup.style.display = (val === 'Other') ? 'block' : 'none';
+    }
+    if (val === 'Other' && window.aePendingReconciliations && window.aePendingReconciliations.other_action_specify) {
+        delete window.aePendingReconciliations.other_action_specify;
+    }
+    refreshAeReconciliationPanels();
+}
+
+function onAEOutcomeChange() {
+    clearAeFieldError('outcome');
+    clearAeFieldError('end_date');
+    clearAeFieldError('seriousness');
+    clearAeFieldError('seriousness_death');
+    // Note: Do NOT silently clear end_date when outcome changes; discrepancy edit checks flag conflicts explicitly.
+}
+
+function onAEExperiencedChange() {
+    clearAeFieldError('ae_experienced');
+    const val = getAeRadioVal('ae_experienced');
+    const secContainer = document.getElementById('aeSectionsContainer');
+    const noEventsNotice = document.getElementById('aeNoEventsNotice');
+    if (val === 'No') {
+        if (secContainer) secContainer.style.display = 'none';
+        if (noEventsNotice) noEventsNotice.style.display = 'block';
+        clearAllAeErrors();
+    } else {
+        if (secContainer) secContainer.style.display = 'grid';
+        if (noEventsNotice) noEventsNotice.style.display = 'none';
+    }
+}
+
+function onAECausalityChange() {
+    clearAeFieldError('causality');
+    const causalityVal = getAeRadioVal('ae_causality');
+    const depSec = document.getElementById('aeCausalityDependentSection');
+    if (depSec) {
+        depSec.style.display = (causalityVal === 'Yes') ? 'block' : 'none';
+    }
+    if (causalityVal !== 'Yes') {
+        clearAeFieldError('action_taken');
+        clearAeFieldError('other_action_specify');
+        clearAeFieldError('outcome');
+    }
+}
+
+function renderAEGateState(aeMeta, records) {
+    const card = document.getElementById('aeOccurrenceGateCard');
+    if (!card) return;
+    const st = (aeMeta && aeMeta.subject_state) ? aeMeta.subject_state : {};
+    const anyExp = st.any_experienced || '';
+
+    const rYes = document.getElementById('inp_ae_gate_yes');
+    const rNo = document.getElementById('inp_ae_gate_no');
+    if (rYes) rYes.checked = (anyExp === 'Yes');
+    if (rNo) rNo.checked = (anyExp === 'No');
+
+    window.aeSavedGateAnswer = st.saved_any_experienced || '';
+    const reasonRow = document.getElementById('aeGateChangeReasonRow');
+    if (reasonRow) reasonRow.style.display = 'none';
+
+    const btnAdd = document.getElementById('btnAddCommonForm');
+    if (btnAdd) {
+        btnAdd.style.display = (!st.pi_signed_off) ? 'flex' : 'none';
+    }
+
+    const qBadge = document.getElementById('aeGateQueryBadge');
+    if (qBadge) {
+        qBadge.innerHTML = st.open_subject_queries > 0
+            ? `<span style="background: #dc2626; color: #fff; padding: 1px 6px; border-radius: 99px; font-size: 0.7rem; margin-left: 3px;">${st.open_subject_queries}</span>`
+            : '';
+    }
+
+    const badgesEl = document.getElementById('aeGateBadges');
+    if (badgesEl) {
+        const compBadge = st.status === 'complete'
+            ? '<span style="background: #ecfdf5; color: #047857; padding: 3px 9px; border-radius: 99px; font-size: 0.74rem; font-weight: 600;">Complete</span>'
+            : '<span style="background: #eff6ff; color: #1d4ed8; padding: 3px 9px; border-radius: 99px; font-size: 0.74rem; font-weight: 600;">Draft</span>';
+        let sdrLabel = 'Pending SDR';
+        if (st.pi_signed_off) sdrLabel = 'PI Signed Off';
+        else if (st.monitor_reviewed && st.manager_reviewed) sdrLabel = 'SDVed & DM Reviewed';
+        else if (st.monitor_reviewed) sdrLabel = 'SDVed';
+        else if (st.manager_reviewed) sdrLabel = 'DM Reviewed';
+        else if (st.sdr_submitted) sdrLabel = 'Under Review';
+        badgesEl.innerHTML = `${compBadge} <span style="background: #f1f5f9; color: #475569; padding: 3px 9px; border-radius: 99px; font-size: 0.74rem; font-weight: 600;">${sdrLabel} &middot; v${st.revision || 1}</span>`;
+    }
+
+    // Gate review lock controls (especially for Yes=No 0-record subjects or full gate signoff)
+    const wfEl = document.getElementById('aeGateWorkflowBtns');
+    if (wfEl) {
+        let btns = '';
+        if (st.id && !st.conflict_occurrence_no_with_records) {
+            if (st.pi_signed_off) {
+                if (USER_IS_PI || USER_IS_ADMIN) {
+                    btns += `<button type="button" class="btn btn-sm btn-outline" onclick="triggerCommonReviewAction(0, 'pi_revoke', 'AE')" style="color: #dc2626; border-color: #dc2626;">Revoke Gate PI Sign Off</button>`;
+                } else {
+                    btns += `<span style="font-size: 0.75rem; color: #3730a3; font-weight: 600;">AE Screening Gate Locked (PI Signed Off)</span>`;
+                }
+            } else {
+                if (USER_IS_COORDINATOR && st.status === 'complete') {
+                    if (!st.sdr_submitted) btns += `<button type="button" class="btn btn-sm btn-outline" onclick="triggerCommonReviewAction(0, 'mark_sdr', 'AE')">Gate Mark SDR</button>`;
+                    else if (!st.monitor_reviewed && !st.manager_reviewed) btns += `<button type="button" class="btn btn-sm btn-outline" onclick="triggerCommonReviewAction(0, 'revoke_sdr', 'AE')">Gate Revoke SDR</button>`;
+                }
+                if (USER_IS_MONITOR || USER_IS_ADMIN) {
+                    btns += !st.monitor_reviewed
+                        ? `<button type="button" class="btn btn-sm btn-outline" onclick="triggerCommonReviewAction(0, 'monitor_review', 'AE')">Gate SDV</button>`
+                        : `<button type="button" class="btn btn-sm btn-outline" onclick="triggerCommonReviewAction(0, 'monitor_revoke', 'AE')">Revoke Gate SDV</button>`;
+                }
+                if (USER_IS_MANAGER || USER_IS_ADMIN) {
+                    btns += !st.manager_reviewed
+                        ? `<button type="button" class="btn btn-sm btn-outline" onclick="triggerCommonReviewAction(0, 'manager_review', 'AE')">Gate DM Review</button>`
+                        : `<button type="button" class="btn btn-sm btn-outline" onclick="triggerCommonReviewAction(0, 'manager_revoke', 'AE')">Revoke Gate DM</button>`;
+                }
+                if ((USER_IS_PI || USER_IS_ADMIN) && st.monitor_reviewed && st.manager_reviewed) {
+                    btns += `<button type="button" class="btn btn-sm btn-primary" onclick="triggerCommonReviewAction(0, 'pi_sign_off', 'AE')">Gate PI Sign Off</button>`;
+                }
+            }
+        }
+        wfEl.innerHTML = btns;
+    }
+
+    // Lock gate inputs if PI signed off
+    const gateLocked = !USER_CAN_EDIT_CONTENT || !!st.pi_signed_off;
+    [rYes, rNo].forEach(r => { if (r) r.disabled = gateLocked; });
+    const bDraft = document.getElementById('btnSaveAeGateDraft');
+    const bComp = document.getElementById('btnSaveAeGateComplete');
+    if (bDraft) bDraft.style.display = gateLocked ? 'none' : 'inline-flex';
+    if (bComp) bComp.style.display = gateLocked ? 'none' : 'inline-flex';
+
+    // Occurrence = No with active records conflict banner
+    const conflictBox = document.getElementById('aeOccurrenceConflictBanner');
+    if (conflictBox) {
+        if (st.conflict_occurrence_no_with_records) {
+            conflictBox.style.display = 'block';
+            conflictBox.innerHTML = `<strong>Occurrence Conflict:</strong> &ldquo;Were any adverse events experienced?&rdquo; is set to <strong>No</strong>, while <strong>${st.active_record_count}</strong> saved active AE record(s) still exist below. Existing records are NOT deleted silently — either switch this question back to <strong>Yes</strong> and save, or void each AE record below with a required audit reason.`;
+        } else {
+            conflictBox.style.display = 'none';
+            conflictBox.innerHTML = '';
+        }
+    }
+
+    // Code list configuration review notice
+    const clNotice = document.getElementById('aeCodeListNotice');
+    if (clNotice && aeMeta && aeMeta.code_lists) {
+        const defaultsInUse = Object.entries(aeMeta.code_lists)
+            .filter(([, meta]) => meta.requires_protocol_review)
+            .map(([, meta]) => meta.recommended_group_name);
+        if (defaultsInUse.length > 0) {
+            clNotice.style.display = 'flex';
+            clNotice.style.alignItems = 'center';
+            clNotice.style.gap = '0.4rem';
+            clNotice.innerHTML = `<span class="material-icons-round" style="font-size: 0.95rem; color: #64748b;">tune</span><span><strong>Protocol Code Lists:</strong> Proposed defaults active for <em>${escapeHtml(defaultsInUse.join(', '))}</em> (override anytime via Study Option Groups).</span>`;
+        } else {
+            clNotice.style.display = 'none';
+            clNotice.innerHTML = '';
+        }
+    }
+
+    // SAE Banner if any active record has seriousness = Yes
+    const saeBanner = document.getElementById('aeSaeNoticeBanner');
+    if (saeBanner) {
+        const hasSerious = (records || []).some(r => !r.is_voided && r.data && r.data.seriousness === 'Yes');
+        saeBanner.style.display = hasSerious ? 'flex' : 'none';
+    }
+}
+
+function onAEGateRadioChange() {
+    clearAeFieldError('ae_experienced');
+    const selected = getAeRadioVal('ae_gate_experienced');
+    const saved = window.aeSavedGateAnswer || '';
+    const reasonRow = document.getElementById('aeGateChangeReasonRow');
+    if (reasonRow) {
+        reasonRow.style.display = (saved && selected && saved !== selected) ? 'block' : 'none';
+    }
+    const btnAdd = document.getElementById('btnAddCommonForm');
+    if (btnAdd) {
+        const st = (window.currentAeMeta && window.currentAeMeta.subject_state) ? window.currentAeMeta.subject_state : {};
+        btnAdd.style.display = (!st.pi_signed_off) ? 'flex' : 'none';
+    }
+    if (Array.isArray(window.currentCommonRecords) && window.currentCommonRecords.length === 0) {
+        renderCommonTable([], 'AE');
+    }
+}
+
+function saveAEGateStatus(mode) {
+    clearAeFieldError('ae_experienced');
+    const selected = getAeRadioVal('ae_gate_experienced');
+    if (mode === 'complete' && !selected) {
+        setAeFieldError('ae_experienced', "Please select Yes or No for 'Were any adverse events experienced?'.");
+        announceAeStatus("Please select Yes or No for Were any adverse events experienced?");
+        return;
+    }
+
+    const reasonInp = document.getElementById('inp_ae_gate_reason');
+    const reason = reasonInp ? reasonInp.value.trim() : '';
+
+    const fd = new FormData();
+    fd.append('action', 'save_ae_occurrence');
+    fd.append('subject_id', CURRENT_SUBJECT_ID);
+    fd.append('any_experienced', selected);
+    fd.append('mode', mode);
+    if (reason) fd.append('change_reason', reason);
+
+    fetch('ajax_common_forms.php', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(res => {
+        if (!res.success) {
+            const msg = (res.field_errors && res.field_errors.ae_experienced) || res.message || 'Validation failed';
+            setAeFieldError('ae_experienced', msg);
+            announceAeStatus(msg);
+            showToast(msg, 'error');
+            return;
+        }
+        showToast(res.message, res.conflict_warning ? 'warning' : 'success');
+        loadCommonRecords('AE');
+    })
+    .catch(err => {
+        console.error(err);
+        showToast('Network error saving AE screening status', 'error');
+    });
+}
+
+function syncAeQueryFieldMap(aeMeta) {
+    const cl = getAeActiveCodeLists(aeMeta);
+    COMMON_FORM_FIELD_MAP.AE = [
+        { key: 'ae_experienced', label: 'Were any adverse events experienced?', type: 'select', options: ['Yes', 'No'] },
+        { key: 'ae_term', label: 'Adverse event term', type: 'text' },
+        { key: 'start_date', label: 'Start date', type: 'date' },
+        { key: 'ongoing', label: 'Is the event ongoing?', type: 'select', options: ['Yes', 'No'] },
+        { key: 'end_date', label: 'End date', type: 'date' },
+        { key: 'severity', label: 'Severity', type: 'select', options: cl.severity.options },
+        { key: 'seriousness', label: 'Was the event serious?', type: 'select', options: ['Yes', 'No'] },
+        ...AE_SERIOUSNESS_CRITERIA_DEFS.map(c => ({ key: c.key, label: c.label, type: 'select', options: ['Yes', 'No'] })),
+        { key: 'causality', label: 'Related to study treatment?', type: 'select', options: ['Yes', 'No'] },
+        { key: 'action_taken', label: 'Action taken with study treatment', type: 'select', options: cl.action_taken.options },
+        { key: 'other_action_specify', label: 'Other treatment action—specify', type: 'text' },
+        { key: 'outcome', label: 'Outcome', type: 'select', options: cl.outcome.options }
+    ];
 }
 
 // CM Dynamic Handlers
@@ -6448,29 +7628,34 @@ function saveCommonRecord(mode) {
         data.comments = inpComments ? inpComments.value.trim() : '';
         data.medication_given = inpMed ? inpMed.value : '';
     } else if (formType === 'AE') {
-        const inpTerm = document.getElementById('inp_ae_term');
-        const inpStart = document.getElementById('inp_ae_start_date');
-        const inpEnd = document.getElementById('inp_ae_end_date');
-        const inpSeverity = document.getElementById('inp_ae_severity');
-        const inpSeriousness = document.getElementById('inp_ae_seriousness');
-        const inpCausality = document.getElementById('inp_ae_causality');
-        const inpAction = document.getElementById('inp_ae_action_taken');
-        const inpOutcome = document.getElementById('inp_ae_outcome');
-        const inpConcomitant = document.getElementById('inp_ae_concomitant_treatment');
+        clearAllAeErrors();
+        const aeData = readAeFormDataFromUI();
+        Object.assign(data, aeData);
 
-        data.ae_term = inpTerm ? inpTerm.value.trim() : '';
-        data.start_date = inpStart ? inpStart.value : '';
-        data.end_date = inpEnd ? inpEnd.value : '';
-        data.severity = inpSeverity ? inpSeverity.value : '';
-        data.seriousness = inpSeriousness ? inpSeriousness.value : '';
-        
-        const critCbs = document.querySelectorAll('.cb_ae_crit:checked');
-        data.seriousness_criteria = Array.from(critCbs).map(cb => cb.value);
-
-        data.causality = inpCausality ? inpCausality.value : '';
-        data.action_taken = inpAction ? inpAction.value : '';
-        data.outcome = inpOutcome ? inpOutcome.value : '';
-        data.concomitant_treatment = inpConcomitant ? inpConcomitant.value : '';
+        if (mode === 'complete') {
+            const clientErrs = validateAeFormClient(aeData, true);
+            if (clientErrs.length > 0) {
+                const seenFields = {};
+                clientErrs.forEach(e => {
+                    if (!seenFields[e.field]) {
+                        seenFields[e.field] = e.message;
+                        setAeFieldError(e.field, e.message);
+                    }
+                });
+                const firstErr = clientErrs[0];
+                if (alertBox) {
+                    alertBox.innerHTML = `<span class="material-icons-round" style="font-size: 1.1rem; vertical-align: middle; margin-right: 4px;">error_outline</span> ${escapeHtml(firstErr.message)} (${clientErrs.length} check${clientErrs.length === 1 ? '' : 's'} require attention)`;
+                    alertBox.style.display = 'block';
+                    const bodyEl = document.getElementById('cfEditorBody');
+                    if (bodyEl) bodyEl.scrollTop = 0;
+                }
+                announceAeStatus(`${clientErrs.length} AE validation errors found. First: ${firstErr.message}`);
+                const focusTarget = document.getElementById('inp_ae_' + firstErr.field)
+                    || document.querySelector(`input[name="ae_${firstErr.field}"]`);
+                if (focusTarget) focusTarget.focus();
+                return;
+            }
+        }
     } else if (formType === 'CM') {
         const inpName = document.getElementById('inp_cm_name');
         const inpStart = document.getElementById('inp_cm_start_date');
@@ -6601,6 +7786,16 @@ function saveCommonRecord(mode) {
     fd.append('form_type', formType);
     fd.append('mode', mode);
     fd.append('data', JSON.stringify(data));
+    if (formType === 'AE') {
+        const chgReasonEl = document.getElementById('inp_ae_change_reason');
+        if (chgReasonEl && chgReasonEl.value.trim() !== '') {
+            fd.append('change_reason', chgReasonEl.value.trim());
+        }
+        const recs = Object.values(window.aePendingReconciliations || {});
+        if (recs.length > 0) {
+            fd.append('reconciliations', JSON.stringify(recs));
+        }
+    }
 
     linkedIds.forEach(id => fd.append('linked_ids[]', id));
 
@@ -6608,6 +7803,15 @@ function saveCommonRecord(mode) {
     .then(r => r.json())
     .then(res => {
         if (!res.success) {
+            if (formType === 'AE' && res.field_errors) {
+                Object.entries(res.field_errors).forEach(([fk, fmsg]) => setAeFieldError(fk, fmsg));
+                const firstKey = Object.keys(res.field_errors)[0];
+                if (firstKey) {
+                    const ft = document.getElementById('inp_ae_' + firstKey) || document.querySelector(`input[name="ae_${firstKey}"]`);
+                    if (ft) ft.focus();
+                }
+                announceAeStatus(res.message || 'AE validation failed');
+            }
             if (alertBox) {
                 alertBox.innerHTML = `<span class="material-icons-round" style="font-size: 1.1rem; vertical-align: middle; margin-right: 4px;">error_outline</span> ${escapeHtml(res.message || 'Validation Error')}`;
                 alertBox.style.display = 'block';
@@ -6622,6 +7826,9 @@ function saveCommonRecord(mode) {
 
         // 2. Show Toast Notification
         showToast(res.message || 'Record saved successfully!', 'success');
+        if (formType === 'AE' && res.sae_flagged) {
+            showToast('SAE flagged: External pharmacovigilance/SAE notification SOP applies separately.', 'info');
+        }
 
         // 3. Dynamic Roster & Badge Update
         loadCommonRecords(formType);
@@ -6739,6 +7946,8 @@ function triggerCommonReviewAction(recordId, workflowAction, formType = null) {
             fd.append('action', 'update_review_status');
             fd.append('record_id', recordId);
             fd.append('workflow_action', workflowAction);
+            if (targetType) fd.append('form_type', targetType);
+            fd.append('subject_id', CURRENT_SUBJECT_ID);
             if (remarks) fd.append('remarks', remarks);
 
             fetch('ajax_common_forms.php', { method: 'POST', body: fd })
@@ -6873,16 +8082,23 @@ const COMMON_FORM_FIELD_MAP = {
         { key: 'medication_given', label: '6. Medication Given', type: 'select', options: ['Yes', 'No'] }
     ],
     'AE': [
-        { key: 'ae_term', label: '1. AE Term / Verbatim', type: 'text' },
-        { key: 'start_date', label: '2. Start Date', type: 'date' },
-        { key: 'end_date', label: '3. End Date', type: 'date' },
-        { key: 'severity', label: '4. Severity / Intensity', type: 'select', options: ['Mild', 'Moderate', 'Severe'] },
-        { key: 'seriousness', label: '5. Serious Adverse Event (SAE)', type: 'select', options: ['Yes', 'No'] },
-        { key: 'seriousness_criteria', label: '6. Seriousness Criteria', type: 'checkbox_group', options: ['Death', 'Life-threatening', 'Hospitalization / prolongation of hospitalization', 'Disability / incapacity', 'Congenital anomaly', 'Other medically important event'] },
-        { key: 'causality', label: '7. Causality / Relationship to Study Drug', type: 'select', options: ['Unrelated', 'Unlikely', 'Possible', 'Probable', 'Definite'] },
-        { key: 'action_taken', label: '8. Action Taken with Study Treatment', type: 'select', options: ['None', 'Dose Reduced', 'Dose Interrupted', 'Drug Withdrawn', 'Not Applicable'] },
-        { key: 'outcome', label: '9. Outcome', type: 'select', options: ['Recovered / Resolved', 'Recovering / Resolving', 'Not Recovered / Not Resolved', 'Recovered with Sequelae', 'Fatal', 'Unknown'] },
-        { key: 'concomitant_treatment', label: '10. Concomitant Treatment Given', type: 'select', options: ['Yes', 'No'] }
+        { key: 'ae_experienced', label: 'Were any adverse events experienced?', type: 'select', options: ['Yes', 'No'] },
+        { key: 'ae_term', label: 'Adverse event term', type: 'text' },
+        { key: 'start_date', label: 'Start date', type: 'date' },
+        { key: 'ongoing', label: 'Is the event ongoing?', type: 'select', options: ['Yes', 'No'] },
+        { key: 'end_date', label: 'End date', type: 'date' },
+        { key: 'severity', label: 'Severity', type: 'select', options: ['Mild', 'Moderate', 'Severe'] },
+        { key: 'seriousness', label: 'Was the event serious?', type: 'select', options: ['Yes', 'No'] },
+        { key: 'seriousness_death', label: 'Resulted in death', type: 'select', options: ['Yes', 'No'] },
+        { key: 'seriousness_life_threatening', label: 'Life-threatening', type: 'select', options: ['Yes', 'No'] },
+        { key: 'seriousness_hospitalization', label: 'Required or prolonged inpatient hospitalization', type: 'select', options: ['Yes', 'No'] },
+        { key: 'seriousness_disability', label: 'Persistent or significant disability/incapacity', type: 'select', options: ['Yes', 'No'] },
+        { key: 'seriousness_congenital_anomaly', label: 'Congenital anomaly/birth defect', type: 'select', options: ['Yes', 'No'] },
+        { key: 'seriousness_other_medically_important', label: 'Other medically important event', type: 'select', options: ['Yes', 'No'] },
+        { key: 'causality', label: 'Related to study treatment?', type: 'select', options: ['Yes', 'No'] },
+        { key: 'action_taken', label: 'Action taken with study treatment', type: 'select', options: ['Dose not changed', 'Dose reduced', 'Drug interrupted', 'Drug withdrawn', 'Not applicable', 'Unknown', 'Other'] },
+        { key: 'other_action_specify', label: 'Other treatment action—specify', type: 'text' },
+        { key: 'outcome', label: 'Outcome', type: 'select', options: ['Recovered/resolved', 'Recovering/resolving', 'Not recovered/not resolved', 'Recovered/resolved with sequelae', 'Fatal', 'Unknown'] }
     ],
     'CM': [
         { key: 'medication_name', label: '1. Medication Name', type: 'text' },
@@ -7098,15 +8314,20 @@ function refreshEditorRecordData(recordId) {
     }
 }
 
-// Queries Modal - supports field-level query view & preselection
-function openCommonQueryModal(recordId, targetFieldKey = null, targetFieldLabel = null) {
+// Queries Modal - supports field-level query view & subject-level AE gate queries
+function openCommonQueryModal(recordId, targetFieldKey = null, targetFieldLabel = null, explicitFormType = null) {
     currentCommonQueryRecordId = recordId;
     currentCommonQueryTargetField = targetFieldKey || null;
     currentCommonQueryTargetLabel = targetFieldLabel || null;
+    const qFormType = (explicitFormType || COMMON_FORM_TYPE || '').toUpperCase();
 
     const fd = new FormData();
     fd.append('action', 'get_record');
     fd.append('record_id', recordId);
+    if (recordId <= 0 && qFormType) {
+        fd.append('form_type', qFormType);
+        fd.append('subject_id', CURRENT_SUBJECT_ID);
+    }
 
     fetch('ajax_common_forms.php', { method: 'POST', body: fd })
     .then(r => r.json())
@@ -7444,6 +8665,10 @@ function submitNewCommonQuery(recordId) {
     const fd = new FormData();
     fd.append('action', 'raise_query');
     fd.append('record_id', recordId);
+    if (recordId <= 0 && COMMON_FORM_TYPE) {
+        fd.append('form_type', COMMON_FORM_TYPE);
+        fd.append('subject_id', CURRENT_SUBJECT_ID);
+    }
     fd.append('query_text', text);
     if (fieldName !== '') {
         fd.append('field_name', fieldName);
@@ -7535,10 +8760,15 @@ function updateCommonQueryStatus(queryId, action, recordId) {
 }
 
 // Audit Trail Modal
-function openCommonAuditModal(recordId) {
+function openCommonAuditModal(recordId, explicitFormType = null) {
+    const aFormType = (explicitFormType || COMMON_FORM_TYPE || '').toUpperCase();
     const fd = new FormData();
     fd.append('action', 'get_record');
     fd.append('record_id', recordId);
+    if (recordId <= 0 && aFormType) {
+        fd.append('form_type', aFormType);
+        fd.append('subject_id', CURRENT_SUBJECT_ID);
+    }
 
     fetch('ajax_common_forms.php', { method: 'POST', body: fd })
     .then(r => r.json())
