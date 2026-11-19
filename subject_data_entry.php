@@ -9,6 +9,10 @@ ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
+header("Cache-Control: no-cache, no-store, must-revalidate");
+header("Pragma: no-cache");
+header("Expires: 0");
+
 if (!isset($_SESSION['active_study_id'])) {
     redirect('dashboard.php');
 }
@@ -6779,6 +6783,7 @@ function getAeActiveCodeLists(aeMeta) {
 function normalizeAeRecordClient(raw) {
     const d = raw || {};
     const out = {
+        ae_experienced: String(d.ae_experienced || '').trim(),
         ae_term: String(d.ae_term || '').trim(),
         start_date: String(d.start_date || '').trim(),
         ongoing: String(d.ongoing || '').trim(),
