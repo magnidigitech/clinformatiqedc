@@ -7,6 +7,16 @@ include 'config/db.php';
 
 echo "<h1>Diagnostic Report</h1>";
 
+echo "<div style='background:#f0f9ff;padding:15px;border:2px solid #0284c7;margin-bottom:20px;font-family:sans-serif;'>";
+echo "<strong>Container Hostname:</strong> " . htmlspecialchars(gethostname()) . "<br>";
+echo "<strong>Diagnose File Mtime:</strong> " . date('Y-m-d H:i:s', filemtime(__FILE__)) . "<br>";
+echo "<strong>test.php Content:</strong> <pre style='background:#e2e8f0;padding:5px;'>" . htmlspecialchars((string)@file_get_contents(__DIR__ . '/test.php')) . "</pre>";
+echo "<strong>subject_data_entry.php Mtime:</strong> " . date('Y-m-d H:i:s', (int)@filemtime(__DIR__ . '/subject_data_entry.php')) . "<br>";
+$subjContent = (string)@file_get_contents(__DIR__ . '/subject_data_entry.php');
+$hasOldToast = (strpos($subjContent, "Save 'Were any adverse events experienced?'") !== false);
+echo "<strong>Old Toast Warning Present in subject_data_entry.php:</strong> " . ($hasOldToast ? "<span style='color:red;font-weight:bold;'>YES (OLD CODE STILL PRESENT!)</span>" : "<span style='color:green;font-weight:bold;'>NO (FIXED CODE PRESENT!)</span>") . "<br>";
+echo "</div>";
+
 try {
     $pdo = getDB();
     $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
