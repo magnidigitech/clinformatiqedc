@@ -4549,9 +4549,10 @@ function renderCommonTable(records, formType) {
             const seriousDisplay = d.seriousness === 'Yes'
                 ? `Yes (${critYesCount})`
                 : (d.seriousness === 'No' ? 'No' : '-');
-            const endSubline = d.ongoing === 'Yes'
+            const isNoAeRecord = (d.ae_experienced === 'No' || d.ae_term === 'No adverse events experienced');
+            const endSubline = isNoAeRecord ? '' : (d.ongoing === 'Yes'
                 ? '<span style="color: #0369a1; font-weight: 600;">Ongoing</span>'
-                : (d.end_date ? `<span style="color: #64748b;">&rarr; ${escapeHtml(d.end_date)}</span>` : '<span style="color: #b45309;">End date blank</span>');
+                : (d.end_date ? `<span style="color: #64748b;">&rarr; ${escapeHtml(d.end_date)}</span>` : '<span style="color: #b45309;">End date blank</span>'));
             const hasConflict = !isVoided && r.ae_checks && r.ae_checks.discrepancy_checks && r.ae_checks.discrepancy_checks.length > 0;
             const actionDisp = d.action_taken === 'Other' && d.other_action_specify
                 ? `Other: ${d.other_action_specify}`
@@ -4811,10 +4812,6 @@ function openCommonFormModal(recordId, formType, defaultData = null) {
         const aeSt = (window.currentAeMeta && window.currentAeMeta.subject_state) ? window.currentAeMeta.subject_state : null;
         if (aeSt && aeSt.pi_signed_off) {
             showToast('AE form has been Signed Off by Principal Investigator and is locked.', 'warning');
-            return;
-        }
-        if (aeSt && aeSt.saved_any_experienced === 'No') {
-            showToast("Save 'Were any adverse events experienced?' = Yes first before adding AE records.", 'warning');
             return;
         }
     }

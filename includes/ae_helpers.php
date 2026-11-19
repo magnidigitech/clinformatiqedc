@@ -500,7 +500,7 @@ if (!function_exists('evaluateAeRecordChecks')) {
         $d = normalizeAeRecordData($rawData);
 
         // If 'Were any adverse events experienced?' is No, no adverse events occurred for this record/subject
-        if (($d['ae_experienced'] ?? '') === 'No') {
+        if (($d['ae_experienced'] ?? '') === 'No' || ($d['ae_term'] ?? '') === 'No adverse events experienced') {
             return [
                 'valid' => true,
                 'completeness_errors' => [],
@@ -789,9 +789,15 @@ if (!function_exists('getSubjectAeState')) {
 
         $hasPiLockedRecord = false;
         $hasDraftRecord = false;
+        $actualActiveCount = 0;
         foreach ($activeRecs as $ar) {
             if (toBool($ar['pi_signed_off'] ?? false)) $hasPiLockedRecord = true;
             if (($ar['status'] ?? 'draft') !== 'complete') $hasDraftRecord = true;
+            $arData = json_decode($ar['data_json'] ?? '{}', true) ?: [];
+            $isNoRecord = (($arData['ae_experienced'] ?? '') === 'No' || ($arData['ae_term'] ?? '') === 'No adverse events experienced');
+            if (!$isNoRecord) {
+                $actualActiveCount++;
+            }
         }
 
         $anyExperienced = $row ? ($row['any_experienced'] ?? null) : null;
@@ -799,7 +805,7 @@ if (!function_exists('getSubjectAeState')) {
 
         // If a legacy subject has saved AE records before this gate existed, surface effective 'Yes'
         $inferredFromLegacy = false;
-        if ($anyExperienced === null && $activeCount > 0) {
+        if ($anyExperienced === null && $actualActiveCount > 0) {
             $anyExperienced = 'Yes';
             $inferredFromLegacy = true;
         }
@@ -841,7 +847,7 @@ if (!function_exists('getSubjectAeState')) {
         $stmtAud->execute([(int)$study_id, (int)$subject_id]);
         $subjectAudit = $stmtAud->fetchAll(PDO::FETCH_ASSOC);
 
-        $conflict = ($anyExperienced === 'No' && $activeCount > 0);
+        $conflict = ($anyExperienced === 'No' && $actualActiveCount > 0);
         $gatePiSigned = ($row && toBool($row['pi_signed_off'] ?? false));
 
         return [
@@ -857,7 +863,8 @@ if (!function_exists('getSubjectAeState')) {
             'pi_signed_off' => $gatePiSigned,
             'has_pi_locked_record' => $hasPiLockedRecord,
             'revision' => $row ? (int)($row['revision'] ?? 1) : 1,
-            'active_record_count' => $activeCount,
+            'active_record_count' => $actualActiveCount,
+            'total_record_count' => $activeCount,
             'has_draft_record' => $hasDraftRecord,
             'conflict_occurrence_no_with_records' => $conflict,
             'subject_queries' => $subjectQueries,
@@ -875,11 +882,23 @@ if (!function_exists('evaluateSubjectAeChecks')) {
         $errors = [];
         $todayIst = (new DateTime('now', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d');
 
-        if ($anyExperienced === 'No' && $activeCount > 0) {
+        $actualRecords = [];
+        foreach ($activeRecords as $rec) {
+            $recData = is_string($rec['data_json'] ?? null)
+                ? (json_decode($rec['data_json'], true) ?: [])
+                : (array)($rec['data'] ?? []);
+            $isPlaceholder = (($recData['ae_experienced'] ?? '') === 'No' || ($recData['ae_term'] ?? '') === 'No adverse events experienced');
+            if (!$isPlaceholder) {
+                $actualRecords[] = $rec;
+            }
+        }
+        $actualCount = count($actualRecords);
+
+        if ($anyExperienced === 'No' && $actualCount > 0) {
             $errors[] = [
                 'field' => 'ae_experienced',
                 'rule_code' => 'AE_OCCURRENCE_CONFLICT',
-                'message' => "Conflict: 'Were any adverse events experienced?' is No, but {$activeCount} active AE record(s) exist. Set to Yes or void existing AE record(s) with an audit reason.",
+                'message' => "Conflict: 'Were any adverse events experienced?' is No, but {$actualCount} active AE record(s) exist. Set to Yes or void existing AE record(s) with an audit reason.",
             ];
         }
 
@@ -891,14 +910,14 @@ if (!function_exists('evaluateSubjectAeChecks')) {
                     'message' => "Please answer 'Were any adverse events experienced?' (Yes or No).",
                 ];
             } elseif ($anyExperienced === 'Yes') {
-                if ($activeCount === 0) {
+                if ($actualCount === 0) {
                     $errors[] = [
                         'field' => 'ae_experienced',
                         'rule_code' => 'AE_YES_NO_RECORDS',
                         'message' => "At least one AE record is required when 'Were any adverse events experienced?' is Yes.",
                     ];
                 } else {
-                    foreach ($activeRecords as $rec) {
+                    foreach ($actualRecords as $rec) {
                         $recNum = $rec['record_number'] ?? ('#' . ($rec['id'] ?? ''));
                         if (($rec['status'] ?? 'draft') !== 'complete') {
                             $errors[] = [
@@ -1115,14 +1134,22 @@ if (!function_exists('syncSubjectAeQueries')) {
         $anyExp = $stmtRow->fetchColumn();
 
         $stmtCnt = $pdo->prepare("
-            SELECT COUNT(*) FROM subject_common_records
+            SELECT data_json FROM subject_common_records
             WHERE study_id = ? AND subject_id = ? AND form_type = 'AE' AND is_voided = FALSE
         ");
         $stmtCnt->execute([(int)$study_id, (int)$subject_id]);
-        $activeCount = (int)$stmtCnt->fetchColumn();
+        $rows = $stmtCnt->fetchAll(PDO::FETCH_ASSOC);
 
-        if ($anyExp === 'No' && $activeCount > 0) {
-            $msg = "Conflict: 'Were any adverse events experienced?' is No, but {$activeCount} active AE record(s) exist. Set to Yes or void existing AE record(s) with an audit reason.";
+        $actualActiveCount = 0;
+        foreach ($rows as $r) {
+            $d = json_decode($r['data_json'] ?? '{}', true) ?: [];
+            if (($d['ae_experienced'] ?? '') !== 'No' && ($d['ae_term'] ?? '') !== 'No adverse events experienced') {
+                $actualActiveCount++;
+            }
+        }
+
+        if ($anyExp === 'No' && $actualActiveCount > 0) {
+            $msg = "Conflict: 'Were any adverse events experienced?' is No, but {$actualActiveCount} active AE record(s) exist. Set to Yes or void existing AE record(s) with an audit reason.";
             upsertSystemCommonQuery(
                 $pdo,
                 $study_id,

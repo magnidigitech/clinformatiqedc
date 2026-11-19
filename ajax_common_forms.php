@@ -856,6 +856,23 @@ try {
                 throw new Exception("AE form has been Signed Off by Principal Investigator and cannot be edited.");
             }
 
+            // If adding a new record with 'No', reuse existing active placeholder record instead of inserting duplicate rows
+            if ($record_id <= 0 && ($data['ae_experienced'] ?? '') === 'No') {
+                $stmtFindPh = $pdo->prepare("
+                    SELECT id, data_json FROM subject_common_records
+                    WHERE study_id = ? AND subject_id = ? AND form_type = 'AE' AND is_voided = FALSE
+                ");
+                $stmtFindPh->execute([$study_id, $subject_id]);
+                $activePhRecs = $stmtFindPh->fetchAll(PDO::FETCH_ASSOC);
+                foreach ($activePhRecs as $aph) {
+                    $aphData = json_decode($aph['data_json'] ?? '{}', true) ?: [];
+                    if (($aphData['ae_experienced'] ?? '') === 'No' || ($aphData['ae_term'] ?? '') === 'No adverse events experienced') {
+                        $record_id = (int)$aph['id'];
+                        break;
+                    }
+                }
+            }
+
             if (($data['ae_experienced'] ?? '') === 'No') {
                 $data['ae_term'] = $data['ae_term'] ?: 'No adverse events experienced';
                 $data['ongoing'] = 'No';
@@ -1095,10 +1112,34 @@ try {
 
                 if ($form_type === 'AE') {
                     $expVal = (($data['ae_experienced'] ?? '') === 'No') ? 'No' : 'Yes';
+
+                    if ($expVal === 'Yes') {
+                        // Void any active placeholder records for this subject as actual AE is recorded
+                        $stmtFindPlaceholder = $pdo->prepare("
+                            SELECT id, record_number, data_json FROM subject_common_records
+                            WHERE study_id = ? AND subject_id = ? AND form_type = 'AE' AND is_voided = FALSE AND id != ?
+                        ");
+                        $stmtFindPlaceholder->execute([$study_id, $subject_id, $target_record_id]);
+                        $recsToCheck = $stmtFindPlaceholder->fetchAll(PDO::FETCH_ASSOC);
+                        foreach ($recsToCheck as $rtc) {
+                            $dCheck = json_decode($rtc['data_json'] ?? '{}', true) ?: [];
+                            if (($dCheck['ae_experienced'] ?? '') === 'No' || ($dCheck['ae_term'] ?? '') === 'No adverse events experienced') {
+                                $phId = (int)$rtc['id'];
+                                $pdo->prepare("
+                                    UPDATE subject_common_records
+                                    SET is_voided = TRUE, void_reason = 'Superseded placeholder record as adverse event(s) are now recorded.', voided_by = ?, voided_at = CURRENT_TIMESTAMP
+                                    WHERE id = ?
+                                ")->execute([$user_id, $phId]);
+
+                                $stmt_aud->execute([$study_id, $subject_id, $phId, 'AE', 'is_voided', 'false', 'true', 'Superseded placeholder record as adverse event(s) are now recorded.', 'void', $user_id]);
+                            }
+                        }
+                    }
+
                     $pdo->prepare("
                         INSERT INTO subject_common_form_status (study_id, subject_id, form_type, any_experienced, status, sdr_status, revision, created_by)
                         VALUES (?, ?, 'AE', ?, ?, 'pending', 1, ?)
-                        ON CONFLICT (study_id, subject_id, form_type) DO UPDATE SET any_experienced = EXCLUDED.any_experienced
+                        ON CONFLICT (study_id, subject_id, form_type) DO UPDATE SET any_experienced = EXCLUDED.any_experienced, updated_at = CURRENT_TIMESTAMP
                     ")->execute([$study_id, $subject_id, $expVal, $mode, $user_id]);
 
                     $stmt_aud->execute([$study_id, $subject_id, null, 'AE', 'ae_experienced', null, $expVal, 'Set on AE record creation', 'create', $user_id]);
@@ -1250,6 +1291,39 @@ try {
                         $user_id,
                     ]);
                 }
+
+                if (!$is_new && ($data['ae_experienced'] ?? '') === 'Yes') {
+                    // Void any placeholder records if an existing record was updated to Yes
+                    $stmtFindPlaceholder = $pdo->prepare("
+                        SELECT id, record_number, data_json FROM subject_common_records
+                        WHERE study_id = ? AND subject_id = ? AND form_type = 'AE' AND is_voided = FALSE AND id != ?
+                    ");
+                    $stmtFindPlaceholder->execute([$study_id, $subject_id, $target_record_id]);
+                    $recsToCheck = $stmtFindPlaceholder->fetchAll(PDO::FETCH_ASSOC);
+                    foreach ($recsToCheck as $rtc) {
+                        $dCheck = json_decode($rtc['data_json'] ?? '{}', true) ?: [];
+                        if (($dCheck['ae_experienced'] ?? '') === 'No' || ($dCheck['ae_term'] ?? '') === 'No adverse events experienced') {
+                            $phId = (int)$rtc['id'];
+                            $pdo->prepare("
+                                UPDATE subject_common_records
+                                SET is_voided = TRUE, void_reason = 'Superseded placeholder record as adverse event(s) are now recorded.', voided_by = ?, voided_at = CURRENT_TIMESTAMP
+                                WHERE id = ?
+                            ")->execute([$user_id, $phId]);
+
+                            $pdo->prepare("
+                                INSERT INTO common_form_audit_log (study_id, subject_id, record_id, form_type, field_name, old_value, new_value, reason_for_change, change_type, action_by)
+                                VALUES (?, ?, ?, 'AE', 'is_voided', 'false', 'true', 'Superseded placeholder record as adverse event(s) are now recorded.', 'void', ?)
+                            ")->execute([$study_id, $subject_id, $phId, $user_id]);
+                        }
+                    }
+
+                    $pdo->prepare("
+                        INSERT INTO subject_common_form_status (study_id, subject_id, form_type, any_experienced, status, sdr_status, revision, created_by)
+                        VALUES (?, ?, 'AE', 'Yes', ?, 'pending', 1, ?)
+                        ON CONFLICT (study_id, subject_id, form_type) DO UPDATE SET any_experienced = 'Yes', updated_at = CURRENT_TIMESTAMP
+                    ")->execute([$study_id, $subject_id, $mode, $user_id]);
+                }
+
                 $aeEval = syncAeRecordEditCheckQueries($pdo, $study_id, $subject_id, $target_record_id, $data, $user_id, $aeCodeLists, $today_ist);
                 syncSubjectAeQueries($pdo, $study_id, $subject_id, $user_id);
             }
